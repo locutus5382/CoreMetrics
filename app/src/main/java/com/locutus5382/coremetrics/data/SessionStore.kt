@@ -11,14 +11,17 @@ import java.io.Writer
  * :monitor owns writes, UI reads through WAL. Data never leaves this database
  * without a user-selected Android document URI.
  */
-class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 2) {
+class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 3) {
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
-        val label: String, val configuration: String, val status: String, val count: Int)
+        val label: String, val configuration: String, val status: String, val count: Int,
+        val note: String? = null)
     data class Point(val timeMs: Long, val cpu: Double?, val gpu: Double?,
         val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
         val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
         val observedCpuLimits: String? = null, val busiestCorePct: Double? = null,
-        val batteryPowerStatus: String? = null)
+        val batteryPowerStatus: String? = null, val busiestCore: String? = null)
+
+    data class Link(val id:Long,val firstId:Long,val secondId:Long,val createdAt:Long)
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
@@ -29,7 +32,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             started_at INTEGER NOT NULL, ended_at INTEGER,
             label TEXT NOT NULL, configuration TEXT NOT NULL,
-            status TEXT NOT NULL)""")
+            status TEXT NOT NULL, game_note TEXT)""")
         db.execSQL("""CREATE TABLE samples (
             session_id INTEGER NOT NULL, time_ms INTEGER NOT NULL,
             cpu_temp REAL, gpu_temp REAL, battery_temp REAL, battery_pct INTEGER,
@@ -41,29 +44,101 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             sf_layer_fps REAL, sf_frame_ms REAL, sf_status TEXT,
             observed_cpu_limits TEXT)""")
         db.execSQL("CREATE INDEX samples_by_time ON samples(session_id,time_ms)")
+        createLinkTable(db)
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion == 1 && newVersion == 2) {
-            for ((name, type) in listOf(
-                "battery_net_w" to "REAL", "battery_ua" to "INTEGER",
-                "battery_mv" to "INTEGER", "battery_source" to "TEXT",
-                "battery_status" to "TEXT", "sf_layer_fps" to "REAL",
-                "sf_frame_ms" to "REAL", "sf_status" to "TEXT",
-                "observed_cpu_limits" to "TEXT"
-            )) db.execSQL("ALTER TABLE samples ADD COLUMN " + name + " " + type)
-        } else error("Unsupported schema migration: " + oldVersion + " → " + newVersion)
+    private fun createLinkTable(db:SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS session_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_id INTEGER NOT NULL, second_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(first_id, second_id),
+            CHECK(first_id < second_id))""")
     }
 
-    @Synchronized fun begin(label: String, config: String, time: Long): Long {
-        val db = writableDatabase
-        db.execSQL("UPDATE sessions SET status='INTERRUPTED', ended_at=? WHERE status='RECORDING'",
-            arrayOf(time))
-        return db.insertOrThrow("sessions", null, ContentValues().apply {
-            put("started_at", time)
-            put("label", label.take(64))
-            put("configuration", config.take(40))
-            put("status", "RECORDING")
-        })
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        require(oldVersion in 1..2 && newVersion==3) {
+            "Unsupported database migration $oldVersion -> $newVersion"
+        }
+        if(oldVersion<2) {
+            for((name,type) in listOf(
+                "battery_net_w" to "REAL","battery_ua" to "INTEGER",
+                "battery_mv" to "INTEGER","battery_source" to "TEXT",
+                "battery_status" to "TEXT","sf_layer_fps" to "REAL",
+                "sf_frame_ms" to "REAL","sf_status" to "TEXT",
+                "observed_cpu_limits" to "TEXT"
+            ))db.execSQL("ALTER TABLE samples ADD COLUMN "+name+" "+type)
+        }
+        db.execSQL("ALTER TABLE sessions ADD COLUMN game_note TEXT")
+        createLinkTable(db)
+    }
+
+    /** User-controlled associations are non-destructive; never merge raw data. */
+    @Synchronized fun links():List<Link> =
+        readableDatabase.rawQuery("""
+            SELECT l.id,l.first_id,l.second_id,l.created_at
+            FROM session_links l
+            INNER JOIN sessions a ON a.id=l.first_id
+            INNER JOIN sessions b ON b.id=l.second_id
+            ORDER BY l.created_at DESC
+        """.trimIndent(),null).use { cursor ->
+            buildList {
+                while(cursor.moveToNext())add(Link(
+                    cursor.getLong(0),cursor.getLong(1),
+                    cursor.getLong(2),cursor.getLong(3)))
+            }
+        }
+
+    @Synchronized fun linkSessions(a:Long,b:Long):Long {
+        require(a>0 && b>0 && a!=b){"Select two distinct recordings"}
+        val first=minOf(a,b);val second=maxOf(a,b)
+        val db=writableDatabase
+        db.rawQuery("SELECT COUNT(*) FROM sessions WHERE id IN (?,?)",
+            arrayOf(first.toString(),second.toString())).use {
+            require(it.moveToFirst() && it.getInt(0)==2){"Recording no longer exists"}
+        }
+        db.insertWithOnConflict("session_links",null,ContentValues().apply {
+            put("first_id",first);put("second_id",second)
+            put("created_at",System.currentTimeMillis())
+        },SQLiteDatabase.CONFLICT_IGNORE)
+        return db.rawQuery(
+            "SELECT id FROM session_links WHERE first_id=? AND second_id=?",
+            arrayOf(first.toString(),second.toString())
+        ).use { c -> check(c.moveToFirst());c.getLong(0) }
+    }
+
+    @Synchronized fun unlinkSessions(a:Long,b:Long):Boolean {
+        val first=minOf(a,b);val second=maxOf(a,b)
+        return writableDatabase.delete("session_links",
+            "first_id=? AND second_id=?",
+            arrayOf(first.toString(),second.toString()))>0
+    }
+
+    /** Automatically numbered session title; game/track is optional metadata. */
+    @Synchronized fun begin(label:String,config:String,time:Long):Long {
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            db.execSQL("UPDATE sessions SET status='INTERRUPTED', ended_at=? "+
+                "WHERE status='RECORDING'",arrayOf(time))
+            val id=db.insertOrThrow("sessions",null,ContentValues().apply {
+                put("started_at",time)
+                put("label","Session")
+                put("game_note",label.trim().take(64).takeIf {
+                    it.isNotBlank() && it!="Gameplay" && !it.startsWith("Session ")
+                })
+                put("configuration",when(config) {
+                    "Stock","Underclocking","Custom" -> config
+                    else -> "Custom"
+                })
+                put("status","RECORDING")
+            })
+            check(id>0)
+            db.update("sessions",ContentValues().apply {
+                put("label","Session $id")
+            },"id=?",arrayOf(id.toString()))
+            db.setTransactionSuccessful()
+            return id
+        } finally {db.endTransaction()}
     }
 
     @Synchronized fun add(id: Long, s: Snapshot) {
@@ -124,7 +199,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
 
     fun list(limit: Int = 80): List<Session> = readableDatabase.rawQuery("""
         SELECT s.id,s.started_at,s.ended_at,s.label,s.configuration,s.status,
-        (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id)
+        (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id),s.game_note
         FROM sessions s ORDER BY s.id DESC LIMIT ?
     """.trimIndent(), arrayOf(limit.coerceIn(1,200).toString())).use { c ->
         buildList {
@@ -132,7 +207,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 c.getLong(0),c.getLong(1),
                 if (c.isNull(2)) null else c.getLong(2),
                 c.getString(3) ?: "",c.getString(4) ?: "",
-                c.getString(5) ?: "UNKNOWN",c.getInt(6)
+                c.getString(5) ?: "UNKNOWN",c.getInt(6),
+                if(c.isNull(7))null else c.getString(7)
             ))
         }
     }
@@ -140,7 +216,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     fun points(id: Long, max: Int = 12000): List<Point> = readableDatabase.rawQuery(
         """SELECT time_ms,cpu_temp,gpu_temp,cpu_pct,gpu_pct,ram_gib,
         battery_net_w,sf_layer_fps,app_package,
-        observed_cpu_limits,busiest_pct,battery_status
+        observed_cpu_limits,busiest_pct,battery_status,busiest_core
         FROM samples WHERE session_id=? ORDER BY time_ms ASC LIMIT ?""",
         arrayOf(id.toString(), max.coerceIn(1,12000).toString())
     ).use { c ->
@@ -150,7 +226,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 value(3),value(4),value(5),value(6),value(7),
                 if (c.isNull(8)) null else c.getString(8),
                 if (c.isNull(9)) null else c.getString(9),
-                value(10), if (c.isNull(11)) null else c.getString(11)))
+                value(10), if (c.isNull(11)) null else c.getString(11),
+                if(c.isNull(12))null else c.getString(12)))
         }
     }
 
@@ -182,7 +259,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     val config=columns.field(row,"configuration")?.take(38) ?: "Unknown profile"
                     sessionId=db.insertOrThrow("sessions",null,ContentValues().apply {
                         put("started_at",firstTime)
-                        put("label","CSV · "+label)
+                        put("label","Imported session")
+                        put("game_note",label)
                         put("configuration",config)
                         put("status",ImportedSessionStatus.store(
                             columns.field(row,"status")))
@@ -229,8 +307,10 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 lastTime=now
             }
             require(rowCount>0) { "CSV contains no samples" }
-            db.update("sessions",ContentValues().apply { put("ended_at",lastTime) },
-                "id=?", arrayOf(sessionId.toString()))
+            db.update("sessions",ContentValues().apply {
+                put("ended_at",lastTime)
+                put("label","Session "+sessionId)
+            },"id=?",arrayOf(sessionId.toString()))
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -259,7 +339,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             arrayOf(id.toString())
         ).use { c ->
             while (c.moveToNext()) {
-                val values = listOf(id.toString(),session.label,session.configuration,session.status) +
+                val values = listOf(id.toString(),session.note?.takeIf{it.isNotBlank()} ?: session.label,session.configuration,session.status) +
                     (0 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" }
                 writer.append(values.joinToString(",") { Csv.escape(it) }).append('\n')
             }

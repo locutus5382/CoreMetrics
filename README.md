@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.7 draft memory-resilience and benchmark-analysis test build, stacked on the unmerged v0.4 branch. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.8 draft analytics-only baseline with an optional theme branch, NOT Play Store ready, stacked on the unmerged v0.4 branch. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -20,6 +20,22 @@
 - On-device collected readings and session history stay in app-private storage unless the user chooses to export them.
 
 **Parallel test build (recommended):** GitHub Actions now also generates **CoreMetrics Preview**, package `com.locutus5382.coremetrics.preview`. It has a separate provider authority, tile, preferences and SQLite database, so it can coexist with the v0.5 installation even if CI debug signing keys differ. Export v0.5 CSVs and import them inside Preview to compare the same recorded runs. Do not use the regular v0.6 debug APK if you want to preserve v0.5 installed simultaneously. Preview is not an upgrade/migration and will not automatically see v0.5 private sessions.
+
+## v0.8 analytics-only (default Frosted Glass UI is unchanged)
+
+Four targeted improvements, no hardware control or sensor polling:
+
+1. **Manual, reversible session links.** New SQLite schema v3 adds an association table only; original session IDs, timestamps, status, samples and CSV stay independent. Compare links/unlinks any selected pair, and shows a visual actual-time gap. It never silently stitches samples or assumes an LMK recovery.
+2. **Observed cap phases.** Show user-selected configuration and all observed cpufreq P3/P7 phases separately; a cap is not proof of which tool applied it. Missing measurements remain unavailable.
+3. **Busiest Core Distribution.** Eight winner-frequency bars drawn from the sampled /proc/stat busiest-core value, not a CPU time-in-state/residency chart. No additional hardware reads.
+4. **Normalized energy.** Integrated battery-terminal Wh, corresponding mWh/min and time-weighted mean W, all computed from the same valid discharging time intervals; missing/charging/large gaps excluded. Report and Compare warn about different workloads, durations and coverage.
+5. **Minor sensor provenance.** Settings explains thermal type discovery, KGSL clock paths, Android battery broadcast, /proc/meminfo and why constant frequency/temperature values do not imply a broken sensor.
+
+**Session naming:** New recordings get an immutable numbered label `Session <ID>`, including imports. Session configuration choices are **Stock, Underclocking, Custom**; game/track is an optional separate note. Historical data and original configuration labels remain intact in SQLite/exports; the session list now shows numbered display names for consistency. Untrusted/unknown observed caps are never silently called Stock.
+
+**Testing:** `CoreMetrics-v0.8-analytics-only` APK uses `com.locutus5382.coremetrics.v08base`, separate from existing v0.5/v0.6/v0.7 installations and databases; import your saved CSVs for comparisons. Do not simultaneously run two overlay recorders. This build retains the exact existing Pure Frosted Glass visual identity, including HUD.
+
+**Separate experimental themes build:** A sibling v0.8 branch will add optional Liquid Glass and Tactical Flat finishes while keeping Frosted default. Theme choice is UI-only, does not alter the native WindowManager gameplay HUD, and requires real Odin landscape/accessibility testing.
 
 ## v0.7 draft — touchable lock, bounded memory recovery and benchmark evidence
 

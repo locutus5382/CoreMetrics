@@ -112,6 +112,7 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
+                    packageName.endsWith(".v08base") -> "CoreMetrics v0.8 Analytics • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -193,9 +194,16 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(ThermalTrendFilter.Direction.UNKNOWN)
             }
             var diagnosticReport by remember { mutableStateOf("") }
-            var label by rememberSaveable { mutableStateOf(prefs.getString("label", "NFS benchmark") ?: "NFS benchmark") }
+            var label by rememberSaveable {
+                mutableStateOf((prefs.getString("label","")?:"")
+                    .takeUnless{it=="NFS benchmark" || it=="Gameplay"} ?: "")
+            }
             var configuration by rememberSaveable {
-                mutableStateOf(prefs.getString("configuration", "Stock") ?: "Stock")
+                mutableStateOf(when(prefs.getString("configuration","Stock")) {
+                    "Stock" -> "Stock"
+                    "Custom" -> "Custom"
+                    else -> "Underclocking"
+                })
             }
             var interval by rememberSaveable { mutableLongStateOf(
                 if (prefs.getLong("interval_ms", 5000L) == 2000L) 2000L else 5000L
@@ -206,6 +214,16 @@ class MainActivity : ComponentActivity() {
             var hudOptions by remember { mutableStateOf(HudOptions.from(this@MainActivity)) }
             var message by remember { mutableStateOf("") }
             var sessionList by remember { mutableStateOf(emptyList<SessionStore.Session>()) }
+            var linkedPairs by remember {
+                mutableStateOf(emptyList<SessionStore.Link>())
+            }
+            var detailedId by rememberSaveable { mutableLongStateOf(0L) }
+            var detailReport by remember {
+                mutableStateOf(null as BenchmarkAnalyzer.Report?)
+            }
+            var detailPoints by remember {
+                mutableStateOf(emptyList<SessionStore.Point>())
+            }
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
@@ -324,6 +342,20 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(page, status.running) {
                 if (page == "Sessions" || page == "Compare") {
                     sessionList = withContext(Dispatchers.IO) { database.list() }
+                    if(page=="Compare")
+                        linkedPairs=withContext(Dispatchers.IO){database.links()}
+                }
+            }
+            LaunchedEffect(page,detailedId) {
+                if(page=="Sessions" && detailedId>0L) {
+                    val response=withContext(Dispatchers.IO) {
+                        val session=database.list(200).firstOrNull{it.id==detailedId}
+                        val points=database.points(detailedId)
+                        val report=session?.let{BenchmarkAnalyzer.analyze(it,points)}
+                        report to points
+                    }
+                    detailReport=response.first
+                    detailPoints=response.second
                 }
             }
             LaunchedEffect(page, firstId, secondId) {
@@ -372,7 +404,7 @@ class MainActivity : ComponentActivity() {
                 val i=HudOptions.addExtras(
                     Intent(this@MainActivity,RecordingService::class.java)
                         .setAction(RecordingService.ARM)
-                        .putExtra(RecordingService.LABEL,label.trim())
+                        .putExtra(RecordingService.LABEL,label.trim().ifBlank{"Gameplay"})
                         .putExtra(RecordingService.CONFIG,configuration)
                         .putExtra(RecordingService.INTERVAL,interval),hudOptions)
                 runCatching{startForegroundService(i)}.fold(
@@ -542,12 +574,12 @@ class MainActivity : ComponentActivity() {
                                         GlassPanel {
                                             Text("RECORDING CONTROL  ·  ONE USER-STARTED SESSION",
                                                 color = coreCyan, style = MaterialTheme.typography.titleMedium)
-                                            Text("Game label", color = muted)
+                                            Text("Optional game / track note", color = muted)
                                             OutlinedTextField(label, { label = it.take(64) },
                                                 modifier = Modifier.fillMaxWidth(), singleLine = true,
-                                                label = { Text("Game / track label") })
+                                                label = { Text("Optional note: game, track or driver") })
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                listOf("Stock", "ClusterTune", "Custom").forEach { item ->
+                                                listOf("Stock", "Underclocking", "Custom").forEach { item ->
                                                     FilterChip(selected = configuration == item,
                                                         onClick = { configuration = item },
                                                         label = { Text(item) })
@@ -645,7 +677,11 @@ class MainActivity : ComponentActivity() {
                                     }
                                     "Sessions" -> {
                                         GlassPanel {
-                                            Text("Recorded runs", style = MaterialTheme.typography.titleMedium)
+                                            Text("Recorded sessions", style = MaterialTheme.typography.titleMedium)
+                                            Text("Session names are generated automatically. "+
+                                                "The game / track note is optional.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
                                             OutlinedButton(onClick={importFile.launch(arrayOf("*/*"))},
                                                  enabled=!status.running && !status.starting) {
                                                  Text("Import CSV")
@@ -656,22 +692,37 @@ class MainActivity : ComponentActivity() {
                                                 scope.launch { sessionList = withContext(Dispatchers.IO) { database.list() } }
                                             }) { Text("Refresh history") }
                                             if (sessionList.isEmpty()) Text("No sessions yet.", color = muted)
+                                            detailReport?.takeIf{detailedId>0L}?.let{r ->
+                                                Text("Session "+detailedId+" · "+
+                                                    r.quality.category+" · "+
+                                                    r.quality.score+"/100",
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                EnergyRatePanel(r.energy)
+                                                ObservedProfilePanel(r.session.configuration,detailPoints)
+                                                CoreWinnerPanel(detailPoints)
+                                                OutlinedButton(onClick={
+                                                    detailedId=0L
+                                                    detailReport=null;detailPoints=emptyList()
+                                                }){Text("Close session analysis")}
+                                            }
                                             sessionList.forEach { s ->
                                                 HorizontalDivider(color = Color(0x335F91A7))
                                                 Row(verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Column(Modifier.weight(1f)) {
-                                                        Text(s.label + " · " + s.configuration, color = white,
+                                                        Text("Session " + s.id + " · " + s.configuration, color = white,
                                                             fontWeight = FontWeight.Bold)
                                                         Text(time(s.startedAt) + " · " + s.count + " samples · " + s.status,
                                                             color = muted, style = MaterialTheme.typography.labelSmall)
+                                                        s.note?.let{Text("Note: "+it,color=coreSecondary,
+                                                            style=MaterialTheme.typography.labelSmall)}
                                                     }
                                                     OutlinedButton(onClick = {
                                                         exportId = s.id
                                                         exportFile.launch("CoreMetrics_" + s.id + ".csv")
                                                     }) { Text("CSV") }
                                                     OutlinedButton(onClick={
-                                                        firstId=s.id;page="Compare"
+                                                        detailedId=s.id;page="Sessions"
                                                     }){Text("Analyze")}
                                                     OutlinedButton(onClick={
                                                         reportAId=s.id;reportBId=0L
@@ -699,23 +750,60 @@ class MainActivity : ComponentActivity() {
                                                     style=MaterialTheme.typography.bodySmall)
                                                 Switch(activeOnly,onCheckedChange={activeOnly=it})
                                             }
-                                            Text("Select Stock / A", color = cyan)
+                                            Text("Select session A", color = cyan)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 sessionList.take(14).forEach { s ->
                                                     FilterChip(selected = firstId == s.id,
                                                         onClick = { firstId = s.id },
-                                                        label = { Text("#" + s.id + " " + s.configuration) })
+                                                        label = { Text("Session " + s.id + " · " + s.configuration) })
                                                 }
                                             }
-                                            Text("Select Tuned / B", color = cyan)
+                                            Text("Select session B", color = cyan)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 sessionList.take(14).forEach { s ->
                                                     FilterChip(selected = secondId == s.id,
                                                         onClick = { secondId = s.id },
-                                                        label = { Text("#" + s.id + " " + s.configuration) })
+                                                        label = { Text("Session " + s.id + " · " + s.configuration) })
                                                 }
+                                            }
+                                            if(firstId>0L && secondId>0L && firstId!=secondId) {
+                                                val linked=linkedPairs.any{
+                                                    setOf(it.firstId,it.secondId)==setOf(firstId,secondId)
+                                                }
+                                                OutlinedButton(onClick={
+                                                    scope.launch {
+                                                        val result=withContext(Dispatchers.IO) {
+                                                            runCatching {
+                                                                if(linked) database.unlinkSessions(
+                                                                    firstId,secondId)
+                                                                else database.linkSessions(firstId,secondId)
+                                                            }
+                                                        }
+                                                        result.fold(onSuccess={
+                                                            linkedPairs=withContext(Dispatchers.IO){
+                                                                database.links()
+                                                            }
+                                                            message=if(linked)
+                                                                "Link removed; recordings unchanged"
+                                                            else "Manual link saved; samples remain separate"
+                                                        },onFailure={e->
+                                                            message="Link failed: "+(e.message?:"unknown")
+                                                        })
+                                                    }
+                                                }){Text(if(linked)"Unlink recordings"
+                                                    else "Link these recordings")}
+                                                if(linked && firstPoints.isNotEmpty() &&
+                                                    secondPoints.isNotEmpty()) {
+                                                    val a=sessionList.firstOrNull{it.id==firstId}
+                                                    val b=sessionList.firstOrNull{it.id==secondId}
+                                                    if(a!=null && b!=null)LinkedSessionsTimeline(
+                                                        a,firstPoints,b,secondPoints)
+                                                }else Text("Manual and reversible. "+
+                                                    "No interpolated samples or presumed restart.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
                                             }
                                             val analysisA=remember(firstPoints,firstId,sessionList) {
                                                 sessionList.firstOrNull{it.id==firstId}
@@ -728,6 +816,9 @@ class MainActivity : ComponentActivity() {
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints)}
                                             }
                                             analysisA?.let { r ->
+                                                ObservedProfilePanel(r.session.configuration,firstPoints)
+                                                CoreWinnerPanel(firstPoints)
+                                                EnergyRatePanel(r.energy)
                                                 HorizontalDivider(color=coreBorder)
                                                 Text("BENCHMARK RELIABILITY · "+r.quality.score+
                                                     "/100 · "+r.quality.category,
@@ -766,6 +857,34 @@ class MainActivity : ComponentActivity() {
                                                 }){Text("Export evidence report")}
                                             }
                                             if(analysisA!=null && analysisB!=null) {
+                                                Text("SESSION B · NORMALIZED ENERGY",
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                EnergyRatePanel(analysisB.energy)
+                                                val rateA=analysisA.energy.milliWhPerMinute
+                                                val rateB=analysisB.energy.milliWhPerMinute
+                                                Text("B − A normalized rate: "+
+                                                    (if(rateA!=null && rateB!=null)
+                                                        String.format(Locale.US,"%.2f mWh/min",
+                                                            rateB-rateA) else "unavailable"),
+                                                    color=solarGold)
+                                                if(analysisA.elapsedSeconds>0.0 &&
+                                                    analysisB.elapsedSeconds>0.0 &&
+                                                    max(analysisA.elapsedSeconds,
+                                                        analysisB.elapsedSeconds)/
+                                                        kotlin.math.min(analysisA.elapsedSeconds,
+                                                            analysisB.elapsedSeconds)>1.2)
+                                                    Text("CAUTION: durations differ by >20%.",
+                                                        color=solarOrange)
+                                                if(analysisA.meanGpuLoad!=null &&
+                                                    analysisB.meanGpuLoad!=null &&
+                                                    kotlin.math.abs(analysisA.meanGpuLoad-
+                                                        analysisB.meanGpuLoad)>10.0)
+                                                    Text("CAUTION: GPU workload differs by >10 pp.",
+                                                        color=solarOrange)
+                                                if(analysisA.energy.coveragePct<80.0 ||
+                                                    analysisB.energy.coveragePct<80.0)
+                                                    Text("CAUTION: poor valid discharge coverage.",
+                                                        color=solarOrange)
                                                 Text("B quality: "+analysisB.quality.score+"/100 · "+
                                                     "B energy: "+(analysisB.energy.wh?.let{
                                                         String.format(Locale.US,"%.4f Wh",it)
@@ -975,6 +1094,25 @@ class MainActivity : ComponentActivity() {
                                             }) { Text("Add Record tile to Quick Settings") }
                                             Text("No root, PServer, INTERNET permission or hardware writes.",
                                                 style=MaterialTheme.typography.bodySmall,color=muted)
+                                            Text("SENSOR PROVENANCE · READ-ONLY",color=coreCyan,
+                                                style=MaterialTheme.typography.titleSmall)
+                                            Text("CPU/GPU °C: readable sysfs thermal zones selected by " +
+                                                "cpu-/cpuss- and gpu-/gpuss- sensor TYPE, not a fixed zone number.\n"+
+                                                "GPU MHz: KGSL cur_freq or gpuclk (instantaneous frequency; " +
+                                                "not an inferred performance-mode floor).\n"+
+                                                "Battery °C/%: Android ACTION_BATTERY_CHANGED; " +
+                                                "temperature reported in tenths of a degree.\n"+
+                                                "Net battery W: Android battery current × voltage where valid.\n"+
+                                                "System RAM used: /proc/meminfo MemTotal − MemAvailable.\n"+
+                                                "Busiest core: /proc/stat interval winner, NOT core residency.\n"+
+                                                "Game FPS: not verified on the Portal; no interpolation.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
+                                            Text("Constant GPU MHz or integer battery temperature is not " +
+                                                "automatically a sensor error; source precision and " +
+                                                "mode effects require device verification.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.labelSmall)
                                             Text("Battery power shows battery-terminal flow, not whole-device or wall power. Charging/bypass sessions cannot be compared as power efficiency.",
                                                 style = MaterialTheme.typography.bodySmall,color=muted)
                                             HorizontalDivider(color=coreBorder)
