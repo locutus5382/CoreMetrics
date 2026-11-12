@@ -93,6 +93,13 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         }, "id=?", arrayOf(id.toString()))
     }
 
+    /** Count already persisted points when recovering the same SQLite ID. */
+    @Synchronized fun storedSampleCount(id:Long):Long =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM samples WHERE session_id=?",
+            arrayOf(id.toString())
+        ).use { c -> if(c.moveToFirst())c.getLong(0) else 0L }
+
     /** Preserve the original elapsed session timer across an LMK restart. */
     @Synchronized fun originalStartMs(id:Long):Long? =
         readableDatabase.rawQuery("SELECT started_at FROM sessions WHERE id=?",

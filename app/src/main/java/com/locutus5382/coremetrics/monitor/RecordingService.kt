@@ -338,13 +338,15 @@ class RecordingService:Service() {
                                 db.originalStartMs(id)
                             } ?: System.currentTimeMillis()
                         else System.currentTimeMillis()
-                        MonitorState.sampleCount=0L
+                        MonitorState.sampleCount=if(restoredId>0L)
+                            withContext(Dispatchers.IO){db.storedSampleCount(id)}
+                        else 0L
                         MonitorState.starting=false
                         MonitorState.running=true
                         MonitorState.message=label+" · "+config
                         RecorderJournal.event(this@RecordingService,
                             if(restoredId>0L)"SESSION_RESUMED" else "SESSION_PERSISTED",
-                            "id="+id)
+                            "id="+id+" persisted_count="+MonitorState.sampleCount)
                         withContext(Dispatchers.Main.immediate) {
                             if(armed)hud.mode(true,MonitorState.startedAt)
                             refreshTile()

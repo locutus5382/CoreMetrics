@@ -55,7 +55,7 @@ internal object RecorderLease {
     }
     fun clear(context:Context):Boolean = prefs(context).edit()
         .putBoolean("active",false).putBoolean("recording",false)
-        .remove("id").commit()
+        .remove("id").remove("recoveries").commit()
 
     /**
      * A process killed during an explicit recording has a fresh lease;
