@@ -17,6 +17,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -202,31 +204,34 @@ class MainActivity : ComponentActivity() {
                     InstrumentBackdrop()
                     Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Column(
-                            Modifier.width(170.dp).fillMaxHeight()
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color(0xB518293A))
-                                .border(1.dp, Color(0x667ED2E2), RoundedCornerShape(20.dp))
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            Modifier.width(146.dp).fillMaxHeight()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xDD132337))
+                                .border(1.dp, Color(0xAA41687B), RoundedCornerShape(16.dp))
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal=9.dp,vertical=10.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Text("CORE", color = cyan, style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold)
-                            Text("METRICS", color = white, style = MaterialTheme.typography.titleMedium)
-                            Text("TELEMETRY STUDIO", color = muted, style = MaterialTheme.typography.labelSmall)
+                            Text("CM",color=coreCyan,
+                                style=MaterialTheme.typography.headlineSmall,
+                                fontWeight=FontWeight.Black)
+                            Text("COREMETRICS",color=white,
+                                style=MaterialTheme.typography.labelMedium,
+                                fontWeight=FontWeight.Bold)
+                            Text("INSTRUMENT GLASS",color=muted,
+                                style=MaterialTheme.typography.labelSmall)
                             Spacer(Modifier.height(6.dp))
                             pages.forEach { item ->
-                                Button(onClick = { page = item }, modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor =
-                                        if (item == page) Color(0xFF23637C) else Color(0x5530475B))) {
-                                    Text(item, color = white)
-                                }
+                                RailAction(item, page==item) { page=item }
                             }
-                            Spacer(Modifier.weight(1f))
-                            Text(if (status.running) "● RECORDING" else if (status.starting) "◌ STARTING" else "○ IDLE",
-                                color = if (status.running) cyan else muted,
-                                style = MaterialTheme.typography.labelMedium)
-                            Text("v0.2 alpha · read-only", color = muted,
-                                style = MaterialTheme.typography.labelSmall)
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider(color=coreBorder)
+                            Text(if(status.running) "● RECORDING"
+                                else if(status.starting) "◌ STARTING"
+                                else "○ IDLE",color=if(status.running) coreMint else muted,
+                                style=MaterialTheme.typography.labelSmall)
+                            Text("v0.3 • read-only",color=muted,
+                                style=MaterialTheme.typography.labelSmall)
                         }
                         Column(Modifier.weight(1f).fillMaxHeight()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -576,5 +581,25 @@ private fun CompareChart(a: List<SessionStore.Point>, b: List<SessionStore.Point
         }
         pathFor(a)?.let { drawPath(it, cyan, style = Stroke(width=3f)) }
         pathFor(b)?.let { drawPath(it, Color(0xFFFFC077), style = Stroke(width=3f)) }
+    }
+}
+
+@Composable
+private fun RailAction(label: String, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Row(Modifier.fillMaxWidth().height(40.dp)
+        .clip(shape)
+        .background(if(selected) Color(0xEE235268) else Color(0x54182436))
+        .border(1.dp,if(selected) coreCyan.copy(alpha=.65f) else coreBorder.copy(alpha=.50f),shape)
+        .clickable(role=Role.Button,onClick=onClick)
+        .padding(horizontal=10.dp),
+        verticalAlignment=Alignment.CenterVertically,
+        horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+        Box(Modifier.width(3.dp).height(15.dp)
+            .background(if(selected) coreCyan else Color(0xFF567184),
+                RoundedCornerShape(3.dp)))
+        Text(label,color=if(selected) coreText else coreSecondary,
+            style=MaterialTheme.typography.labelLarge,
+            fontWeight=if(selected) FontWeight.Bold else FontWeight.Medium)
     }
 }
