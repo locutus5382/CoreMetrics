@@ -35,7 +35,8 @@ object V08Analytics {
             SessionRegimeAnalyzer.Sample(p.timeMs,p.observedCpuLimits,p.cpu,p.gpu,
                 p.cpuLoad,p.busiestCorePct,p.gpuLoad,p.ram,
                 p.batteryWatts,p.batteryPowerStatus)
-        }).map{ObservedPhase(it.startMs,it.endMs,it.sampleCount,it.key,it.label)}
+        }).filterNot {it.key=="P3:?|P7:?"}
+            .map{ObservedPhase(it.startMs,it.endMs,it.sampleCount,it.key,it.label)}
         val names=phases.map{it.description}
         val selectedLower=selected.lowercase(Locale.US)
         val mismatch=selectedLower.contains("stock") && names.any{
