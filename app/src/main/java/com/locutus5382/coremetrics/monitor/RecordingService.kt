@@ -32,192 +32,300 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Explicit user-started recording. No boot receiver, no privilege or kernel writes. */
-class RecordingService : Service() {
+/**
+ * User-started :monitor foreground service. ARMED = one visible overlay and
+ * notification but NO telemetry, polling task or SQLite writes. REC = existing
+ * session collector. HUD click switches modes without an extra service.
+ */
+class RecordingService:Service() {
     companion object {
-        const val START = "com.locutus5382.coremetrics.START"
-        const val STOP = "com.locutus5382.coremetrics.STOP"
-        const val LABEL = "label"
-        const val CONFIG = "configuration"
-        const val INTERVAL = "interval"
-        private const val CHANNEL = "coremetrics_monitor"
-        private const val NOTIFICATION_ID = 4411
+        const val START="com.locutus5382.coremetrics.START"
+        const val STOP="com.locutus5382.coremetrics.STOP"
+        const val ARM="com.locutus5382.coremetrics.ARM_HUD"
+        const val DISARM="com.locutus5382.coremetrics.DISARM_HUD"
+        const val HUD_CONFIG="com.locutus5382.coremetrics.HUD_CONFIG"
+        const val LABEL="label"
+        const val CONFIG="configuration"
+        const val INTERVAL="interval"
+        private const val CHANNEL="coremetrics_monitor"
+        private const val NOTIFICATION_ID=4411
     }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private lateinit var db: SessionStore
-    private lateinit var hud: RecorderHud
-    private var task: Job? = null
-    private var stopping = false
+    private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default)
+    private lateinit var db:SessionStore
+    private lateinit var hud:RecorderHud
+    private var task:Job?=null
+    private var stopping=false
+    private var armed=false
+    private var disarmAfterStop=false
+    private var settings=HudOptions()
+    private var armedLabel="Gameplay"
+    private var armedConfig="Stock"
+    private var armedInterval=5000L
 
     override fun onCreate() {
         super.onCreate()
-        db = SessionStore(applicationContext)
-        hud = RecorderHud(applicationContext)
-        RecorderJournal.event(this, "SERVICE_CREATED", "pid=" + android.os.Process.myPid())
+        db=SessionStore(applicationContext)
+        hud=RecorderHud(applicationContext)
+        settings=HudOptions.from(this)
+        RecorderJournal.event(this,"SERVICE_CREATED","pid="+android.os.Process.myPid())
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "CoreMetrics recording",
-                NotificationManager.IMPORTANCE_LOW)
-        )
+            NotificationChannel(CHANNEL,"CoreMetrics recording / HUD standby",
+                NotificationManager.IMPORTANCE_LOW))
     }
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent:Intent?):IBinder?=null
+    private fun notificationsAllowed():Boolean = Build.VERSION.SDK_INT<33 ||
+        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==
+            PackageManager.PERMISSION_GRANTED
+    private fun foreground(title:String,detail:String,isStandby:Boolean):Boolean = try {
+        val n=notification(title,detail,isStandby)
+        if(Build.VERSION.SDK_INT>=34)startForeground(NOTIFICATION_ID,n,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        else startForeground(NOTIFICATION_ID,n)
+        true
+    }catch(e:Exception) {
+        RecorderJournal.event(this,"FGS_START_FAILED",e.javaClass.simpleName)
+        false
+    }
+    private fun refreshTile()=runCatching{
+        TileService.requestListeningState(this,ComponentName(this,SessionTile::class.java))
+    }.getOrNull()
+    private fun stopServiceNow(){
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+    private fun disarmNow(){
+        armed=false
+        MonitorState.standby=false
+        MonitorState.hudState=hud.hide()
+        MonitorState.clear("Standby closed")
+        refreshTile()
+        stopServiceNow()
+    }
+    private fun standby(){
+        MonitorState.clear("HUD ready · tap REC in game")
+        MonitorState.standby=true
+        hud.mode(false)
+        foreground("CoreMetrics · standby","No sensors sampled until REC",true)
+        refreshTile()
+    }
+    private fun hudClick(){
+        val i=Intent(this,RecordingService::class.java)
+        if(MonitorState.running || MonitorState.starting) i.action=STOP
+        else {
+            i.action=START
+            i.putExtra(LABEL,armedLabel)
+            i.putExtra(CONFIG,armedConfig)
+            i.putExtra(INTERVAL,armedInterval)
+        }
+        startService(i)
+    }
+    private fun attachHud():String {
+        val result=hud.show(settings,
+            onRecordClick={runCatching{hudClick()}.onFailure{
+                RecorderJournal.event(this,"HUD_CLICK_ERROR",it.javaClass.simpleName)
+            }},
+            onDismissClick={startService(Intent(this,RecordingService::class.java)
+                .setAction(DISARM))})
+        MonitorState.hudState=result
+        RecorderJournal.event(this,"HUD_ATTACH",result)
+        return result
+    }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        RecorderJournal.event(this, "SERVICE_COMMAND", intent?.action ?: "null")
-        when (intent?.action) {
+    override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
+        RecorderJournal.event(this,"SERVICE_COMMAND",intent?.action?:"null")
+        when(intent?.action){
+            ARM -> {
+                if(!notificationsAllowed() || !hud.permissionGranted()){
+                    MonitorState.message=if(!hud.permissionGranted())
+                        "Allow Display over other apps for standby HUD"
+                    else "Allow notifications for standby"
+                    RecorderJournal.event(this,"ARM_DENIED",MonitorState.message)
+                    if(!armed && task?.isActive!=true)stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+                settings=HudOptions.from(this,intent)
+                val prefs=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
+                armedLabel=(intent.getStringExtra(LABEL)
+                    ?:prefs.getString("label","Gameplay")?:"Gameplay").take(64)
+                armedConfig=(intent.getStringExtra(CONFIG)
+                    ?:prefs.getString("configuration","Stock")?:"Stock").take(40)
+                armedInterval=if(intent.getLongExtra(INTERVAL,
+                    prefs.getLong("interval_ms",5000L))==2000L)2000L else 5000L
+                if(task?.isActive!=true && !foreground("CoreMetrics · HUD standby",
+                        "No telemetry until REC",true)){
+                    MonitorState.message="Foreground standby failed"
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+                val status=attachHud()
+                if(status.startsWith("HUD_ADD_FAILED") || status=="HUD_PERMISSION_MISSING"){
+                    if(task?.isActive!=true)stopServiceNow()
+                    return START_NOT_STICKY
+                }
+                armed=true
+                if(task?.isActive!=true && !MonitorState.starting)standby()
+                else hud.mode(true,MonitorState.startedAt)
+                RecorderJournal.event(this,"ARMED_NO_SAMPLING")
+                refreshTile()
+                return START_NOT_STICKY
+            }
+            HUD_CONFIG -> {
+                // A stale UI status must not create an idle :monitor service.
+                if(!armed && task?.isActive!=true) {
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+                settings=HudOptions.from(this,intent)
+                if(hud.attached()){
+                    hud.configure(settings)
+                    MonitorState.hudState="HUD_CONFIGURED"
+                }
+                return START_NOT_STICKY
+            }
+            DISARM -> {
+                RecorderJournal.event(this,"DISARM_REQUESTED")
+                armed=false
+                disarmAfterStop=true
+                MonitorState.standby=false
+                val current=task
+                if(current?.isActive==true || MonitorState.starting){
+                    stopping=true
+                    current?.cancel()
+                } else disarmNow()
+                return START_NOT_STICKY
+            }
             STOP -> {
-                RecorderJournal.event(this,"STOP_REQUESTED","id=" + MonitorState.sessionId)
-                stopping = true
-                MonitorState.message = "Stopping…"
-                val runningTask = task
-                if (runningTask == null) closeService() else runningTask.cancel()
+                RecorderJournal.event(this,"STOP_REQUESTED","id="+MonitorState.sessionId)
+                stopping=true
+                MonitorState.message="Stopping and saving…"
+                val current=task
+                if(current==null || current.isCompleted){
+                    stopping=false
+                    if(armed)standby()else disarmNow()
+                }else current.cancel()
                 refreshTile()
                 return START_NOT_STICKY
             }
             START -> {
-                if (task?.isActive == true || MonitorState.starting || stopping) {
-                    RecorderJournal.event(this,"START_IGNORED","already running/starting/stopping")
+                if(task?.isActive==true || MonitorState.starting || stopping){
+                    RecorderJournal.event(this,"START_IGNORED","already active")
                     return START_NOT_STICKY
                 }
-                RecorderJournal.event(this,"START_REQUESTED","User start")
-                // Safety floor while launch/LMK issues are investigated: no 1 Hz IO
-                // loop in this build, even if an older v0.2 preference says 1 s.
-                val requestedInterval = intent.getLongExtra(INTERVAL, 5000L)
-                val interval = if (requestedInterval == 2000L) 2000L else 5000L
-                if (requestedInterval != interval)
-                    RecorderJournal.event(this,"SAMPLE_INTERVAL_NORMALIZED",
-                        "requested=" + requestedInterval + " actual=" + interval)
-                val label = (intent.getStringExtra(LABEL) ?: "Gameplay").take(64)
-                val config = (intent.getStringExtra(CONFIG) ?: "Unspecified").take(40)
-                if (Build.VERSION.SDK_INT >= 33 &&
-                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                    PackageManager.PERMISSION_GRANTED) {
-                    RecorderJournal.event(this,"START_DENIED","POST_NOTIFICATIONS missing")
-                    MonitorState.clear("Notifications required to start recording")
-                    stopSelf(startId)
+                if(!notificationsAllowed()){
+                    MonitorState.message="Notifications permission required"
+                    RecorderJournal.event(this,"START_DENIED","notification permission")
+                    if(!armed)stopSelf(startId)
                     return START_NOT_STICKY
                 }
-                MonitorState.starting = true
-                try {
-                    val n = notification("CoreMetrics: starting", label)
-                    if (Build.VERSION.SDK_INT >= 34) startForeground(NOTIFICATION_ID, n,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-                    else startForeground(NOTIFICATION_ID, n)
-                } catch (e: Exception) {
-                    RecorderJournal.event(this,"FOREGROUND_START_FAILED",
-                        e.javaClass.simpleName + ": " + (e.message ?: ""))
-                    MonitorState.clear("Cannot start foreground recorder: " + e.javaClass.simpleName)
-                    stopSelf(startId)
+                val p=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
+                val request=intent.getLongExtra(INTERVAL,p.getLong("interval_ms",5000L))
+                val interval=if(request==2000L)2000L else 5000L
+                val label=(intent.getStringExtra(LABEL)
+                    ?:p.getString("label","Gameplay")?:"Gameplay").take(64)
+                val config=(intent.getStringExtra(CONFIG)
+                    ?:p.getString("configuration","Stock")?:"Stock").take(40)
+                armedLabel=label
+                armedConfig=config
+                armedInterval=interval
+                RecorderJournal.event(this,"START_REQUESTED","every="+interval)
+                if(!foreground("CoreMetrics · starting",label,false)){
+                    MonitorState.message="Foreground recorder unavailable"
+                    if(!armed)stopSelf(startId)
                     return START_NOT_STICKY
                 }
-                RecorderJournal.event(this,"FOREGROUND_STARTED","startId=" + startId)
+                MonitorState.starting=true
+                MonitorState.standby=false
+                val wantsHud=armed || p.getBoolean("hud_enabled",false)
+                if(wantsHud && hud.permissionGranted()){
+                    settings=HudOptions.from(this,intent)
+                    val result=attachHud()
+                    if(result=="HUD_ATTACHED" || result=="HUD_ALREADY_ATTACHED") {
+                        armed=true
+                        hud.mode(true,System.currentTimeMillis())
+                    }
+                }
                 refreshTile()
-                task = scope.launch {
-                    var id = 0L
-                    var finalStatus = "INTERRUPTED"
-                    try {
-                        id = withContext(Dispatchers.IO) {
-                            // Disk IO must never precede startForeground on the
-                            // service main thread. Eden launch may be memory-heavy.
-                            val recovered = db.recoverInterruptedSessions(System.currentTimeMillis())
-                            if (recovered > 0) RecorderJournal.event(
-                                this@RecordingService, "RECOVERED_INTERRUPTED",
-                                recovered.toString()
-                            )
-                            db.begin(label, config, System.currentTimeMillis())
+                task=scope.launch {
+                    var id=0L
+                    var outcome="INTERRUPTED"
+                    try{
+                        id=withContext(Dispatchers.IO){
+                            val recovered=db.recoverInterruptedSessions(System.currentTimeMillis())
+                            if(recovered>0)RecorderJournal.event(this@RecordingService,
+                                "RECOVERED_INTERRUPTED",recovered.toString())
+                            db.begin(label,config,System.currentTimeMillis())
                         }
-                        RecorderJournal.event(this@RecordingService, "SESSION_PERSISTED", "id=" + id)
-                        MonitorState.sessionId = id
-                        MonitorState.startedAt = System.currentTimeMillis()
-                        MonitorState.sampleCount = 0
-                        MonitorState.starting = false
-                        MonitorState.running = true
-                        MonitorState.message = label + " · " + config
-                        refreshTile()
-                        val sampler = DirectSampler(application)
-                        val detector = ForegroundAttribution(applicationContext)
-                        // All seven supplied November Portal captures reported
-                        // SURFACEFLINGER_PERMISSION_DENIED. Do not keep starting
-                        // dumpsys child processes under heavy emulator load.
-                        val frame = FrameEstimate(null,null,0,
+                        MonitorState.sessionId=id
+                        MonitorState.startedAt=System.currentTimeMillis()
+                        MonitorState.sampleCount=0L
+                        MonitorState.starting=false
+                        MonitorState.running=true
+                        MonitorState.message=label+" · "+config
+                        RecorderJournal.event(this@RecordingService,"SESSION_PERSISTED","id="+id)
+                        withContext(Dispatchers.Main.immediate) {
+                            if(armed)hud.mode(true,MonitorState.startedAt)
+                            refreshTile()
+                        }
+                        val sampler=DirectSampler(application)
+                        val detector=ForegroundAttribution(applicationContext)
+                        val fps=FrameEstimate(null,null,0,
                             "SURFACEFLINGER_PERMISSION_DENIED_ON_PORTAL")
-                        val hudOn = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
-                            .getBoolean("hud_enabled", false)
-                        if (hudOn) {
-                            val result = withContext(Dispatchers.Main.immediate) {
-                                runCatching { hud.show() }.getOrElse {
-                                    "HUD_SHOW_FAILED_" + it.javaClass.simpleName
-                                }
+                        var next=SystemClock.elapsedRealtime()
+                        var lastNotice=0L
+                        while(isActive && !stopping){
+                            val s=withContext(Dispatchers.IO){
+                                sampler.sample(detector.current(System.currentTimeMillis()),fps)
                             }
-                            MonitorState.hudState = result
-                            RecorderJournal.event(this@RecordingService,"HUD_START",result)
-                        }
-                        if (!hudOn) MonitorState.hudState = "HUD_OFF"
-                        var next = SystemClock.elapsedRealtime()
-                        var lastNotification = 0L
-                        while (isActive && !stopping) {
-                            val s = withContext(Dispatchers.IO) {
-                                val foreground = detector.current(System.currentTimeMillis())
-                                sampler.sample(foreground, frame)
-                            }
-                            withContext(Dispatchers.IO) { db.add(id, s) }
-                            MonitorState.latest = s
+                            withContext(Dispatchers.IO){db.add(id,s)}
+                            MonitorState.latest=s
                             MonitorState.sampleCount++
-                            if (hudOn && hud.attached()) {
-                                withContext(Dispatchers.Main.immediate) {
-                                    runCatching { hud.update(s,MonitorState.sampleCount) }
-                                        .onFailure {
-                                            RecorderJournal.event(this@RecordingService,
-                                                "HUD_UPDATE_FAILED",it.javaClass.simpleName)
-                                        }
-                                }
+                            if(armed && hud.attached())withContext(Dispatchers.Main.immediate){
+                                runCatching{hud.update(s,MonitorState.sampleCount)}
+                                    .onFailure{RecorderJournal.event(this@RecordingService,
+                                        "HUD_UPDATE_ERROR",it.javaClass.simpleName)}
                             }
-                            if (MonitorState.sampleCount == 1L) {
-                                RecorderJournal.event(this@RecordingService,"FIRST_SAMPLE_WRITTEN","id=" + id)
-                            }
-                            val elapsed = SystemClock.elapsedRealtime()
-                            if (elapsed - lastNotification > 12_000L) {
-                                lastNotification = elapsed
+                            if(MonitorState.sampleCount==1L)RecorderJournal.event(
+                                this@RecordingService,"FIRST_SAMPLE_WRITTEN","id="+id)
+                            val elapsed=SystemClock.elapsedRealtime()
+                            if(elapsed-lastNotice>12_000L){
+                                lastNotice=elapsed
                                 getSystemService(NotificationManager::class.java).notify(
                                     NOTIFICATION_ID,
-                                    notification("● REC · " + MonitorState.sampleCount + " samples",
-                                        label + " · " + config)
-                                )
+                                    notification("● REC · "+MonitorState.sampleCount+
+                                        " samples",label+" · "+config,false))
                             }
-                            next += interval
-                            val wait = next - SystemClock.elapsedRealtime()
-                            if (wait > 0L) delay(wait) else next = SystemClock.elapsedRealtime()
+                            next+=interval
+                            val delayMs=next-SystemClock.elapsedRealtime()
+                            if(delayMs>0L)delay(delayMs)else next=SystemClock.elapsedRealtime()
                         }
-                        finalStatus = "COMPLETED"
-                    } catch (_: CancellationException) {
-                        finalStatus = if (stopping) "COMPLETED" else "INTERRUPTED"
-                    } catch (e: Exception) {
+                        outcome="COMPLETED"
+                    }catch(_:CancellationException){
+                        outcome=if(stopping) "COMPLETED" else "INTERRUPTED"
+                    }catch(e:Exception){
+                        outcome="FAILED"
                         RecorderJournal.event(this@RecordingService,"SAMPLING_FAILED",
-                            e.javaClass.simpleName + ": " + (e.message ?: ""))
-                        finalStatus = "FAILED"
-                        MonitorState.message = "Recording failure: " + e.javaClass.simpleName
-                    } finally {
-                        withContext(NonCancellable) {
-                            val hudResult = withContext(Dispatchers.Main.immediate) {
-                                runCatching { hud.hide() }.getOrElse {
-                                    "HUD_REMOVE_EXCEPTION_" + it.javaClass.simpleName
+                            e.javaClass.simpleName+":"+(e.message?:""))
+                    }finally{
+                        withContext(NonCancellable){
+                            withContext(Dispatchers.IO){
+                                if(id!=0L)runCatching{
+                                    db.finish(id,System.currentTimeMillis(),outcome)
                                 }
                             }
-                            MonitorState.hudState = hudResult
                             RecorderJournal.event(this@RecordingService,
-                                "HUD_STOP",hudResult)
-                            withContext(Dispatchers.IO) {
-                            if (id != 0L) runCatching {
-                                db.finish(id, System.currentTimeMillis(), finalStatus)
-                            }
-                            RecorderJournal.event(this@RecordingService,"SESSION_FINALIZED",
-                                "id=" + id + " status=" + finalStatus +
-                                    " samples=" + MonitorState.sampleCount)
-                            MonitorState.clear(
-                                if (finalStatus == "COMPLETED") "Recording saved"
-                                else "Recording " + finalStatus.lowercase()
-                            )
-                            refreshTile()
-                            closeService()
+                                "SESSION_FINALIZED","id="+id+" status="+outcome+
+                                    " samples="+MonitorState.sampleCount)
+                            MonitorState.clear(if(outcome=="COMPLETED")
+                                "Recording saved" else "Recording "+outcome.lowercase())
+                            withContext(Dispatchers.Main.immediate){
+                                task=null
+                                stopping=false
+                                if(armed && !disarmAfterStop){
+                                    standby()
+                                }else{
+                                    disarmAfterStop=false
+                                    disarmNow()
+                                }
                             }
                         }
                     }
@@ -227,42 +335,33 @@ class RecordingService : Service() {
             else -> return START_NOT_STICKY
         }
     }
-
-    private fun notification(title: String, detail: String): Notification {
-        val open = PendingIntent.getActivity(this, 200,
-            Intent(this, MainActivity::class.java),
+    private fun notification(title:String,detail:String,standby:Boolean):Notification{
+        val open=PendingIntent.getActivity(this,200,
+            Intent(this,MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val stop = PendingIntent.getService(this, 201,
-            Intent(this, RecordingService::class.java).setAction(STOP),
+        val exit=PendingIntent.getService(this,201,
+            Intent(this,RecordingService::class.java)
+                .setAction(if(standby)DISARM else STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, CHANNEL)
+        return Notification.Builder(this,CHANNEL)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(title).setContentText(detail)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .addAction(Notification.Action.Builder(
-                android.R.drawable.ic_menu_close_clear_cancel, "Stop and save", stop
-            ).build()).build()
+                android.R.drawable.ic_menu_close_clear_cancel,
+                if(standby) "Close standby" else "Stop and save",exit).build())
+            .build()
     }
-
-    private fun refreshTile() = runCatching {
-        TileService.requestListeningState(this, ComponentName(this, SessionTile::class.java))
-    }.getOrNull()
-
-    private fun closeService() {
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
-    }
-    override fun onDestroy() {
-        RecorderJournal.event(this,"SERVICE_DESTROYED",
-            "active=" + (task?.isActive == true) + " id=" + MonitorState.sessionId)
-        stopping = true
-        runCatching { hud.hide() }.onSuccess { RecorderJournal.event(this,"HUD_DESTROY",it) }
+    override fun onDestroy(){
+        RecorderJournal.event(this,"SERVICE_DESTROYED","armed="+armed+
+            " active="+(task?.isActive==true))
+        stopping=true
+        runCatching{hud.hide()}
         task?.cancel()
         scope.cancel()
-        val active = task
-        if (active != null) active.invokeOnCompletion { db.close() }
-        else db.close()
+        val active=task
+        if(active!=null)active.invokeOnCompletion{db.close()}else db.close()
         super.onDestroy()
     }
 }

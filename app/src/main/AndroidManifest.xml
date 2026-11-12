@@ -21,7 +21,7 @@
             android:process=":monitor" android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-initiated gameplay hardware telemetry recording with an ongoing notification and one-tap stop"/>
+                android:value="Explicitly user-enabled, visible in-game floating telemetry HUD standby and user-started gameplay recording; foreground notification enables close/stop"/>
         </service>
         <provider android:name=".monitor.StatusProvider"
             android:authorities="com.locutus5382.coremetrics.monitor.status"

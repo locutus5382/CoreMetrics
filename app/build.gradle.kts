@@ -9,8 +9,8 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0-stability-alpha"
+        versionCode = 4
+        versionName = "0.4.0-standby-glass-alpha"
     }
     buildTypes {
         release {

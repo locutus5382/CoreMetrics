@@ -21,14 +21,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-internal val coreNight = Color(0xFF090D16)
-internal val coreCard = Color(0xD9111C2C)
-internal val coreBorder = Color(0xFF345066)
-internal val coreCyan = Color(0xFF63D6EE)
-internal val coreMint = Color(0xFF69E1B8)
-internal val coreAmber = Color(0xFFFFC37E)
+internal val coreNight = Color(0xFF050B1E)
+internal val coreCard = Color(0x32143C81)
+internal val coreBorder = Color(0xAA9EC6ED)
+internal val coreCyan = Color(0xFF93C5FD)
+internal val coreMint = Color(0xFF60DCCF)
+internal val coreAmber = Color(0xFFFFC700)
 internal val coreText = Color(0xFFECF6FC)
-internal val coreSecondary = Color(0xFF9FB8C7)
+internal val coreSecondary = Color(0xFFC3D7ED)
 
 internal data class LiveTracePoint(
     val timeMs: Long,
@@ -68,10 +68,7 @@ internal fun InstrumentKpi(
     color: Color = coreCyan, modifier: Modifier = Modifier
 ) {
     val r = RoundedCornerShape(15.dp)
-    Column(modifier
-        .background(Brush.verticalGradient(
-            listOf(Color(0xDA1A2D42),Color(0xB0111927))),r)
-        .border(1.dp,coreBorder,r)
+    Column(modifier.pureGlass(15)
         .padding(horizontal=12.dp,vertical=11.dp)) {
         Text(title.uppercase(),color=coreSecondary,
             style=MaterialTheme.typography.labelSmall,letterSpacing=0.7.sp)
@@ -90,8 +87,7 @@ internal fun LiveScope(points: List<LiveTracePoint>) {
     val latest = points.lastOrNull()?.timeMs ?: 0L
     val recent = points.filter { it.timeMs >= latest-60_000L }
     val r = RoundedCornerShape(15.dp)
-    Column(Modifier.fillMaxWidth().background(coreCard,r)
-        .border(1.dp,coreBorder,r).padding(12.dp),
+    Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp),
         verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement=Arrangement.spacedBy(18.dp)) {
             Text("LIVE HISTORY · 60 SEC", color=coreText,
@@ -106,7 +102,7 @@ internal fun LiveScope(points: List<LiveTracePoint>) {
             Text("GPU",color=coreAmber,style=MaterialTheme.typography.labelSmall)
         }
         ScopeTrack(recent,metric=1)
-        Text("Displayed points are 1–5 s telemetry samples, not individual frames.",
+        Text("Displayed points are 2–5 s telemetry samples, not individual frames.",
             style=MaterialTheme.typography.labelSmall,color=coreSecondary)
     }
 }
@@ -157,8 +153,7 @@ internal fun PerCoreLoadMatrix(encoded: String?) {
         if (bits.size == 2) bits[0] to bits[1].toIntOrNull() else null
     }?.toMap().orEmpty()
     val shape = RoundedCornerShape(15.dp)
-    Column(Modifier.fillMaxWidth().background(coreCard,shape)
-        .border(1.dp,coreBorder,shape).padding(12.dp)) {
+    Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp)) {
         Text("CPU TOPOLOGY  ·  PER-CORE LOAD",color=coreText,
             style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(8.dp))

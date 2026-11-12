@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.CompareArrows
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
@@ -53,6 +54,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
+import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.RecorderJournal
 import com.locutus5382.coremetrics.quick.SessionTile
 import kotlinx.coroutines.Dispatchers
@@ -70,10 +72,11 @@ private val cyan = Color(0xFF71D7E2)
 private val white = Color(0xFFF0F5FA)
 private val muted = Color(0xFFA8C4D1)
 private val glow = Color(0xFF18445A)
-private val pages = listOf("Live", "Sessions", "Compare", "Settings")
+private val pages = listOf("Live", "Sessions", "Compare", "HUD", "Settings")
 
 private data class ScreenStatus(
     val running: Boolean = false, val starting: Boolean = false,
+    val standby: Boolean = false,
     val sessionId: Long = 0, val count: Long = 0,
     val message: String = "Idle",
     val cpu: String? = null, val gpu: String? = null,
@@ -125,6 +128,7 @@ class MainActivity : ComponentActivity() {
         else ScreenStatus(
             running = v.getBoolean("running", false),
             starting = v.getBoolean("starting", false),
+            standby = v.getBoolean("standby", false),
             sessionId = v.getLong("id", 0), count = v.getLong("count", 0),
             message = v.getString("message") ?: "Idle",
             cpu = v.getString("cpu"), gpu = v.getString("gpu"),
@@ -148,6 +152,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             var page by rememberSaveable { mutableStateOf("Live") }
             var status by remember { mutableStateOf(ScreenStatus()) }
+            var overlayAllowed by remember {
+                mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
+            }
             val liveTrace = remember { mutableStateListOf<LiveTracePoint>() }
             var diagnosticReport by remember { mutableStateOf("") }
             var label by rememberSaveable { mutableStateOf(prefs.getString("label", "NFS benchmark") ?: "NFS benchmark") }
@@ -160,6 +167,7 @@ class MainActivity : ComponentActivity() {
             var hudEnabled by rememberSaveable {
                 mutableStateOf(prefs.getBoolean("hud_enabled", false))
             }
+            var hudOptions by remember { mutableStateOf(HudOptions.from(this@MainActivity)) }
             var message by remember { mutableStateOf("") }
             var sessionList by remember { mutableStateOf(emptyList<SessionStore.Session>()) }
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
@@ -204,6 +212,7 @@ class MainActivity : ComponentActivity() {
                             while (liveTrace.size > 70) liveTrace.removeAt(0)
                         }
                         status = next
+                        overlayAllowed=Settings.canDrawOverlays(this@MainActivity)
                         delay(1300L)
                     }
                 }
@@ -225,11 +234,57 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            MaterialTheme(colorScheme = darkColorScheme(primary = coreCyan, surface = coreNight,
-                background = coreNight, onSurface = coreText)) {
+            fun persistHud(updated: HudOptions) {
+                hudOptions=updated
+                updated.save(this@MainActivity)
+                if(status.running || status.starting || status.standby) {
+                    val i=HudOptions.addExtras(
+                        Intent(this@MainActivity,RecordingService::class.java)
+                            .setAction(RecordingService.HUD_CONFIG),updated)
+                    runCatching{startService(i)}.onFailure{
+                        message="HUD change failed: "+it.javaClass.simpleName
+                    }
+                }
+            }
+            fun armHud() {
+                if(!Settings.canDrawOverlays(this@MainActivity)) {
+                    message="Grant overlay permission, then tap Launch standby again."
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:"+packageName)))
+                    return
+                }
+                if(Build.VERSION.SDK_INT>=33 &&
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=
+                        PackageManager.PERMISSION_GRANTED) {
+                    notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    message="Allow notifications, then tap Launch standby again."
+                    return
+                }
+                // Commit metadata before :monitor process sees the HUD click.
+                prefs.edit().putString("label",label.trim())
+                    .putString("configuration",configuration)
+                    .putLong("interval_ms",interval).commit()
+                hudOptions.save(this@MainActivity)
+                val i=HudOptions.addExtras(
+                    Intent(this@MainActivity,RecordingService::class.java)
+                        .setAction(RecordingService.ARM)
+                        .putExtra(RecordingService.LABEL,label.trim())
+                        .putExtra(RecordingService.CONFIG,configuration)
+                        .putExtra(RecordingService.INTERVAL,interval),hudOptions)
+                runCatching{startForegroundService(i)}.fold(
+                    onSuccess={message="Standby requested · no recording until REC"},
+                    onFailure={message="Standby failed: "+it.javaClass.simpleName})
+            }
+            fun closeHud() {
+                runCatching{startService(Intent(this@MainActivity,
+                    RecordingService::class.java).setAction(RecordingService.DISARM))}
+                    .onFailure{message="Close failed: "+it.javaClass.simpleName}
+            }
+            MaterialTheme(colorScheme = darkColorScheme(primary = iceBlue, surface = cobaltNavy,
+                background = cobaltNavy, onSurface = coreText)) {
                 Box(
                     Modifier.fillMaxSize().background(Brush.linearGradient(
-                        listOf(coreNight, Color(0xFF0E1E30), Color(0xFF111827), coreNight)
+                        listOf(cobaltNavy, Color(0xFF09173A), Color(0xFF10265C), cobaltNavy)
                     )).onPreviewKeyEvent { event ->
                         val key = event.nativeKeyEvent
                         if (key.action != KeyEvent.ACTION_DOWN || key.repeatCount != 0) false
@@ -244,7 +299,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) {
-                    InstrumentBackdrop()
+                    PureGlassBackdrop()
                     Row(Modifier.fillMaxSize().padding(9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         // Compact, icon-led rail fits four destinations even on
                         // the Portal's 360dp landscape configuration. Scroll is
@@ -252,8 +307,7 @@ class MainActivity : ComponentActivity() {
                         Column(
                             Modifier.width(84.dp).fillMaxHeight()
                                 .clip(RoundedCornerShape(15.dp))
-                                .background(Color(0xDD132337))
-                                .border(1.dp, Color(0xAA41687B), RoundedCornerShape(15.dp))
+                                .pureGlass(15)
                                 .verticalScroll(rememberScrollState())
                                 .padding(horizontal=5.dp, vertical=6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -270,7 +324,9 @@ class MainActivity : ComponentActivity() {
                             HorizontalDivider(color=coreBorder)
                             Text(if(status.running) "● REC"
                                 else if(status.starting) "START"
-                                else "IDLE",color=if(status.running) coreMint else muted,
+                                else if(status.standby) "READY"
+                                else "IDLE",color=if(status.running) solarOrange
+                                    else if(status.standby) solarGold else muted,
                                 style=MaterialTheme.typography.labelSmall,
                                 fontWeight=FontWeight.Bold)
                         }
@@ -278,15 +334,14 @@ class MainActivity : ComponentActivity() {
                             Row(
                                 Modifier.fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xDD182B3D))
-                                    .border(1.dp,coreBorder,RoundedCornerShape(14.dp))
+                                    .pureGlass(14)
                                     .padding(horizontal=14.dp,vertical=10.dp),
                                 verticalAlignment=Alignment.CenterVertically,
                                 horizontalArrangement=Arrangement.spacedBy(10.dp)
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("COREMETRICS  /  INSTRUMENT GLASS",
-                                        color=coreCyan,
+                                    Text("COREMETRICS  /  COBALT & SOLAR GLASS",
+                                        color=iceBlue,
                                         style=MaterialTheme.typography.labelSmall)
                                     Text(page.uppercase(Locale.US),color=coreText,
                                         style=MaterialTheme.typography.titleLarge,
@@ -302,6 +357,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Text(if(status.running) "● REC  " + status.count + " samples"
                                         else if(status.starting) "◌ STARTING"
+                                        else if(status.standby) "◌ HUD READY · tap REC"
                                         else status.message.take(52),
                                         color=if(status.running) coreMint else coreSecondary,
                                         style=MaterialTheme.typography.labelMedium)
@@ -312,18 +368,44 @@ class MainActivity : ComponentActivity() {
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 when (page) {
                                     "Live" -> {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                            InstrumentKpi("Layer FPS",status.fps,
-                                                status.fpsStatus ?: "Opt-in experimental",coreAmber,Modifier.weight(1f))
-                                            InstrumentKpi("CPU / SoC",status.cpu,
-                                                "Named thermal",coreCyan,Modifier.weight(1f))
-                                            InstrumentKpi("GPU",status.gpu,
-                                                "Named thermal",coreMint,Modifier.weight(1f))
-                                            InstrumentKpi("RAM",status.ram,
-                                                "System-wide",coreCyan,Modifier.weight(1f))
-                                            InstrumentKpi("Battery",status.power,
-                                                "Net battery watts",coreAmber,Modifier.weight(1f))
+                                        Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                                            Button(onClick={ if(status.standby || status.running) {
+                                                page="HUD"
+                                            } else armHud() },
+                                                colors=ButtonDefaults.buttonColors(
+                                                    containerColor=solarOrange)) {
+                                                Text(if(status.standby) "HUD READY"
+                                                    else if(status.running) "● REC"
+                                                    else "LAUNCH HUD STANDBY")
+                                            }
+                                            OutlinedButton(onClick={page="HUD"}) {
+                                                Text("Customize HUD")
+                                            }
+                                            OutlinedButton(onClick={
+                                                requestQuickSettingsTile { message=it }
+                                            }) { Text("Add QS tile") }
                                         }
+                                        Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                                            PureGlassGauge("CPU",status.cpu,
+                                                (((status.cpu?.removeSuffix("°C")
+                                                    ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
+                                                solarOrange,Modifier.weight(1f))
+                                            PureGlassGauge("GPU",status.gpu,
+                                                (((status.gpu?.removeSuffix("°C")
+                                                    ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
+                                                solarGold,Modifier.weight(1f))
+                                            PureGlassGauge("Battery W",status.power,
+                                                ((status.power?.removeSuffix(" W")
+                                                    ?.toDoubleOrNull() ?: 0.0)/12.0).toFloat(),
+                                                solarGold,Modifier.weight(1f))
+                                            PureGlassGauge("FPS",status.fps,
+                                                ((status.fps?.toDoubleOrNull() ?: 0.0)/120.0).toFloat(),
+                                                iceBlue,Modifier.weight(1f))
+                                        }
+                                        Text("Ring arcs use display-only reference scales; " +
+                                            "they are not thermal safety limits.",
+                                            color=coreSecondary,
+                                            style=MaterialTheme.typography.labelSmall)
                                         LiveScope(liveTrace)
                                         PerCoreLoadMatrix(status.coreLoads)
                                         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -541,6 +623,23 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     }
+                                    "HUD" -> {
+                                        HudSettingsPanel(
+                                            options=hudOptions,
+                                            isArmed=status.standby || status.running,
+                                            recording=status.running,
+                                            permissionGranted=overlayAllowed,
+                                            onChange={ persistHud(it) },
+                                            onArm={ armHud() },
+                                            onDisarm={ closeHud() },
+                                            onGrantPermission={
+                                                startActivity(Intent(
+                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                    Uri.parse("package:"+packageName)))
+                                            },
+                                            onTile={requestQuickSettingsTile {message=it}}
+                                        )
+                                    }
                                     else -> {
                                         GlassPanel {
                                             Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
@@ -562,11 +661,11 @@ class MainActivity : ComponentActivity() {
                                             HorizontalDivider(color=coreBorder)
                                             Text("IN-GAME HUD",color=coreCyan,
                                                 style=MaterialTheme.typography.titleSmall)
-                                            Text("Compact, draggable, updated from the existing session " +
-                                                "sampler. Enabled only while recording.",
+                                            Text("HUD customization is available on the dedicated HUD tab. " +
+                                                "Standby is visible but samples nothing; REC activates sampling.",
                                                 color=muted,style=MaterialTheme.typography.bodySmall)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
-                                                Text("Show HUD when recording",Modifier.weight(1f),
+                                                Text("Automatically display HUD when starting recording from app or QS",Modifier.weight(1f),
                                                     color=white)
                                                 Switch(hudEnabled,onCheckedChange={ enabled ->
                                                     hudEnabled=enabled
@@ -640,9 +739,7 @@ private fun time(ms: Long) = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).f
 @Composable
 private fun GlassPanel(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .background(Color(0xAD1A2A3D))
-            .border(1.dp, Color(0x447ED2E2), RoundedCornerShape(18.dp))
+        Modifier.fillMaxWidth().pureGlass(18)
             .padding(15.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
         content = content
@@ -650,8 +747,7 @@ private fun GlassPanel(content: @Composable ColumnScope.() -> Unit) {
 }
 @Composable
 private fun MetricCard(title: String, value: String?, source: String, modifier: Modifier = Modifier) {
-    Column(modifier.clip(RoundedCornerShape(15.dp)).background(Color(0xAA1A2B3A))
-        .border(1.dp, Color(0x447ED2E2), RoundedCornerShape(15.dp)).padding(12.dp)) {
+    Column(modifier.pureGlass(15).padding(12.dp)) {
         Text(title, style = MaterialTheme.typography.labelMedium, color = muted)
         Text(value ?: "Unavailable", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold, color = white)
@@ -694,6 +790,7 @@ private fun railIcon(label: String): ImageVector = when (label) {
     "Live" -> Icons.Rounded.Dashboard
     "Sessions" -> Icons.Rounded.History
     "Compare" -> Icons.Rounded.CompareArrows
+    "HUD" -> Icons.Rounded.Tune
     else -> Icons.Rounded.Settings
 }
 

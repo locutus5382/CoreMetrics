@@ -6,6 +6,7 @@ import com.locutus5382.coremetrics.telemetry.Snapshot
 internal object MonitorState {
     @Volatile var running = false
     @Volatile var starting = false
+    @Volatile var standby = false
     @Volatile var sessionId = 0L
     @Volatile var startedAt = 0L
     @Volatile var sampleCount = 0L
