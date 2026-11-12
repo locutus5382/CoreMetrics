@@ -78,6 +78,7 @@ private data class ScreenStatus(
     val frameMs: String? = null, val fpsStatus: String? = null,
     val observedLimits: String? = null,
     val coreLoads: String? = null,
+    val hudStatus: String? = null,
     val lastAt: Long = 0
 )
 
@@ -128,6 +129,7 @@ class MainActivity : ComponentActivity() {
             frameMs = v.getString("frameMs"),fpsStatus=v.getString("fpsStatus"),
             observedLimits = v.getString("observedLimits"),
             coreLoads = v.getString("coreLoads"),
+            hudStatus = v.getString("hudStatus"),
             lastAt = v.getLong("lastSampleAt", 0)
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
@@ -558,6 +560,8 @@ class MainActivity : ComponentActivity() {
                                                     Uri.parse("package:" + packageName)))
                                             }) { Text("Open overlay permission") }
                                             HorizontalDivider(color=coreBorder)
+                                            Text("HUD status: " + (status.hudStatus ?: "Unknown"),
+                                                color=coreSecondary,style=MaterialTheme.typography.labelSmall)
                                             Text("QUICK SETTINGS",color=coreCyan,
                                                 style=MaterialTheme.typography.titleSmall)
                                             Text("The Record tile is separate from the application icon. " +
