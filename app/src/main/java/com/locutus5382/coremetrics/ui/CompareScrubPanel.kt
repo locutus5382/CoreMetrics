@@ -74,7 +74,9 @@ internal fun CompareScrubPanel(a:List<SessionStore.Point>,b:List<SessionStore.Po
     val elapsed=(duration*fraction).toLong()
     val left=CompareTimeCursor.nearest(a,elapsed)
     val right=CompareTimeCursor.nearest(b,elapsed)
-    val vals=(a+b).mapNotNull { reading(it,metric) }
+    val vals=remember(a,b,metric) {
+        (a+b).mapNotNull { reading(it,metric) }
+    }
     val available=vals.isNotEmpty()
     val lower=(vals.minOrNull()?:0.0)
     val upper=(vals.maxOrNull()?:1.0)

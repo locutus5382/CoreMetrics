@@ -411,6 +411,17 @@ internal class RecorderHud(private val context:Context) {
         return try {
             wm.addView(frame,p)
             applyAppearance()
+            // Actual pill width is measured after attach. Keep the initial HUD
+            // wholly on screen without a second overlay or busy positioning loop.
+            frame.post {
+                if(root===frame && attached() && !collapsed) {
+                    val safe=(windowWidth()-frame.width-dp(12f)).coerceAtLeast(0)
+                    if(p.x>safe) {
+                        p.x=safe
+                        runCatching{wm.updateViewLayout(frame,p)}
+                    }
+                }
+            }
             "HUD_ATTACHED"
         }catch(e:Exception){
             root=null;params=null;pill=null;drawer=null;graphsRow=null
@@ -509,7 +520,17 @@ internal class RecorderHud(private val context:Context) {
         graphs["GPU"]?.add(s.gpuPercent?.toFloat())
         graphs["TEMP"]?.add(thermalValue?.smoothedC?.toFloat())
         graphs["FPS"]?.add(s.surfaceFps?.toFloat())
-        applyAppearance()
+        graphCells["FPS"]?.visibility=if(opts.showFps && s.surfaceFps!=null &&
+            opts.showSparkline && opts.layout=="pro")View.VISIBLE else View.GONE
+        val thermalColor=when(thermalValue?.direction) {
+            ThermalTrendFilter.Direction.RISING -> Color.rgb(255,107,0)
+            ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
+            else -> Color.rgb(255,199,0)
+        }
+        (dockVisual?.background as? GradientDrawable)?.setColor(thermalColor)
+        renderTelemetry()
+        // Updating text and graph Canvas does NOT require a WindowManager
+        // relayout; keep the sampling path cheap during emulator gameplay.
     }
 
     private fun renderTelemetry() {

@@ -194,8 +194,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     text("cpu_clocks","cpu_clocks")
                     text("app_package","android_app_package")
                     decimal("battery_net_w","battery_net_w")
-                    decimal("battery_ua","battery_current_ua")
-                    decimal("battery_mv","battery_voltage_mv")
+                    columns.integer(row,"battery_current_ua")?.let{put("battery_ua",it)}
+                    columns.integer(row,"battery_voltage_mv")?.let{put("battery_mv",it)}
                     text("battery_source","battery_power_source")
                     text("battery_status","battery_power_status")
                     decimal("sf_layer_fps","sf_layer_fps")
