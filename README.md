@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.4 experimental HUD test build. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.5 draft experimental benchmark/HUD build, stacked on the unmerged v0.4 branch. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -18,6 +18,16 @@
 - Google Play build baseline uses **compileSdk/targetSdk 36**, minSdk 31. User-initiated `specialUse` foreground recording must be approved by Play Console. Neither target SDK nor a manifest declaration guarantees approval.
 - No PServer in initial Play-compatible version. A separate strictly read-only Odin variant may be designed later only if it provides validated value and clear permissions; a read-only observer cannot claim LMK immunity.
 - On-device collected readings and session history stay in app-private storage unless the user chooses to export them.
+
+## v0.5 draft — observed regimes, thermal trends, original icon, touch-lock
+
+- Adds an original CoreMetrics telemetry-pulse adaptive icon, a themed monochrome icon, and proper notification/Quick Settings glyphs.
+- The existing single sampling loop drives an EMA (alpha 0.35) CPU HUD value, a raw temperature peak, and a smoothed 15-second trend arrow. Raw SQLite/CSV values are unchanged.
+- The **Compare** screen can inspect one previously recorded SQLite session for contiguous *observed* policy3/policy7 CPU ceiling phases, with 1–2 sample glitch debounce, stock/medium/large cap labels, conditional per-phase battery-terminal discharge averages, nominal battery projections (30.8 Wh assumption), and tinted time ranges. It retains A/B two-session comparison.
+- HUD touch lock uses `FLAG_NOT_TOUCHABLE` with explicit window alpha 0.70 for Android 12+ pass-through rules. A locked overlay **cannot unlock itself**. Use its foreground-notification Unlock HUD action or the HUD Studio page; the QS tile keeps its REC/STOP role. Other overlapping overlays may still block pass-through.
+- Safety: no added polling, no root/PServer/SF probes, no hardware-frequency modification, no invented FPS, no uploaded telemetry or additional permissions. Device validation and CI are required.
+- Currently **no external CSV import**: the in-session analyzer reads the existing session SQLite database. If you only have an exported Hades CSV, import is a separate follow-up task.
+- Advanced per-metric sparklines, edge-tab docking, a privileged read-only FPS provider, 1% low FPS and verified frame pacing remain separate test-gated tasks. Do not equate FPS inferred from ordinary UI Choreographer callbacks with game FPS.
 
 ## v0.4 Pure Cobalt & Solar Glass + standby HUD
 - Original static cobalt/orange/yellow light mesh, low-alpha glass surfaces, 1dp specular borders and compact navigation; four real-data circular gauges with unavailable FPS explicitly shown as missing.
