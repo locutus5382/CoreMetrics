@@ -11,10 +11,11 @@ import java.io.Writer
  * :monitor owns writes, UI reads through WAL. Data never leaves this database
  * without a user-selected Android document URI.
  */
-class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 3) {
+class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 4) {
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
         val label: String, val configuration: String, val status: String, val count: Int,
-        val note: String? = null)
+        val note: String? = null,
+        val graphicsDriver: String? = null, val resolutionScale: String? = null)
     data class Point(val timeMs: Long, val cpu: Double?, val gpu: Double?,
         val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
         val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
@@ -32,7 +33,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             started_at INTEGER NOT NULL, ended_at INTEGER,
             label TEXT NOT NULL, configuration TEXT NOT NULL,
-            status TEXT NOT NULL, game_note TEXT)""")
+            status TEXT NOT NULL, game_note TEXT,
+            graphics_driver TEXT, resolution_scale TEXT)""")
         db.execSQL("""CREATE TABLE samples (
             session_id INTEGER NOT NULL, time_ms INTEGER NOT NULL,
             cpu_temp REAL, gpu_temp REAL, battery_temp REAL, battery_pct INTEGER,
@@ -56,7 +58,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion in 1..2 && newVersion==3) {
+        require(oldVersion in 1..3 && newVersion==4) {
             "Unsupported database migration $oldVersion -> $newVersion"
         }
         if(oldVersion<2) {
@@ -68,8 +70,27 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 "observed_cpu_limits" to "TEXT"
             ))db.execSQL("ALTER TABLE samples ADD COLUMN "+name+" "+type)
         }
-        db.execSQL("ALTER TABLE sessions ADD COLUMN game_note TEXT")
-        createLinkTable(db)
+        if(oldVersion<3) {
+            db.execSQL("ALTER TABLE sessions ADD COLUMN game_note TEXT")
+            createLinkTable(db)
+        }
+        if(oldVersion<4) {
+            db.execSQL("ALTER TABLE sessions ADD COLUMN graphics_driver TEXT")
+            db.execSQL("ALTER TABLE sessions ADD COLUMN resolution_scale TEXT")
+        }
+    }
+
+    /** Optional, explicitly user-entered test settings; never inferred from load. */
+    @Synchronized fun updateMetadata(
+        sessionId:Long, graphicsDriver:String?, resolutionScale:String?
+    ):Boolean {
+        require(sessionId>0L)
+        val values=ContentValues().apply {
+            put("graphics_driver",SessionMetadata.driver(graphicsDriver))
+            put("resolution_scale",SessionMetadata.resolution(resolutionScale))
+        }
+        return writableDatabase.update("sessions",values,"id=?",
+            arrayOf(sessionId.toString()))==1
     }
 
     /** User-controlled associations are non-destructive; never merge raw data. */
@@ -199,7 +220,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
 
     fun list(limit: Int = 80): List<Session> = readableDatabase.rawQuery("""
         SELECT s.id,s.started_at,s.ended_at,s.label,s.configuration,s.status,
-        (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id),s.game_note
+        (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id),
+        s.game_note,s.graphics_driver,s.resolution_scale
         FROM sessions s ORDER BY s.id DESC LIMIT ?
     """.trimIndent(), arrayOf(limit.coerceIn(1,200).toString())).use { c ->
         buildList {
@@ -208,7 +230,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 if (c.isNull(2)) null else c.getLong(2),
                 c.getString(3) ?: "",c.getString(4) ?: "",
                 c.getString(5) ?: "UNKNOWN",c.getInt(6),
-                if(c.isNull(7))null else c.getString(7)
+                if(c.isNull(7))null else c.getString(7),
+                if(c.isNull(8))null else c.getString(8),
+                if(c.isNull(9))null else c.getString(9)
             ))
         }
     }
@@ -261,6 +285,10 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                         put("started_at",firstTime)
                         put("label","Imported session")
                         put("game_note",label)
+                        put("graphics_driver",SessionMetadata.driver(
+                            columns.field(row,"graphics_driver")))
+                        put("resolution_scale",SessionMetadata.resolution(
+                            columns.field(row,"resolution_scale")))
                         put("configuration",config)
                         put("status",ImportedSessionStatus.store(
                             columns.field(row,"status")))
@@ -328,7 +356,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             "gpu_load_pct","gpu_mhz","system_ram_used_gib","cpu_clocks","android_app_package",
             "battery_net_w","battery_current_ua","battery_voltage_mv",
             "battery_power_source","battery_power_status",
-            "sf_layer_fps","sf_frame_time_ms","sf_status","observed_cpu_limits")
+            "sf_layer_fps","sf_frame_time_ms","sf_status","observed_cpu_limits",
+            "graphics_driver","resolution_scale")
         writer.append(headers.joinToString(",")).append('\n')
         readableDatabase.rawQuery(
             """SELECT time_ms,cpu_temp,gpu_temp,battery_temp,battery_pct,cpu_pct,
@@ -340,7 +369,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         ).use { c ->
             while (c.moveToNext()) {
                 val values = listOf(id.toString(),session.note?.takeIf{it.isNotBlank()} ?: session.label,session.configuration,session.status) +
-                    (0 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" }
+                    (0 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
+                    listOf(session.graphicsDriver.orEmpty(),session.resolutionScale.orEmpty())
                 writer.append(values.joinToString(",") { Csv.escape(it) }).append('\n')
             }
         }
