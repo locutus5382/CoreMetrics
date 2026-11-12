@@ -111,8 +111,11 @@ class MainActivity : ComponentActivity() {
             val statusBar = getSystemService(StatusBarManager::class.java)
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
-                if(packageName.endsWith(".preview")) "CoreMetrics Preview • Record"
-                    else "CoreMetrics • Record",
+                when {
+                    packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
+                    packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
+                    else -> "CoreMetrics • Record"
+                },
                 Icon.createWithResource(this, com.locutus5382.coremetrics.R.drawable.ic_coremetrics_notification),
                 mainExecutor
             ) { result ->
@@ -615,6 +618,18 @@ class MainActivity : ComponentActivity() {
                                             Text("OBSERVED LIMITS  ·  not proof of tuner identity",
                                                 color = muted,style=MaterialTheme.typography.labelSmall)
                                             Text(status.observedLimits ?: "Unavailable",color=white)
+                                            if(configuration.contains("Stock",true) &&
+                                                status.observedLimits?.contains(
+                                                    "policy3 max 1.79 GHz")==true &&
+                                                status.observedLimits?.contains(
+                                                    "policy7 max 1.84 GHz")==true) {
+                                                Text("CHECK PROFILE: Stock was selected, but " +
+                                                    "observed P3/P7 ceilings match the previously " +
+                                                    "identified Large UC caps. Tuner identity remains " +
+                                                    "unverified.",
+                                                    color=solarOrange,
+                                                    style=MaterialTheme.typography.bodySmall)
+                                            }
                                             Text("BATTERY ELECTRICAL MEASUREMENT",color=muted)
                                             Text((status.power ?: "Unavailable") + "  ·  " +
                                                 (status.powerStatus ?: "Start to measure"),
