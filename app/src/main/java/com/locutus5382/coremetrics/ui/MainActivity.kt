@@ -273,13 +273,39 @@ class MainActivity : ComponentActivity() {
                                 style=MaterialTheme.typography.labelSmall)
                         }
                         Column(Modifier.weight(1f).fillMaxHeight()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(page, color = white, style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                Text(if (status.running) "● REC · " + status.count + " samples"
-                                    else status.message, color = if (status.running) cyan else muted)
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xDD182B3D))
+                                    .border(1.dp,coreBorder,RoundedCornerShape(14.dp))
+                                    .padding(horizontal=14.dp,vertical=10.dp),
+                                verticalAlignment=Alignment.CenterVertically,
+                                horizontalArrangement=Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("COREMETRICS  /  INSTRUMENT GLASS",
+                                        color=coreCyan,
+                                        style=MaterialTheme.typography.labelSmall)
+                                    Text(page.uppercase(Locale.US),color=coreText,
+                                        style=MaterialTheme.typography.titleLarge,
+                                        fontWeight=FontWeight.Bold)
+                                }
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(9.dp))
+                                        .background(if(status.running) Color(0xBB19473F)
+                                            else Color(0xBB263343))
+                                        .border(1.dp,if(status.running) coreMint.copy(alpha=.60f)
+                                            else coreBorder,RoundedCornerShape(9.dp))
+                                        .padding(horizontal=11.dp,vertical=7.dp)
+                                ) {
+                                    Text(if(status.running) "● REC  " + status.count + " samples"
+                                        else if(status.starting) "◌ STARTING"
+                                        else status.message.take(52),
+                                        color=if(status.running) coreMint else coreSecondary,
+                                        style=MaterialTheme.typography.labelMedium)
+                                }
                             }
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(9.dp))
                             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 when (page) {
