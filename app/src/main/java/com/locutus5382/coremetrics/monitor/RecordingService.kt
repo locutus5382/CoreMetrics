@@ -344,7 +344,7 @@ class RecordingService:Service() {
                 .setAction(if(standby)DISARM else STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this,CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(com.locutus5382.coremetrics.R.drawable.ic_coremetrics_notification)
             .setContentTitle(title).setContentText(detail)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)

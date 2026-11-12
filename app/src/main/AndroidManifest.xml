@@ -8,6 +8,7 @@
 
     <!-- No INTERNET, Accessibility, boot or hardware-modification permissions. Overlay is opt-in only. -->
     <application android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false" android:usesCleartextTraffic="false">
         <activity android:name=".ui.MainActivity"
@@ -27,7 +28,7 @@
             android:authorities="com.locutus5382.coremetrics.monitor.status"
             android:process=":monitor" android:exported="false"/>
         <service android:name=".quick.SessionTile" android:exported="true"
-            android:label="CoreMetrics Record" android:icon="@android:drawable/ic_media_play"
+            android:label="CoreMetrics Record" android:icon="@drawable/ic_coremetrics_notification"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE"
                 android:value="true"/>

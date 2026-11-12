@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 "CoreMetrics • Record",
-                Icon.createWithResource(this, android.R.drawable.ic_media_play),
+                Icon.createWithResource(this, com.locutus5382.coremetrics.R.drawable.ic_coremetrics_notification),
                 mainExecutor
             ) { result ->
                 onResult(when (result) {
