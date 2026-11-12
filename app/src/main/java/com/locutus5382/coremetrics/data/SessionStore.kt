@@ -93,6 +93,12 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         }, "id=?", arrayOf(id.toString()))
     }
 
+    /** Preserve the original elapsed session timer across an LMK restart. */
+    @Synchronized fun originalStartMs(id:Long):Long? =
+        readableDatabase.rawQuery("SELECT started_at FROM sessions WHERE id=?",
+            arrayOf(id.toString())
+        ).use { c -> if(c.moveToFirst() && !c.isNull(0))c.getLong(0) else null }
+
     /** Verify the old ID is an unfinished user-started recording. */
     @Synchronized fun canResume(id:Long):Boolean =
         readableDatabase.rawQuery(

@@ -523,6 +523,17 @@ internal class RecorderHud(private val context:Context) {
         applyAppearance()
     }
     fun configure(options:HudOptions) {opts=options;applyAppearance()}
+    private fun repositionUnlockControl() {
+        val chip=unlockWindow ?:return
+        val cp=unlockParams ?:return
+        val p=params ?:return
+        val icon=lockControl ?:return
+        cp.x=(p.x+(pill?.left?:0)+icon.left-dp(6f))
+            .coerceIn(0,(windowWidth()-dp(48f)).coerceAtLeast(0))
+        cp.y=(p.y+(pill?.top?:0)+icon.top-dp(5f))
+            .coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
+        runCatching {wm.updateViewLayout(chip,cp)}
+    }
 
     private fun applyAppearance() {
         val frame=root ?:return
@@ -563,6 +574,7 @@ internal class RecorderHud(private val context:Context) {
         renderTelemetry()
         renderAction()
         if(attached())runCatching{params?.let{wm.updateViewLayout(frame,it)}}
+        if(locked)frame.post{if(root===frame)repositionUnlockControl()}
     }
 
     fun mode(isRecording:Boolean,startedMs:Long=0L) {

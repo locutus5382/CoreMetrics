@@ -200,6 +200,7 @@ class RecordingService:Service() {
                 }
                 val status=attachHud()
                 if(status.startsWith("HUD_ADD_FAILED") || status=="HUD_PERMISSION_MISSING"){
+                    RecorderLease.clear(this)
                     if(task?.isActive!=true)stopServiceNow()
                     return START_NOT_STICKY
                 }
@@ -332,7 +333,11 @@ class RecordingService:Service() {
                                 interval,wantsHud,restored)
                         }
                         MonitorState.sessionId=id
-                        MonitorState.startedAt=System.currentTimeMillis()
+                        MonitorState.startedAt=if(restoredId>0L)
+                            withContext(Dispatchers.IO){
+                                db.originalStartMs(id)
+                            } ?: System.currentTimeMillis()
+                        else System.currentTimeMillis()
                         MonitorState.sampleCount=0L
                         MonitorState.starting=false
                         MonitorState.running=true
