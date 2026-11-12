@@ -71,6 +71,7 @@ private data class ScreenStatus(
     val powerSource: String? = null, val fps: String? = null,
     val frameMs: String? = null, val fpsStatus: String? = null,
     val observedLimits: String? = null,
+    val coreLoads: String? = null,
     val lastAt: Long = 0
 )
 
@@ -92,6 +93,7 @@ class MainActivity : ComponentActivity() {
             powerSource = v.getString("powerSource"), fps = v.getString("fps"),
             frameMs = v.getString("frameMs"),fpsStatus=v.getString("fpsStatus"),
             observedLimits = v.getString("observedLimits"),
+            coreLoads = v.getString("coreLoads"),
             lastAt = v.getLong("lastSampleAt", 0)
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
@@ -250,6 +252,7 @@ class MainActivity : ComponentActivity() {
                                                 "Net battery watts",coreAmber,Modifier.weight(1f))
                                         }
                                         LiveScope(liveTrace)
+                                        PerCoreLoadMatrix(status.coreLoads)
                                         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                                             MetricCard("CPU load",status.cpuLoad?.plus("%"),
                                                 "All cores",Modifier.weight(1f))
