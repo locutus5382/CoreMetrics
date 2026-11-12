@@ -119,6 +119,7 @@ class MainActivity : ComponentActivity() {
             var sessionList by remember { mutableStateOf(emptyList<SessionStore.Session>()) }
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
+            var activeOnly by rememberSaveable { mutableStateOf(true) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var exportId by remember { mutableLongStateOf(0L) }
@@ -378,8 +379,14 @@ class MainActivity : ComponentActivity() {
                                     "Compare" -> {
                                         GlassPanel {
                                             Text("A/B benchmark comparison", style = MaterialTheme.typography.titleMedium)
-                                            Text("Compare identical game tracks. Align time after warmup; do not infer FPS or power efficiency.",
+                                            Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
+                                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                                Text("Filter: Eden foreground + GPU ≥ 20% (approximate racing)",
+                                                    Modifier.weight(1f),color=muted,
+                                                    style=MaterialTheme.typography.bodySmall)
+                                                Switch(activeOnly,onCheckedChange={activeOnly=it})
+                                            }
                                             Text("Select Stock / A", color = cyan)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -398,21 +405,60 @@ class MainActivity : ComponentActivity() {
                                                         label = { Text("#" + s.id + " " + s.configuration) })
                                                 }
                                             }
-                                            if (firstPoints.isNotEmpty() && secondPoints.isNotEmpty()) {
-                                                val a = firstPoints.mapNotNull { it.cpu }
-                                                val b = secondPoints.mapNotNull { it.cpu }
-                                                if (a.isNotEmpty() && b.isNotEmpty()) {
-                                                    val avgA = a.average()
-                                                    val avgB = b.average()
-                                                    Text("CPU mean: A " + fmt(avgA) + "°C  |  B " +
-                                                        fmt(avgB) + "°C  |  Δ " + fmt(avgB - avgA) + "°C",
-                                                        color = white)
+                                            val viewA = if(activeOnly) firstPoints.filter {
+                                                it.appPackage?.contains("eden",true)==true &&
+                                                    (it.gpuLoad ?: 0.0) >= 20.0
+                                            } else firstPoints
+                                            val viewB = if(activeOnly) secondPoints.filter {
+                                                it.appPackage?.contains("eden",true)==true &&
+                                                    (it.gpuLoad ?: 0.0) >= 20.0
+                                            } else secondPoints
+                                            if (viewA.isNotEmpty() && viewB.isNotEmpty()) {
+                                                Text("A: " + viewA.size + " measured points · B: " +
+                                                    viewB.size + " measured points",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
+                                                val meanCpuA=viewA.mapNotNull { it.cpu }.takeIf {
+                                                    it.isNotEmpty() }?.average()
+                                                val meanCpuB=viewB.mapNotNull { it.cpu }.takeIf {
+                                                    it.isNotEmpty() }?.average()
+                                                val meanGpuA=viewA.mapNotNull { it.gpu }.takeIf {
+                                                    it.isNotEmpty() }?.average()
+                                                val meanGpuB=viewB.mapNotNull { it.gpu }.takeIf {
+                                                    it.isNotEmpty() }?.average()
+                                                val meanWattA=viewA.mapNotNull { it.batteryWatts }.takeIf {
+                                                    it.isNotEmpty() }?.average()
+                                                val meanWattB=viewB.mapNotNull { it.batteryWatts }.takeIf {
+                                                    it.isNotEmpty() }?.average()
+                                                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    InstrumentKpi("Δ mean CPU",
+                                                        if(meanCpuA!=null && meanCpuB!=null)
+                                                            fmt(meanCpuB-meanCpuA)+"°C" else null,
+                                                        "B − A",coreCyan,Modifier.weight(1f))
+                                                    InstrumentKpi("Δ peak CPU",
+                                                        if(viewA.any { it.cpu!=null } && viewB.any { it.cpu!=null })
+                                                            fmt(viewB.mapNotNull{it.cpu}.max() -
+                                                                viewA.mapNotNull{it.cpu}.max())+"°C" else null,
+                                                        "B − A",coreCyan,Modifier.weight(1f))
+                                                    InstrumentKpi("Δ mean GPU",
+                                                        if(meanGpuA!=null && meanGpuB!=null)
+                                                            fmt(meanGpuB-meanGpuA)+"°C" else null,
+                                                        "B − A",coreMint,Modifier.weight(1f))
+                                                    InstrumentKpi("Δ battery W",
+                                                        if(meanWattA!=null && meanWattB!=null)
+                                                            fmt(meanWattB-meanWattA)+" W" else null,
+                                                        "Battery net · B − A",coreAmber,Modifier.weight(1f))
                                                 }
-                                                Text("CPU temperature · elapsed time", color = muted)
-                                                CompareChart(firstPoints,secondPoints)
+                                                Text("CPU temperature · elapsed time · A cyan, B amber",
+                                                    color=coreSecondary)
+                                                CompareChart(viewA,viewB)
+                                                Text("Frame rate remains unavailable if SurfaceFlinger layer access fails. " +
+                                                    "Time alignment uses first selected sample, not synchronized in-game events.",
+                                                    color=coreSecondary,style=MaterialTheme.typography.labelSmall)
                                             } else {
-                                                Text("Select two saved sessions to draw thermal curves.",
-                                                    color = muted)
+                                                Text("Select two recordings. If the gameplay filter returns nothing, " +
+                                                    "turn it off to inspect all samples.",
+                                                    color=muted)
                                             }
                                         }
                                     }
