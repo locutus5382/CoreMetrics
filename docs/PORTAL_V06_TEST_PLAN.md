@@ -1,5 +1,11 @@
 # CoreMetrics v0.6 — Odin 2 Portal test protocol
 
+## Parallel-install Preview APK
+
+GitHub Actions builds two v0.6 APKs:
+- **app-preview.apk** (`com.locutus5382.coremetrics.preview`), labelled **CoreMetrics Preview**. Recommended for testing simultaneously with v0.5; it has a separate DB and private monitor provider / Quick Settings service. Import v0.5 CSVs inside Preview.
+- **app-debug.apk** (`com.locutus5382.coremetrics`) is an in-place upgrade candidate only when signing matches. CI runners can produce different debug signing keys; do not uninstall v0.5 just to install it.
+
 ## Installation and preservation
 - Finish testing v0.5 first; export all important sessions before upgrading. VersionCode 6 replaces versionCode 5 under the same application ID. They cannot coexist; downgrading usually requires uninstalling (which may delete session history). Ensure APK signing is compatible for in-place upgrade. Test the **latest successful** GitHub Actions APK only.
 - Verify all historical SQLite sessions survive upgrade; also start and stop a new short session.

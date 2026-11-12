@@ -110,7 +110,8 @@ class MainActivity : ComponentActivity() {
             val statusBar = getSystemService(StatusBarManager::class.java)
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
-                "CoreMetrics • Record",
+                if(packageName.endsWith(".preview")) "CoreMetrics Preview • Record"
+                    else "CoreMetrics • Record",
                 Icon.createWithResource(this, com.locutus5382.coremetrics.R.drawable.ic_coremetrics_notification),
                 mainExecutor
             ) { result ->
@@ -130,7 +131,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun query(): ScreenStatus = try {
-        val uri = Uri.parse("content://com.locutus5382.coremetrics.monitor.status")
+        val uri = Uri.parse("content://" + packageName + ".monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
         if (v == null) ScreenStatus(message = "Recorder status unavailable")
         else ScreenStatus(

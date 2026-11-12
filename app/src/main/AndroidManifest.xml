@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <!-- No INTERNET, Accessibility, boot or hardware-modification permissions. Overlay is opt-in only. -->
-    <application android:label="@string/app_name"
+    <application android:label="${coremetricsAppLabel}"
         android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false" android:usesCleartextTraffic="false">
@@ -25,10 +25,10 @@
                 android:value="Explicitly user-enabled, visible in-game floating telemetry HUD standby and user-started gameplay recording; foreground notification enables close/stop"/>
         </service>
         <provider android:name=".monitor.StatusProvider"
-            android:authorities="com.locutus5382.coremetrics.monitor.status"
+            android:authorities="${applicationId}.monitor.status"
             android:process=":monitor" android:exported="false"/>
         <service android:name=".quick.SessionTile" android:exported="true"
-            android:label="CoreMetrics Record" android:icon="@drawable/ic_coremetrics_notification"
+            android:label="${coremetricsTileLabel}" android:icon="@drawable/ic_coremetrics_notification"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE"
                 android:value="true"/>

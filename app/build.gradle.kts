@@ -11,8 +11,17 @@ android {
         targetSdk = 36
         versionCode = 6
         versionName = "0.6.0-hud-analysis-fpslab-alpha"
+        manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
+        manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
     }
     buildTypes {
+        create("preview") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics Preview"
+            manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Preview Record"
+        }
         release {
             isMinifyEnabled = false
         }

@@ -105,7 +105,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     fun list(limit: Int = 80): List<Session> = readableDatabase.rawQuery("""
         SELECT s.id,s.started_at,s.ended_at,s.label,s.configuration,s.status,
         (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id)
-        FROM sessions s ORDER BY s.started_at DESC LIMIT ?
+        FROM sessions s ORDER BY s.id DESC LIMIT ?
     """.trimIndent(), arrayOf(limit.coerceIn(1,200).toString())).use { c ->
         buildList {
             while (c.moveToNext()) add(Session(
