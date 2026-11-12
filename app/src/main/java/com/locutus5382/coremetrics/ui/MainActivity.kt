@@ -42,9 +42,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +54,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.HudOptions
@@ -539,11 +542,11 @@ class MainActivity : ComponentActivity() {
                                     }
                                     "Compare" -> {
                                         GlassPanel {
-                                            Text("A/B benchmark comparison", style = MaterialTheme.typography.titleMedium)
+                                            Text("Analysis & Session Compare", style = MaterialTheme.typography.titleMedium)
                                             Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
-                                                Text("Filter: Eden foreground + GPU ≥ 20% (approximate racing)",
+                                                Text("Active 3D gameplay: GPU ≥ 15% (heuristic)",
                                                     Modifier.weight(1f),color=muted,
                                                     style=MaterialTheme.typography.bodySmall)
                                                 Switch(activeOnly,onCheckedChange={activeOnly=it})
@@ -567,13 +570,76 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                             val viewA = if(activeOnly) firstPoints.filter {
-                                                it.appPackage?.contains("eden",true)==true &&
-                                                    (it.gpuLoad ?: 0.0) >= 20.0
+                                                (it.gpuLoad ?: 0.0) >= 15.0
                                             } else firstPoints
                                             val viewB = if(activeOnly) secondPoints.filter {
-                                                it.appPackage?.contains("eden",true)==true &&
-                                                    (it.gpuLoad ?: 0.0) >= 20.0
+                                                (it.gpuLoad ?: 0.0) >= 15.0
                                             } else secondPoints
+                                            // Segment the ORIGINAL timeline, before gameplay filtering.
+                                            val regimes=remember(firstPoints,activeOnly) {
+                                                SessionRegimeAnalyzer.analyze(firstPoints.map { p ->
+                                                    SessionRegimeAnalyzer.Sample(
+                                                        p.timeMs,p.observedCpuLimits,p.cpu,p.gpu,
+                                                        p.cpuLoad,p.busiestCorePct,p.gpuLoad,p.ram,
+                                                        p.batteryWatts,p.batteryPowerStatus)
+                                                },activeGameplayOnly=activeOnly)
+                                            }
+                                            if(firstPoints.isNotEmpty()) {
+                                                HorizontalDivider(color=Color.White.copy(alpha=.14f))
+                                                Text("IN-SESSION CPU CEILING REGIMES · A",
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                Text("Observed limits (not proof of an applied tuner). " +
+                                                    "One/two-sample switching glitches are ignored.",
+                                                    style=MaterialTheme.typography.bodySmall,
+                                                    color=coreSecondary)
+                                                Row(Modifier.horizontalScroll(rememberScrollState()),
+                                                    horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    regimes.forEach { seg ->
+                                                        Column(Modifier.width(236.dp).pureGlass(14).padding(12.dp),
+                                                            verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                            Text("#"+(seg.index+1)+"  "+seg.label,
+                                                                color=if(seg.baseline) solarOrange else solarGold,
+                                                                style=MaterialTheme.typography.labelLarge,
+                                                                fontWeight=FontWeight.Bold)
+                                                            Text(((seg.startMs-firstPoints.first().timeMs)/1000).toString()+
+                                                                "–"+((seg.endMs-firstPoints.first().timeMs)/1000)+
+                                                                " s · "+seg.sampleCount+" samples",
+                                                                color=coreSecondary,
+                                                                style=MaterialTheme.typography.labelSmall)
+                                                            Text("CPU avg / peak: "+
+                                                                (seg.meanCpuC?.let{fmt(it)+"°"}?:"—")+" / "+
+                                                                (seg.maxCpuC?.let{fmt(it)+"°"}?:"—"),
+                                                                color=coreText)
+                                                            Text("GPU avg: "+(seg.meanGpuC?.let{fmt(it)+"°C"}?:"—")+
+                                                                " · Battery: "+
+                                                                (seg.meanDischargeW?.let{fmt(it)+" W"}?:"—"),
+                                                                color=coreText,
+                                                                style=MaterialTheme.typography.bodySmall)
+                                                            Text(if(seg.baseline) "Reference phase" else
+                                                                "Δ CPU "+(seg.deltaMeanCpuC?.let{fmt(it)+"°C"}?:"—")+
+                                                                " · Δ power "+
+                                                                (seg.deltaMeanDischargeW?.let{fmt(it)+" W"}?:"—"),
+                                                                color=solarGold,
+                                                                style=MaterialTheme.typography.bodySmall)
+                                                            seg.projectedHours?.let {
+                                                                Text("Ideal 30.8 Wh projection: "+fmt(it)+" h",
+                                                                    color=coreSecondary,
+                                                                    style=MaterialTheme.typography.labelSmall)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                if(regimes.size>1) {
+                                                    Text("CPU temperature · phase colors · transition markers",
+                                                        color=coreSecondary)
+                                                    RegimeTimeline(firstPoints,regimes)
+                                                }
+                                                Text("Battery-terminal net discharge power; playtime is a " +
+                                                    "nominal-capacity projection, not measured runtime. " +
+                                                    "Different scenes and warm-up confound deltas.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
+                                            }
                                             if (viewA.isNotEmpty() && viewB.isNotEmpty()) {
                                                 Text("A: " + viewA.size + " measured points · B: " +
                                                     viewB.size + " measured points",
@@ -754,6 +820,47 @@ private fun MetricCard(title: String, value: String?, source: String, modifier: 
         Text(source, style = MaterialTheme.typography.labelSmall, color = muted)
     }
 }
+/** Shaded observed phases over the recorded CPU-temperature curve. */
+@Composable
+private fun RegimeTimeline(
+    points:List<SessionStore.Point>,
+    regimes:List<SessionRegimeAnalyzer.RegimeSegment>
+) {
+    Canvas(Modifier.fillMaxWidth().height(158.dp)
+        .clip(RoundedCornerShape(12.dp))
+        .background(Color(0x80101C2B))) {
+        if(points.isEmpty())return@Canvas
+        val t0=points.first().timeMs
+        val duration=max(1L,points.last().timeMs-t0)
+        fun x(ms:Long)=((ms-t0).toFloat()/duration.toFloat()*size.width)
+            .coerceIn(0f,size.width)
+        val colors=listOf(solarOrange,solarGold,coreCyan,Color(0xFF2563EB))
+        regimes.forEachIndexed { index,seg ->
+            val left=x(seg.startMs)
+            val right=x(seg.endMs)
+            if(right>left)drawRect(colors[index%colors.size].copy(alpha=.10f),
+                Offset(left,0f),Size(right-left,size.height))
+            if(index>0)drawLine(solarGold.copy(alpha=.8f),
+                Offset(left,0f),Offset(left,size.height),strokeWidth=2f,
+                pathEffect=PathEffect.dashPathEffect(floatArrayOf(9f,7f),0f))
+        }
+        for(i in 1..3) {
+            val y=size.height*i/4f
+            drawLine(Color(0x335A8FA3),Offset(0f,y),Offset(size.width,y),1f)
+        }
+        val coords=points.mapNotNull { p ->
+            p.cpu?.takeIf{it.isFinite()}?.let { temp ->
+                Offset(x(p.timeMs),((95.0-temp).coerceIn(0.0,75.0)/
+                    75.0*size.height).toFloat())
+            }
+        }
+        if(coords.size>1)drawPath(Path().apply {
+            moveTo(coords.first().x,coords.first().y)
+            coords.drop(1).forEach{lineTo(it.x,it.y)}
+        },coreCyan,style=Stroke(width=3f))
+    }
+}
+
 /** Static graph; no infinite animation or frame polling. Points represent recorded samples. */
 @Composable
 private fun CompareChart(a: List<SessionStore.Point>, b: List<SessionStore.Point>) {
