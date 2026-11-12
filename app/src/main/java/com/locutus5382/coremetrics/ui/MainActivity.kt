@@ -239,10 +239,6 @@ class MainActivity : ComponentActivity() {
             var skipWarmUp by rememberSaveable { mutableStateOf(false) }
             var hideShortRuns by rememberSaveable { mutableStateOf(false) }
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
-            var customDriverActive by rememberSaveable { mutableStateOf(false) }
-            var customScaleActive by rememberSaveable { mutableStateOf(false) }
-            var draftDriver by rememberSaveable { mutableStateOf("") }
-            var draftScale by rememberSaveable { mutableStateOf("") }
             var scrubFraction by rememberSaveable { mutableFloatStateOf(0.5f) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
@@ -608,7 +604,7 @@ class MainActivity : ComponentActivity() {
                                             Text("Optional game / track note", color = muted)
                                             OutlinedTextField(label, { label = it.take(64) },
                                                 modifier = Modifier.fillMaxWidth(), singleLine = true,
-                                                label = { Text("Optional note: game, track or driver") })
+                                                label = { Text("Optional game / track note") })
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 listOf("Stock", "Underclocking", "Custom").forEach { item ->
                                                     FilterChip(selected = configuration == item,
@@ -750,15 +746,24 @@ class MainActivity : ComponentActivity() {
                                                      s.endedAt-s.startedAt>=15_000L
                                              }.forEach { s ->
                                                 HorizontalDivider(color = Color(0x335F91A7))
-                                                Row(verticalAlignment = Alignment.CenterVertically,
+                                                Row(Modifier.horizontalScroll(rememberScrollState()),
+                                                    verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Column(Modifier.weight(1f)) {
+                                                    Column(Modifier.widthIn(min=155.dp)) {
                                                         Text("Session " + s.id + " · " + s.configuration, color = white,
                                                             fontWeight = FontWeight.Bold)
                                                         Text(time(s.startedAt) + " · " + s.count + " samples · " + s.status,
                                                             color = muted, style = MaterialTheme.typography.labelSmall)
                                                         s.note?.let{Text("Note: "+it,color=coreSecondary,
                                                             style=MaterialTheme.typography.labelSmall)}
+                                                        if(s.hasExternalPower)Text(
+                                                            if(s.hasDischargePower)"MIXED POWER" else "PLUGGED IN",
+                                                            color=solarOrange,
+                                                            style=MaterialTheme.typography.labelSmall)
+                                                        Text("Driver: "+(s.graphicsDriver?:"—")+
+                                                            " · Scale: "+(s.resolutionScale?:"—"),
+                                                            color=coreSecondary,
+                                                            style=MaterialTheme.typography.labelSmall)
                                                     }
                                                     OutlinedButton(onClick = {
                                                         exportId = s.id
@@ -768,10 +773,38 @@ class MainActivity : ComponentActivity() {
                                                         detailedId=s.id;page="Sessions"
                                                     }){Text("Analyze")}
                                                     OutlinedButton(onClick={
+                                                        metadataEditorId=if(metadataEditorId==s.id)
+                                                            0L else s.id
+                                                    },enabled=!status.running && !status.starting){
+                                                        Text("Tags")
+                                                    }
+                                                    OutlinedButton(onClick={
                                                         reportAId=s.id;reportBId=0L
                                                         reportFile.launch("CoreMetrics_Report_"+
                                                             s.id+".txt")
                                                     }){Text("Report")}
+                                                }
+                                                if(metadataEditorId==s.id) {
+                                                    SessionMetadataEditor(session=s,
+                                                        onSave={driver,scale->
+                                                            scope.launch {
+                                                                val result=withContext(Dispatchers.IO){
+                                                                    runCatching {
+                                                                        database.updateMetadata(s.id,
+                                                                            driver,scale)
+                                                                    }
+                                                                }
+                                                                result.fold(onSuccess={
+                                                                    sessionList=withContext(Dispatchers.IO){
+                                                                        database.list()
+                                                                    }
+                                                                    message="Session tags saved"
+                                                                },onFailure={e->
+                                                                    message="Session tags failed: "+
+                                                                        (e.message?:e.javaClass.simpleName)
+                                                                })
+                                                            }
+                                                        },onClose={metadataEditorId=0L})
                                                 }
                                             }
                                         }
