@@ -37,10 +37,10 @@ internal fun HudSettingsPanel(
         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
             Button(onClick=onArm,enabled=permissionGranted && !isArmed,
                 colors=ButtonDefaults.buttonColors(containerColor=solarOrange)) {
-                Text(if(isArmed)"Standby enabled"else"Launch standby")
+                Text(if(isArmed) "Standby enabled" else "Launch standby")
             }
             OutlinedButton(onClick=onDisarm,enabled=isArmed || recording) {
-                Text(if(recording)"Stop & close"else"Close HUD")
+                Text(if(recording) "Stop & close" else "Close HUD")
             }
             OutlinedButton(onClick=onTile){Text("Add QS tile")}
         }
