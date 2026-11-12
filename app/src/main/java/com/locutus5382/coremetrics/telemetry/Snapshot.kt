@@ -23,5 +23,6 @@ data class Snapshot(
     val surfaceFps: Double? = null,
     val surfaceFrameMs: Double? = null,
     val surfaceFpsStatus: String = "OFF_BY_DEFAULT",
-    val observedCpuLimits: String? = null
+    val observedCpuLimits: String? = null,
+    val perCoreLoads: String? = null
 )
