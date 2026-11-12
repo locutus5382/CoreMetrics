@@ -28,6 +28,8 @@ internal val iceBlue=Color(0xFFB6E6FC)
 
 @Composable
 internal fun PureGlassBackdrop() {
+    val style=LocalSurfaceFinish.current
+    if(style==SurfaceFinish.TACTICAL)return
     Canvas(Modifier.fillMaxSize()) {
         fun orb(center:Offset,radius:Float,color:Color,alpha:Float) {
             drawCircle(Brush.radialGradient(
@@ -37,26 +39,52 @@ internal fun PureGlassBackdrop() {
         }
         val w=size.width;val h=size.height
         val r=size.minDimension
-        orb(Offset(w*.14f,h*.18f),r*.84f,cobalt,.34f)
-        orb(Offset(w*.71f,h*.64f),r*.82f,solarOrange,.22f)
-        orb(Offset(w*.87f,h*.14f),r*.64f,solarGold,.19f)
-        orb(Offset(w*.28f,h*.90f),r*.86f,Color(0xFF0EA5E9),.21f)
+        if(style==SurfaceFinish.FROSTED) {
+            orb(Offset(w*.14f,h*.18f),r*.84f,cobalt,.34f)
+            orb(Offset(w*.71f,h*.64f),r*.82f,solarOrange,.22f)
+            orb(Offset(w*.87f,h*.14f),r*.64f,solarGold,.19f)
+            orb(Offset(w*.28f,h*.90f),r*.86f,Color(0xFF0EA5E9),.21f)
+        } else {
+            // Liquid: leaner backdrop, specular surface borders carry the look.
+            orb(Offset(w*.22f,h*.14f),r*.72f,cobalt,.24f)
+            orb(Offset(w*.80f,h*.73f),r*.86f,solarOrange,.10f)
+            orb(Offset(w*.68f,h*.13f),r*.50f,Color(0xFF9ECAFF),.13f)
+        }
     }
 }
 
-internal fun Modifier.pureGlass(radius:Int=18): Modifier {
+@Composable
+internal fun Modifier.pureGlass(radius:Int=18):Modifier {
     val shape=RoundedCornerShape(radius.dp)
-    return this
-        .background(Brush.linearGradient(listOf(
-            Color.White.copy(alpha=.17f),
-            cobalt.copy(alpha=.13f),
-            Color(0xFF091534).copy(alpha=.22f)
-        )),shape)
-        .border(1.dp,Brush.linearGradient(listOf(
-            Color.White.copy(alpha=.55f),
-            iceBlue.copy(alpha=.22f),
-            Color.White.copy(alpha=.09f)
-        )),shape)
+    return when(LocalSurfaceFinish.current) {
+        SurfaceFinish.FROSTED -> this
+            .background(Brush.linearGradient(listOf(
+                Color.White.copy(alpha=.17f),
+                cobalt.copy(alpha=.13f),
+                Color(0xFF091534).copy(alpha=.22f)
+            )),shape)
+            .border(1.dp,Brush.linearGradient(listOf(
+                Color.White.copy(alpha=.55f),
+                iceBlue.copy(alpha=.22f),
+                Color.White.copy(alpha=.09f)
+            )),shape)
+
+        SurfaceFinish.LIQUID -> this
+            // Static highlights: no blur applied to the card's TEXT/content.
+            // No time-based gradients, no global graphicsLayer allocation.
+            .background(Brush.linearGradient(
+                listOf(Color(0xEE1E3866),Color(0xEE07132A),
+                    Color(0xED071329),Color(0xE3152A52))
+            ),shape)
+            .border(2.dp,Brush.linearGradient(
+                listOf(Color(0xCFEAF7FF),Color(0xA66BC9F5),
+                    Color(0x506C88C8),Color(0xC4DDEEFF))
+            ),shape)
+
+        SurfaceFinish.TACTICAL -> this
+            .background(Color(0xFF121620),shape)
+            .border(1.dp,Color(0xFF354057),shape)
+    }
 }
 
 @Composable
@@ -64,6 +92,13 @@ internal fun PureGlassGauge(
     title:String,value:String?,progress:Float,
     accent:Color,modifier:Modifier=Modifier
 ) {
+    val finish=LocalSurfaceFinish.current
+    val displayAccent=if(finish==SurfaceFinish.TACTICAL)when(title) {
+        "CPU" -> coreMint
+        "GPU" -> Color(0xFF38BDF8)
+        "Battery W","PWR" -> solarOrange
+        else -> accent
+    } else accent
     Box(modifier.pureGlass(18).padding(8.dp),contentAlignment=Alignment.Center) {
         Box(Modifier.fillMaxWidth().height(103.dp),contentAlignment=Alignment.Center) {
             Canvas(Modifier.size(94.dp)) {
@@ -71,10 +106,18 @@ internal fun PureGlassGauge(
                 drawArc(color=Color.White.copy(alpha=.15f),
                     startAngle=135f,sweepAngle=270f,useCenter=false,
                     style=Stroke(stroke,cap=StrokeCap.Round))
-                if(value!=null)drawArc(
-                    brush=Brush.sweepGradient(listOf(accent,solarGold,accent)),
-                    startAngle=135f,sweepAngle=270f*progress.coerceIn(0f,1f),
-                    useCenter=false,style=Stroke(stroke,cap=StrokeCap.Round))
+                if(value!=null) {
+                    val sweep=270f*progress.coerceIn(0f,1f)
+                    if(finish==SurfaceFinish.TACTICAL)drawArc(
+                        color=displayAccent,startAngle=135f,
+                        sweepAngle=sweep,useCenter=false,
+                        style=Stroke(stroke,cap=StrokeCap.Round))
+                    else drawArc(
+                        brush=Brush.sweepGradient(listOf(displayAccent,
+                            solarGold,displayAccent)),
+                        startAngle=135f,sweepAngle=sweep,useCenter=false,
+                        style=Stroke(stroke,cap=StrokeCap.Round))
+                }
             }
             Column(horizontalAlignment=Alignment.CenterHorizontally,
                 verticalArrangement=Arrangement.spacedBy(2.dp)) {
