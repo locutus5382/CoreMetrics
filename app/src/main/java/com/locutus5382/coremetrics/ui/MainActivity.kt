@@ -5,6 +5,9 @@ import android.app.Activity
 import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
+import android.app.StatusBarManager
+import android.graphics.drawable.Icon
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -44,6 +47,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.RecorderJournal
+import com.locutus5382.coremetrics.quick.SessionTile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -78,6 +82,34 @@ private data class ScreenStatus(
 )
 
 class MainActivity : ComponentActivity() {
+    private fun requestQuickSettingsTile(onResult: (String) -> Unit) {
+        if (Build.VERSION.SDK_INT < 33) {
+            onResult("Edit Quick Settings and add CoreMetrics Record manually")
+            return
+        }
+        try {
+            val statusBar = getSystemService(StatusBarManager::class.java)
+            statusBar?.requestAddTileService(
+                ComponentName(this, SessionTile::class.java),
+                "CoreMetrics • Record",
+                Icon.createWithResource(this, android.R.drawable.ic_media_play),
+                mainExecutor
+            ) { result ->
+                onResult(when (result) {
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ->
+                        "CoreMetrics Record tile added"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED ->
+                        "Tile is already in Quick Settings"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED ->
+                        "Tile not added; edit Quick Settings manually if preferred"
+                    else -> "System could not add tile (code " + result + ")"
+                })
+            } ?: onResult("Quick Settings manager unavailable")
+        } catch (e: Exception) {
+            onResult("Quick Settings request failed: " + e.javaClass.simpleName)
+        }
+    }
+
     private fun query(): ScreenStatus = try {
         val uri = Uri.parse("content://com.locutus5382.coremetrics.monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
@@ -116,7 +148,12 @@ class MainActivity : ComponentActivity() {
             var configuration by rememberSaveable {
                 mutableStateOf(prefs.getString("configuration", "Stock") ?: "Stock")
             }
-            var interval by rememberSaveable { mutableLongStateOf(prefs.getLong("interval_ms", 5000L)) }
+            var interval by rememberSaveable { mutableLongStateOf(
+                if (prefs.getLong("interval_ms", 5000L) == 2000L) 2000L else 5000L
+            ) }
+            var hudEnabled by rememberSaveable {
+                mutableStateOf(prefs.getBoolean("hud_enabled", false))
+            }
             var message by remember { mutableStateOf("") }
             var sessionList by remember { mutableStateOf(emptyList<SessionStore.Session>()) }
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
@@ -285,12 +322,16 @@ class MainActivity : ComponentActivity() {
                                             }
                                             Text("Sample interval", color = muted)
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                listOf(1000L,2000L,5000L).forEach { ms ->
+                                                listOf(2000L,5000L).forEach { ms ->
                                                     FilterChip(selected = interval == ms,
                                                         onClick = { interval = ms },
                                                         label = { Text((ms / 1000).toString() + " seconds") })
                                                 }
                                             }
+                                            Text("Safety mode: 2 or 5 second samples. " +
+                                                "Use 5 s for Eden launch testing.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.labelSmall)
                                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                                 Button(onClick = {
                                                     if (!status.running && !status.starting &&
@@ -323,8 +364,11 @@ class MainActivity : ComponentActivity() {
                                                         "STOP AND SAVE" else "START RECORDING")
                                                 }
                                                 OutlinedButton(onClick = { page = "Sessions" }) {
-                                                    Text("View sessions")
+                                                    Text("Sessions")
                                                 }
+                                                OutlinedButton(onClick = {
+                                                    requestQuickSettingsTile { message=it }
+                                                }) { Text("Add QS tile") }
                                             }
                                         }
                                         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
