@@ -19,6 +19,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.locutus5382.coremetrics.telemetry.Snapshot
+import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -124,6 +125,8 @@ internal class RecorderHud(private val context: Context) {
     private var recording = false
     private var startedAtMs = 0L
     private var latest: Snapshot? = null
+    private val thermal = ThermalTrendFilter()
+    private var thermalReading: ThermalTrendFilter.Reading? = null
     private var blinkOn = true
     private var onToggle: (() -> Unit)? = null
     private var onClose: (() -> Unit)? = null
@@ -294,6 +297,8 @@ internal class RecorderHud(private val context: Context) {
         startedAtMs=startedMs
         if(!isRecording) {
             latest=null
+            thermal.reset()
+            thermalReading=null
             trend?.clear()
         }
         ui.removeCallbacks(heartbeat)
@@ -306,7 +311,8 @@ internal class RecorderHud(private val context: Context) {
     fun update(s:Snapshot,count:Long) {
         if(!recording || !attached())return
         latest=s
-        trend?.add(s.cpuTempC?.toFloat())
+        thermalReading=thermal.update(s.timeMs,s.cpuTempC)
+        trend?.add(thermalReading?.smoothedC?.toFloat())
         renderTelemetry()
     }
 
@@ -321,7 +327,18 @@ internal class RecorderHud(private val context: Context) {
         fun format(n:Double?,unit:String,digits:Int=1):String =
             n?.let { String.format(Locale.US,"%."+digits+"f%s",it,unit) } ?: "—"
         val items=mutableListOf<String>()
-        if(opts.showCpuTemp)items+="CPU "+format(s?.cpuTempC,"°C")
+        if(opts.showCpuTemp) {
+            val reading=thermalReading
+            val arrow=when(reading?.direction) {
+                ThermalTrendFilter.Direction.RISING -> " ▲"
+                ThermalTrendFilter.Direction.FALLING -> " ▼"
+                ThermalTrendFilter.Direction.STABLE -> " —"
+                else -> ""
+            }
+            items+="CPU "+format(reading?.smoothedC,"°C")+arrow
+            if(opts.layout=="pro" && reading?.rawPeakC!=null)
+                items+="CPU peak "+format(reading.rawPeakC,"°C")
+        }
         if(opts.showGpuTemp)items+="GPU "+format(s?.gpuTempC,"°C")
         if(opts.showCpuLoad)items+="CPU "+(s?.cpuPercent?.let{"$it%"} ?: "—")
         if(opts.showGpuLoad)items+="GPU "+(s?.gpuPercent?.let{"$it%"} ?: "—")
