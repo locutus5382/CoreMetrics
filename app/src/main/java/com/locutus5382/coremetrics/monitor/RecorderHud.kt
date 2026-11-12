@@ -292,7 +292,10 @@ internal class RecorderHud(private val context: Context) {
     fun mode(isRecording:Boolean,startedMs:Long=0L) {
         recording=isRecording
         startedAtMs=startedMs
-        if(!isRecording) latest=null
+        if(!isRecording) {
+            latest=null
+            trend?.clear()
+        }
         ui.removeCallbacks(heartbeat)
         blinkOn=true
         renderTelemetry()
@@ -367,6 +370,10 @@ internal class RecorderHud(private val context: Context) {
             strokeWidth=resources.displayMetrics.density*1.5f
             style=Paint.Style.STROKE
             strokeCap=Paint.Cap.ROUND
+        }
+        fun clear() {
+            data.clear()
+            invalidate()
         }
         fun add(v:Float?) {
             if(v==null || !v.isFinite())return
