@@ -112,6 +112,7 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
+                    packageName.endsWith(".v08themes") -> "CoreMetrics v0.8 Themes • Record"
                     packageName.endsWith(".v08base") -> "CoreMetrics v0.8 Analytics • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
@@ -181,6 +182,14 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
         val database = SessionStore(applicationContext)
         setContent {
+            val supportsThemeChoice=packageName.endsWith(".v08themes")
+            var finish by remember {
+                mutableStateOf(SurfaceFinish.parse(
+                    if(supportsThemeChoice)
+                        prefs.getString("ui_surface_finish","frosted")
+                    else "frosted"))
+            }
+            val appliedFinish=if(supportsThemeChoice)finish else SurfaceFinish.FROSTED
             var page by rememberSaveable { mutableStateOf("Live") }
             var status by remember { mutableStateOf(ScreenStatus()) }
             var overlayAllowed by remember {
@@ -421,12 +430,24 @@ class MainActivity : ComponentActivity() {
                     RecordingService::class.java).setAction(RecordingService.DISARM))}
                     .onFailure{message="Close failed: "+it.javaClass.simpleName}
             }
-            MaterialTheme(colorScheme = darkColorScheme(primary = iceBlue, surface = cobaltNavy,
-                background = cobaltNavy, onSurface = coreText)) {
+            CompositionLocalProvider(LocalSurfaceFinish provides appliedFinish) {
+            val rootBackground=when(appliedFinish) {
+                SurfaceFinish.FROSTED -> Brush.linearGradient(listOf(
+                    cobaltNavy,Color(0xFF09173A),Color(0xFF10265C),cobaltNavy))
+                SurfaceFinish.LIQUID -> Brush.linearGradient(listOf(
+                    Color(0xFF030815),Color(0xFF0A1A3A),
+                    Color(0xFF121B39),Color(0xFF030815)))
+                SurfaceFinish.TACTICAL -> Brush.linearGradient(listOf(
+                    Color(0xFF04060C),Color(0xFF04060C)))
+            }
+            MaterialTheme(colorScheme = darkColorScheme(primary = iceBlue,
+                surface=if(appliedFinish==SurfaceFinish.TACTICAL)
+                    Color(0xFF121620) else cobaltNavy,
+                background=if(appliedFinish==SurfaceFinish.TACTICAL)
+                    Color(0xFF04060C) else cobaltNavy,
+                onSurface=coreText)) {
                 Box(
-                    Modifier.fillMaxSize().background(Brush.linearGradient(
-                        listOf(cobaltNavy, Color(0xFF09173A), Color(0xFF10265C), cobaltNavy)
-                    )).onPreviewKeyEvent { event ->
+                    Modifier.fillMaxSize().background(rootBackground).onPreviewKeyEvent { event ->
                         val key = event.nativeKeyEvent
                         if (key.action != KeyEvent.ACTION_DOWN || key.repeatCount != 0) false
                         else when(key.keyCode) {
@@ -481,7 +502,9 @@ class MainActivity : ComponentActivity() {
                                 horizontalArrangement=Arrangement.spacedBy(10.dp)
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("COREMETRICS  /  COBALT & SOLAR GLASS",
+                                    Text(if(!supportsThemeChoice || appliedFinish==SurfaceFinish.FROSTED)
+                                        "COREMETRICS  /  COBALT & SOLAR GLASS"
+                                    else "COREMETRICS  /  "+appliedFinish.displayName.uppercase(),
                                         color=iceBlue,
                                         style=MaterialTheme.typography.labelSmall)
                                     Text(page.uppercase(Locale.US),color=coreText,
@@ -1037,6 +1060,34 @@ class MainActivity : ComponentActivity() {
                                     else -> {
                                         GlassPanel {
                                             Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
+                                            if(supportsThemeChoice) {
+                                                Text("APP APPEARANCE · OPTIONAL FINISHES",
+                                                    color=iceBlue,
+                                                    style=MaterialTheme.typography.titleSmall)
+                                                Row(Modifier.horizontalScroll(rememberScrollState()),
+                                                    horizontalArrangement=
+                                                        Arrangement.spacedBy(7.dp)) {
+                                                    SurfaceFinish.values().forEach { option ->
+                                                        FilterChip(selected=finish==option,
+                                                            onClick={
+                                                                finish=option
+                                                                prefs.edit().putString(
+                                                                    "ui_surface_finish",option.key)
+                                                                    .apply()
+                                                            },label={Text(option.displayName)})
+                                                    }
+                                                }
+                                                Text(appliedFinish.description,
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.bodySmall)
+                                                Text("Only application screens change. "+
+                                                    "The in-game native floating HUD, its "+
+                                                    "touch-lock and all telemetry remain unchanged. "+
+                                                    "No blur/animated shaders are used.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
+                                                HorizontalDivider(color=coreBorder)
+                                            }
                                             Text("Recording is always user-started, offline, and read-only.",
                                                 color = muted)
                                             Text("Optional Android Usage Access", color = white)
@@ -1142,6 +1193,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -1254,10 +1306,13 @@ private fun CompactRailAction(
     label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit
 ) {
     val shape=RoundedCornerShape(11.dp)
+    val isTactical=LocalSurfaceFinish.current==SurfaceFinish.TACTICAL
     Column(
         Modifier.fillMaxWidth().height(49.dp)
             .clip(shape)
-            .background(if(selected) Color(0xE7245367) else Color(0x42192335))
+            .background(if(isTactical)
+                (if(selected)Color(0xFF1F3A4C) else Color(0xFF171E2A))
+            else (if(selected) Color(0xE7245367) else Color(0x42192335)))
             .border(1.dp,if(selected) coreCyan.copy(alpha=0.7f)
                 else coreBorder.copy(alpha=0.38f),shape)
             .clickable(role=Role.Button,onClick=onClick)

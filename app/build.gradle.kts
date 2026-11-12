@@ -15,6 +15,13 @@ android {
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
     }
     buildTypes {
+        create("v08themes") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".v08themes"
+            versionNameSuffix = "-themes"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8 Themes"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8 Themes Record"
+        }
         create("v08base") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".v08base"

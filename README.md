@@ -21,6 +21,19 @@
 
 **Parallel test build (recommended):** GitHub Actions now also generates **CoreMetrics Preview**, package `com.locutus5382.coremetrics.preview`. It has a separate provider authority, tile, preferences and SQLite database, so it can coexist with the v0.5 installation even if CI debug signing keys differ. Export v0.5 CSVs and import them inside Preview to compare the same recorded runs. Do not use the regular v0.6 debug APK if you want to preserve v0.5 installed simultaneously. Preview is not an upgrade/migration and will not automatically see v0.5 private sessions.
 
+## Optional v0.8 Themes build (separate side-by-side APK)
+
+Built on the **same v0.8 analytics implementation**, adding the three UI finishes from Gemini's visual design reference:
+- **Frosted Glass (default):** original CoreMetrics cobalt/navy/orange glass gradients and cards **unchanged**.
+- **Liquid Glass:** static high-contrast navy panels with brighter cobalt/specular hairline borders; no blur applied to the card's content, no per-frame animated sheen or forced compositor layer.
+- **Tactical Flat:** OLED black background, opaque slate cards, 1dp borders and mint/cyan/orange gauge arcs.
+
+The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.v08themes`. It persists for that separate app; the baseline `v08base` package never displays it, and always uses Frosted Glass. HUD/WindowManager overlays, recorder, SQLite schema, permissions and FPS Lab are identical to the baseline and remain outside theme scope. Screenshots are conceptual references, not pixel-perfect contracts for the Odin's landscape display.
+
+This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
+
+Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
 ## v0.8 analytics-only (default Frosted Glass UI is unchanged)
 
 Four targeted improvements, no hardware control or sensor polling:
