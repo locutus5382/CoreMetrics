@@ -117,12 +117,12 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         }
     }
 
-    fun points(id: Long, max: Int = 2500): List<Point> = readableDatabase.rawQuery(
+    fun points(id: Long, max: Int = 12000): List<Point> = readableDatabase.rawQuery(
         """SELECT time_ms,cpu_temp,gpu_temp,cpu_pct,gpu_pct,ram_gib,
         battery_net_w,sf_layer_fps,app_package,
         observed_cpu_limits,busiest_pct,battery_status
         FROM samples WHERE session_id=? ORDER BY time_ms ASC LIMIT ?""",
-        arrayOf(id.toString(), max.coerceIn(1,5000).toString())
+        arrayOf(id.toString(), max.coerceIn(1,12000).toString())
     ).use { c ->
         fun value(i: Int): Double? = if (c.isNull(i)) null else c.getDouble(i)
         buildList {
@@ -132,6 +132,89 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 if (c.isNull(9)) null else c.getString(9),
                 value(10), if (c.isNull(11)) null else c.getString(11)))
         }
+    }
+
+    /**
+     * SAF file import is atomic and never touches an existing recording.
+     * Maximum 12k rows; one import becomes a new independently selectable session.
+     * The existing schema and recorder process remain unchanged.
+     */
+    @Synchronized fun importCsv(reader: java.io.Reader): Long {
+        val csv=CsvRecordReader(reader)
+        val header=csv.next() ?: error("CSV file is empty")
+        val columns=CsvSessionColumns(header)
+        val db=writableDatabase
+        var sessionId=0L
+        var rowCount=0
+        var lastTime=0L
+        db.beginTransaction()
+        try {
+            var firstTime=0L
+            while(true) {
+                val row=csv.next() ?: break
+                if(row.size!=columns.width) error("CSV row has unexpected column count")
+                if(rowCount>=12_000) error("CSV exceeds 12,000 sample import limit")
+                val now=columns.time(row)
+                if(rowCount>0 && now<lastTime) error("CSV timestamps out of order")
+                if(rowCount==0) {
+                    firstTime=now
+                    val label=columns.field(row,"game_label")?.take(60) ?: "Imported session"
+                    val config=columns.field(row,"configuration")?.take(38) ?: "Unknown profile"
+                    sessionId=db.insertOrThrow("sessions",null,ContentValues().apply {
+                        put("started_at",firstTime)
+                        put("label","CSV · "+label)
+                        put("configuration",config)
+                        put("status","IMPORTED")
+                        put("ended_at",firstTime)
+                    })
+                }
+                val values=ContentValues().apply {
+                    put("session_id",sessionId)
+                    put("time_ms",now)
+                    fun decimal(column:String,key:String) {
+                        columns.number(row,key)?.let { put(column,it) }
+                    }
+                    fun count(column:String,key:String) {
+                        columns.integer(row,key)?.let { if(it in Int.MIN_VALUE..Int.MAX_VALUE)
+                            put(column,it.toInt()) }
+                    }
+                    fun text(column:String,key:String) {
+                        columns.field(row,key)?.let { put(column,it.take(1024)) }
+                    }
+                    decimal("cpu_temp","cpu_temp_c")
+                    decimal("gpu_temp","gpu_temp_c")
+                    decimal("battery_temp","battery_temp_c")
+                    count("battery_pct","battery_pct")
+                    count("cpu_pct","cpu_load_pct")
+                    count("busiest_pct","busiest_core_pct")
+                    text("busiest_core","busiest_core")
+                    count("gpu_pct","gpu_load_pct")
+                    decimal("gpu_mhz","gpu_mhz")
+                    decimal("ram_gib","system_ram_used_gib")
+                    text("cpu_clocks","cpu_clocks")
+                    text("app_package","android_app_package")
+                    decimal("battery_net_w","battery_net_w")
+                    decimal("battery_ua","battery_current_ua")
+                    decimal("battery_mv","battery_voltage_mv")
+                    text("battery_source","battery_power_source")
+                    text("battery_status","battery_power_status")
+                    decimal("sf_layer_fps","sf_layer_fps")
+                    decimal("sf_frame_ms","sf_frame_time_ms")
+                    text("sf_status","sf_status")
+                    text("observed_cpu_limits","observed_cpu_limits")
+                }
+                db.insertOrThrow("samples",null,values)
+                rowCount++
+                lastTime=now
+            }
+            require(rowCount>0) { "CSV contains no samples" }
+            db.update("sessions",ContentValues().apply { put("ended_at",lastTime) },
+                "id=?", arrayOf(sessionId.toString()))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        return sessionId
     }
 
     /** Caller opens the Storage Access Framework URI; avoid Binder-sized EXTRA_TEXT. */
