@@ -91,7 +91,7 @@ private data class ScreenStatus(
     val frameMs: String? = null, val fpsStatus: String? = null,
     val observedLimits: String? = null,
     val coreLoads: String? = null,
-    val hudStatus: String? = null,
+    val hudStatus: String? = null, val hudLocked: Boolean = false,
     val lastAt: Long = 0
 )
 
@@ -144,6 +144,7 @@ class MainActivity : ComponentActivity() {
             observedLimits = v.getString("observedLimits"),
             coreLoads = v.getString("coreLoads"),
             hudStatus = v.getString("hudStatus"),
+            hudLocked = v.getBoolean("hudLocked",false),
             lastAt = v.getLong("lastSampleAt", 0)
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
@@ -277,6 +278,11 @@ class MainActivity : ComponentActivity() {
                 runCatching{startForegroundService(i)}.fold(
                     onSuccess={message="Standby requested · no recording until REC"},
                     onFailure={message="Standby failed: "+it.javaClass.simpleName})
+            }
+            fun unlockHud() {
+                runCatching { startService(Intent(this@MainActivity,
+                    RecordingService::class.java).setAction(RecordingService.HUD_UNLOCK)) }
+                    .onFailure { message="Unlock failed: "+it.javaClass.simpleName }
             }
             fun closeHud() {
                 runCatching{startService(Intent(this@MainActivity,
@@ -694,10 +700,12 @@ class MainActivity : ComponentActivity() {
                                             options=hudOptions,
                                             isArmed=status.standby || status.running,
                                             recording=status.running,
+                                            locked=status.hudLocked,
                                             permissionGranted=overlayAllowed,
                                             onChange={ persistHud(it) },
                                             onArm={ armHud() },
                                             onDisarm={ closeHud() },
+                                            onUnlock={ unlockHud() },
                                             onGrantPermission={
                                                 startActivity(Intent(
                                                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
