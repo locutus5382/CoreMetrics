@@ -74,7 +74,7 @@ class SurfaceFlingerProbe(private val context: Context, private val enabled: Boo
 
         val result = invoke("--latency", layer!!)
             ?: return FrameEstimate(null,null,0,disabledReason ?: "SF_LATENCY_UNAVAILABLE")
-        last = FrameLatencyParser.parse(result, SystemClock.elapsedRealtimeNanos())
+        last = FrameLatencyParser.parse(result, System.nanoTime())
         if (last.status == "PERMISSION_DENIED")
             disabledReason = "SURFACEFLINGER_PERMISSION_DENIED"
         return last
