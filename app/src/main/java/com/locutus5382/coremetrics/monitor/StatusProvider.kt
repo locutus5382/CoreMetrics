@@ -20,6 +20,7 @@ class StatusProvider : ContentProvider() {
         return Bundle().apply {
             putBoolean("running", MonitorState.running)
             putBoolean("starting", MonitorState.starting)
+            putBoolean("standby", MonitorState.standby)
             putLong("id", MonitorState.sessionId)
             putLong("started", MonitorState.startedAt)
             putLong("count", MonitorState.sampleCount)
