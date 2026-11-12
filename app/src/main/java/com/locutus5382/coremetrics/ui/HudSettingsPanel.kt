@@ -48,7 +48,8 @@ internal fun HudSettingsPanel(
             "Tap tab to expand, or ⚙ for live metric, opacity and REC controls. " +
             "Standby performs no telemetry sampling.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
-        Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement=Arrangement.spacedBy(9.dp)) {
             Button(onClick=onArm,enabled=permissionGranted && !isArmed,
                 colors=ButtonDefaults.buttonColors(containerColor=solarOrange)) {
                 Text(if(isArmed) "Standby enabled" else "Launch standby")
@@ -62,7 +63,7 @@ internal fun HudSettingsPanel(
         if(isArmed) {
             Row(verticalAlignment=Alignment.CenterVertically,
                 horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                Text(if(locked) "🔒 Click-through HUD" else "🔓 Interactive HUD",
+                Text(if(locked) "LOCKED · Click-through HUD" else "UNLOCKED · Interactive HUD",
                     color=if(locked) solarGold else coreSecondary,
                     style=MaterialTheme.typography.bodySmall)
                 if(locked) OutlinedButton(onClick=onUnlock) { Text("Unlock HUD") }

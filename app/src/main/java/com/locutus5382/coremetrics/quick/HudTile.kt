@@ -18,14 +18,20 @@ import com.locutus5382.coremetrics.monitor.RecordingService
  * This is not the REC tile and never samples hardware by itself.
  */
 class HudTile:TileService() {
-    private data class State(val recording:Boolean,val standby:Boolean)
+    private data class State(
+        val recording:Boolean,val standby:Boolean,val hudVisible:Boolean
+    )
     private fun state():State=try {
         val b=contentResolver.call(Uri.parse(
             "content://"+packageName+".monitor.status"),"status",null,null)
+        val status=b?.getString("hudStatus").orEmpty()
+        val visible=status=="HUD_ATTACHED" ||
+            status=="HUD_ALREADY_ATTACHED" || status=="HUD_CONFIGURED" ||
+            status.startsWith("HUD_LOCKED") || status.startsWith("HUD_UNLOCKED")
         State(b?.getBoolean("running",false)==true ||
             b?.getBoolean("starting",false)==true,
-            b?.getBoolean("standby",false)==true)
-    }catch(_:Exception){State(false,false)}
+            b?.getBoolean("standby",false)==true,visible)
+    }catch(_:Exception){State(false,false,false)}
 
     override fun onStartListening(){super.onStartListening();refresh()}
     override fun onClick(){
@@ -82,13 +88,14 @@ class HudTile:TileService() {
         val current=state()
         qsTile?.apply {
             label=when {
-                current.recording->"CM HUD · REC"
+                current.recording && current.hudVisible->"CM HUD · REC"
+                current.recording->"REC · HUD OFF"
                 current.standby->"CM HUD · ON"
                 else->"CM HUD · OFF"
             }
             icon=android.graphics.drawable.Icon.createWithResource(
                 this@HudTile,R.drawable.ic_coremetrics_hud_tile)
-            this.state=if(current.recording||current.standby)
+            this.state=if(current.hudVisible||current.standby)
                 Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             updateTile()
         }

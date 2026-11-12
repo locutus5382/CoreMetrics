@@ -160,7 +160,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-        private fun requestHudQuickSettingsTile(onResult:(String)->Unit) {
+    private fun requestHudQuickSettingsTile(onResult:(String)->Unit) {
         if(Build.VERSION.SDK_INT<33) {
             onResult("Edit Quick Settings and add CM HUD manually")
             return
@@ -191,7 +191,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-private fun query(): ScreenStatus = try {
+    private fun query(): ScreenStatus = try {
         val uri = Uri.parse("content://" + packageName + ".monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
         if (v == null) ScreenStatus(message = "Recorder status unavailable")
@@ -425,7 +425,7 @@ private fun query(): ScreenStatus = try {
                         linkedPairs=withContext(Dispatchers.IO){database.links()}
                 }
             }
-            LaunchedEffect(page,detailedId,skipWarmUp) {
+            LaunchedEffect(page,detailedId,skipWarmUp,sessionList) {
                 if(page=="Sessions" && detailedId>0L) {
                     val response=withContext(Dispatchers.IO) {
                         val session=database.list(200).firstOrNull{it.id==detailedId}
