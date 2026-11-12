@@ -242,7 +242,8 @@ internal class RecorderHud(private val context:Context) {
         )
         for((label,make) in toggles) {
             val b=action(label){changeOptions(make())}
-            row1.addView(b,LinearLayout.LayoutParams(0,dp(37f),1f))
+            row1.addView(b,LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,dp(37f)))
         }
         column.addView(row1)
         val row2=LinearLayout(context).apply {

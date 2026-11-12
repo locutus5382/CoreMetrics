@@ -793,10 +793,11 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick = {
                                                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                                             }) { Text("Open Usage Access settings") }
-                                            Text("FPS: the Portal denied SurfaceFlinger access on every " +
-                                                "recording. System dumps are disabled in this stability build. " +
-                                                "No fabricated FPS values. We will test a read-only FPS " +
-                                                "provider separately.", color=coreSecondary,
+                                            Text("FPS LAB · Off by default. No PServer command is executed. " +
+                                                "An authenticated privileged read-only host and device-verified " +
+                                                "presentation timestamps are required before enabling FPS. " +
+                                                "PServerBinder visibility alone does not establish access.",
+                                                color=coreSecondary,
                                                 style=MaterialTheme.typography.bodySmall)
                                             HorizontalDivider(color=coreBorder)
                                             Text("IN-GAME HUD",color=coreCyan,

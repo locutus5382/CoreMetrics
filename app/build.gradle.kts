@@ -9,8 +9,8 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.5.0-regimes-thermal-alpha"
+        versionCode = 6
+        versionName = "0.6.0-hud-analysis-fpslab-alpha"
     }
     buildTypes {
         release {
