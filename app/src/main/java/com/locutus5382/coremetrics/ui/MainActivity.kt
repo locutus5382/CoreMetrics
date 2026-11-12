@@ -28,6 +28,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.CompareArrows
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -238,36 +245,34 @@ class MainActivity : ComponentActivity() {
                     }
                 ) {
                     InstrumentBackdrop()
-                    Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(Modifier.fillMaxSize().padding(9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Compact, icon-led rail fits four destinations even on
+                        // the Portal's 360dp landscape configuration. Scroll is
+                        // still available when system font scaling is increased.
                         Column(
-                            Modifier.width(146.dp).fillMaxHeight()
-                                .clip(RoundedCornerShape(16.dp))
+                            Modifier.width(84.dp).fillMaxHeight()
+                                .clip(RoundedCornerShape(15.dp))
                                 .background(Color(0xDD132337))
-                                .border(1.dp, Color(0xAA41687B), RoundedCornerShape(16.dp))
+                                .border(1.dp, Color(0xAA41687B), RoundedCornerShape(15.dp))
                                 .verticalScroll(rememberScrollState())
-                                .padding(horizontal=9.dp,vertical=10.dp),
+                                .padding(horizontal=5.dp, vertical=6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
                             Text("CM",color=coreCyan,
-                                style=MaterialTheme.typography.headlineSmall,
+                                style=MaterialTheme.typography.titleMedium,
                                 fontWeight=FontWeight.Black)
-                            Text("COREMETRICS",color=white,
-                                style=MaterialTheme.typography.labelMedium,
+                            Text("CORE",color=coreSecondary, fontSize=9.sp,
                                 fontWeight=FontWeight.Bold)
-                            Text("INSTRUMENT GLASS",color=muted,
-                                style=MaterialTheme.typography.labelSmall)
-                            Spacer(Modifier.height(6.dp))
                             pages.forEach { item ->
-                                RailAction(item, page==item) { page=item }
+                                CompactRailAction(item, railIcon(item), page==item) { page=item }
                             }
-                            Spacer(Modifier.height(8.dp))
                             HorizontalDivider(color=coreBorder)
-                            Text(if(status.running) "● RECORDING"
-                                else if(status.starting) "◌ STARTING"
-                                else "○ IDLE",color=if(status.running) coreMint else muted,
-                                style=MaterialTheme.typography.labelSmall)
-                            Text("v0.3 • read-only",color=muted,
-                                style=MaterialTheme.typography.labelSmall)
+                            Text(if(status.running) "● REC"
+                                else if(status.starting) "START"
+                                else "IDLE",color=if(status.running) coreMint else muted,
+                                style=MaterialTheme.typography.labelSmall,
+                                fontWeight=FontWeight.Bold)
                         }
                         Column(Modifier.weight(1f).fillMaxHeight()) {
                             Row(
@@ -685,22 +690,33 @@ private fun CompareChart(a: List<SessionStore.Point>, b: List<SessionStore.Point
     }
 }
 
+private fun railIcon(label: String): ImageVector = when (label) {
+    "Live" -> Icons.Rounded.Dashboard
+    "Sessions" -> Icons.Rounded.History
+    "Compare" -> Icons.Rounded.CompareArrows
+    else -> Icons.Rounded.Settings
+}
+
 @Composable
-private fun RailAction(label: String, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(10.dp)
-    Row(Modifier.fillMaxWidth().height(40.dp)
-        .clip(shape)
-        .background(if(selected) Color(0xEE235268) else Color(0x54182436))
-        .border(1.dp,if(selected) coreCyan.copy(alpha=.65f) else coreBorder.copy(alpha=.50f),shape)
-        .clickable(role=Role.Button,onClick=onClick)
-        .padding(horizontal=10.dp),
-        verticalAlignment=Alignment.CenterVertically,
-        horizontalArrangement=Arrangement.spacedBy(9.dp)) {
-        Box(Modifier.width(3.dp).height(15.dp)
-            .background(if(selected) coreCyan else Color(0xFF567184),
-                RoundedCornerShape(3.dp)))
+private fun CompactRailAction(
+    label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit
+) {
+    val shape=RoundedCornerShape(11.dp)
+    Column(
+        Modifier.fillMaxWidth().height(49.dp)
+            .clip(shape)
+            .background(if(selected) Color(0xE7245367) else Color(0x42192335))
+            .border(1.dp,if(selected) coreCyan.copy(alpha=0.7f)
+                else coreBorder.copy(alpha=0.38f),shape)
+            .clickable(role=Role.Button,onClick=onClick)
+            .padding(vertical=4.dp),
+        horizontalAlignment=Alignment.CenterHorizontally,
+        verticalArrangement=Arrangement.Center
+    ) {
+        Icon(icon,contentDescription=null,modifier=Modifier.size(20.dp),
+            tint=if(selected) coreCyan else coreSecondary)
         Text(label,color=if(selected) coreText else coreSecondary,
-            style=MaterialTheme.typography.labelLarge,
-            fontWeight=if(selected) FontWeight.Bold else FontWeight.Medium)
+            fontSize=10.sp,fontWeight=if(selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines=1)
     }
 }
