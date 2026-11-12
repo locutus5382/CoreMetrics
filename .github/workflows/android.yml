@@ -25,7 +25,7 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Unit tests and assemble debug APK
-        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleV08base --no-daemon
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleV08base :app:assembleV08themes --no-daemon
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -36,3 +36,8 @@ jobs:
         with:
           name: CoreMetrics-v0.8-analytics-only
           path: app/build/outputs/apk/v08base/app-v08base.apk
+      - name: Upload optional themes v0.8 app
+        uses: actions/upload-artifact@v4
+        with:
+          name: CoreMetrics-v0.8-themes
+          path: app/build/outputs/apk/v08themes/app-v08themes.apk
