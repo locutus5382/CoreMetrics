@@ -6,7 +6,7 @@ While you explicitly record a session, CoreMetrics stores device telemetry, time
 
 The app does not transmit this information. You may use the Android document picker to export a CSV to a location you choose. Files shared by the user outside CoreMetrics are governed by the chosen destination's privacy practices.
 
-The app requires notifications to display ongoing recording status and an accessible Stop action. Optional Usage Access is used solely for app attribution; recording works without it. No overlay permission is requested in this initial version.
+The app requires notifications to display ongoing recording status and an accessible Stop action. Optional Usage Access is used solely for app attribution; recording works without it. Optional display-over-other-apps permission may be requested from system Settings for an explicitly user-enabled, active-session HUD. The overlay displays existing session readings without collecting additional data.
 
 Deleting the app normally removes its local database. Independently exported CSV files are not automatically deleted by the app. For privacy requests or support, use the contact information supplied by the publisher's eventual Google Play listing.
 
