@@ -39,11 +39,21 @@ object V08Analytics {
             .map{ObservedPhase(it.startMs,it.endMs,it.sampleCount,it.key,it.label)}
         val names=phases.map{it.description}
         val selectedLower=selected.lowercase(Locale.US)
-        val mismatch=selectedLower.contains("stock") && names.any{
-            it.startsWith("Large UC")||it.startsWith("Medium UC")
+        // A generic "Underclocking" label may describe GPU-only tuning,
+        // so this is a warning to CHECK the configured CPU caps, never proof
+        // that a particular tuner failed or was disabled.
+        val stockLikeOnly=names.isNotEmpty() && names.all {
+            it.startsWith("Stock (")
         }
+        val mismatch=(selectedLower.contains("stock") && names.any {
+            it.startsWith("Large UC") || it.startsWith("Medium UC")
+        }) || (selectedLower.contains("underclock") && stockLikeOnly)
         val note=when {
             phases.isEmpty() -> "No readable P3/P7 frequency limits"
+            selectedLower.contains("underclock") && stockLikeOnly ->
+                "Selected Underclocking but all readable P3/P7 ceilings are " +
+                "stock-like. Check CPU tuning; GPU-only underclocking can " +
+                "still be active. Tuner identity is NOT measured."
             phases.size>1 -> "Multiple measured phases; do not reduce to one applied profile"
             else -> "Observed cpufreq ceilings; tuner attribution is not proven"
         }
