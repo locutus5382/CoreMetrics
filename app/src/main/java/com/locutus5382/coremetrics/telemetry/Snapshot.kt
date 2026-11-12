@@ -14,5 +14,14 @@ data class Snapshot(
     val gpuMHz: Double?,
     val ramGiB: Double?,
     val cpuClockSummary: String?,
-    val appPackage: String?
+    val appPackage: String?,
+    val signedBatteryWatts: Double? = null,
+    val batteryCurrentMicroAmps: Long? = null,
+    val batteryVoltageMilliVolts: Long? = null,
+    val batteryPowerSource: String = "UNAVAILABLE",
+    val batteryPowerStatus: String = "UNAVAILABLE",
+    val surfaceFps: Double? = null,
+    val surfaceFrameMs: Double? = null,
+    val surfaceFpsStatus: String = "OFF_BY_DEFAULT",
+    val observedCpuLimits: String? = null
 )
