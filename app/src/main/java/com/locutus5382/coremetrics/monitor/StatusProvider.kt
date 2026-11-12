@@ -31,6 +31,20 @@ class StatusProvider : ContentProvider() {
             putString("peakCore", s?.busiestPercent?.toString())
             putString("ram", s?.ramGiB?.let { "%.2f GiB".format(java.util.Locale.US,it) })
             putString("clock", s?.cpuClockSummary)
+            putString("observedLimits", s?.observedCpuLimits)
+            putString("coreLoads", s?.perCoreLoads)
+            putString("power", s?.signedBatteryWatts?.let {
+                "%.2f W".format(java.util.Locale.US,it)
+            })
+            putString("powerStatus", s?.batteryPowerStatus)
+            putString("powerSource", s?.batteryPowerSource)
+            putString("fps", s?.surfaceFps?.let {
+                "%.1f".format(java.util.Locale.US,it)
+            })
+            putString("frameMs", s?.surfaceFrameMs?.let {
+                "%.1f ms".format(java.util.Locale.US,it)
+            })
+            putString("fpsStatus", s?.surfaceFpsStatus)
             putString("app", s?.appPackage)
             putLong("lastSampleAt", s?.timeMs ?: 0L)
         }

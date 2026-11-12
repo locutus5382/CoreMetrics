@@ -9,6 +9,12 @@
 - Session labels Stock, ClusterTune or Custom are manual declarations, never verified tuner state.
 - Capture interrupt/crash state, startup and stop outcomes.
 
+## Alpha 2 — diagnostic measurement build (v0.2)
+- Battery net watts from public Android APIs; treat charging and bypass readings as non-comparable.
+- Optional SurfaceFlinger per-layer frame probe, 15-second cadence, timeout, no generic privileged shell. If denied, explain why in Diagnostics.
+- Recorder journal and own process exit history to distinguish failed Start, process kill and user Stop.
+- UI Instrument Glass with telemetry cards and 60-second sample history.
+
 ## Alpha 2 — real analytics
 - Controller-friendly four-page layout: Live, Sessions, Compare, Settings.
 - Charts of existing validated metrics, zoomable session curves, side-by-side A/B mean and peak delta.
