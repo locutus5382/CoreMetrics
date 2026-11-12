@@ -15,7 +15,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
         val label: String, val configuration: String, val status: String, val count: Int,
         val note: String? = null,
-        val graphicsDriver: String? = null, val resolutionScale: String? = null)
+        val graphicsDriver: String? = null, val resolutionScale: String? = null,
+        val hasExternalPower:Boolean=false, val hasDischargePower:Boolean=false)
     data class Point(val timeMs: Long, val cpu: Double?, val gpu: Double?,
         val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
         val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
@@ -221,7 +222,12 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     fun list(limit: Int = 80): List<Session> = readableDatabase.rawQuery("""
         SELECT s.id,s.started_at,s.ended_at,s.label,s.configuration,s.status,
         (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id),
-        s.game_note,s.graphics_driver,s.resolution_scale
+         s.game_note,s.graphics_driver,s.resolution_scale,
+        EXISTS(SELECT 1 FROM samples x WHERE x.session_id=s.id AND
+            (x.battery_status LIKE 'CHARGING_OR_EXTERNAL_POWER%'
+             OR x.battery_status LIKE 'FULL%' OR x.battery_status LIKE 'PLUGGED%')),
+        EXISTS(SELECT 1 FROM samples x WHERE x.session_id=s.id AND
+            x.battery_status LIKE 'DISCHARGING%')
         FROM sessions s ORDER BY s.id DESC LIMIT ?
     """.trimIndent(), arrayOf(limit.coerceIn(1,200).toString())).use { c ->
         buildList {
@@ -232,7 +238,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 c.getString(5) ?: "UNKNOWN",c.getInt(6),
                 if(c.isNull(7))null else c.getString(7),
                 if(c.isNull(8))null else c.getString(8),
-                if(c.isNull(9))null else c.getString(9)
+                if(c.isNull(9))null else c.getString(9),
+                c.getInt(10)!=0,c.getInt(11)!=0
             ))
         }
     }
