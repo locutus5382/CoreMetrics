@@ -2,13 +2,13 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.3 stability test build. Source is not Play Store approved; not yet validated on the AYN Odin 2 Portal, not Play Store approved. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.4 experimental HUD test build. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
 - **Sessions:** User-started foreground recording with a persistent Stop notification, local SQLite storage and CSV exports.
 - **Compare:** Stock / ClusterTune / Custom run labels, elapsed-time-aligned thermal and utilization charts and differences. A label is user-entered, never proof that a tuner is active.
-- **HUD Studio:** Future opt-in overlay and editable views after recording reliability is established.
+- **HUD Studio:** Opt-in no-sampling standby capsule, tap REC to start the existing collector, STOP to save and return to standby, plus opacity, size, compact/Pro layouts, metric visibility, mini sparkline, blinking dot and color customization.
 - **FPS:** Opt-in experimental SurfaceFlinger per-layer frame-present probe. Standard app UID may lack DUMP permission; a clear error status is shown, never invented FPS. Do not present display refresh or emulator-internal timing as actual delivered game FPS.
 
 ## Security, privacy and platform
@@ -18,6 +18,14 @@
 - Google Play build baseline uses **compileSdk/targetSdk 36**, minSdk 31. User-initiated `specialUse` foreground recording must be approved by Play Console. Neither target SDK nor a manifest declaration guarantees approval.
 - No PServer in initial Play-compatible version. A separate strictly read-only Odin variant may be designed later only if it provides validated value and clear permissions; a read-only observer cannot claim LMK immunity.
 - On-device collected readings and session history stay in app-private storage unless the user chooses to export them.
+
+## v0.4 Pure Cobalt & Solar Glass + standby HUD
+- Original static cobalt/orange/yellow light mesh, low-alpha glass surfaces, 1dp specular borders and compact navigation; four real-data circular gauges with unavailable FPS explicitly shown as missing.
+- Foreground **standby HUD** is activated by a deliberate user tap, displays a persistent notification, draws one small overlay and runs **no telemetry collector or SQLite recording** until the user taps its REC control. It intentionally displays no fabricated standby measurements.
+- REC begins the existing :monitor coroutine and SQLite session; STOP finalizes the session then returns to standby without closing the overlay. Close button or notification exits standby.
+- HUD customizer: opacity 30–90%, 3 sizes, compact/Pro layouts, choose CPU/GPU temperatures, CPU/GPU load, RAM, battery net W, optional FPS missing-value indicator, Pro sparkline, red/orange/cyan/violet dot and opt-in blink. Single sample source, no extra polling.
+- User must grant Display over other apps permission; ordinary Android background/foreground service restrictions apply, and an Android 14+ `specialUse` foreground-service declaration does not guarantee Play approval.
+- Controller-accessible compact 84dp rail retains Live, Sessions, Compare, HUD and Settings pages. O2P Control Center remains unchanged.
 
 ## v0.3 stability changes
 - Android Quick Settings Record tile remains user-installed; Live and Settings now have an explicit tile-add action (Android 13+).
