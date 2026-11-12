@@ -96,6 +96,7 @@ private data class ScreenStatus(
     val observedLimits: String? = null,
     val coreLoads: String? = null,
     val hudStatus: String? = null, val hudLocked: Boolean = false,
+    val hudOptionRevision: Long = 0L, val hudChanged: HudOptions? = null,
     val lastAt: Long = 0
 )
 
@@ -149,6 +150,22 @@ class MainActivity : ComponentActivity() {
             coreLoads = v.getString("coreLoads"),
             hudStatus = v.getString("hudStatus"),
             hudLocked = v.getBoolean("hudLocked",false),
+            hudOptionRevision = v.getLong("hudOptionRevision",0L),
+            hudChanged = if(v.getLong("hudOptionRevision",0L)>0L) HudOptions(
+                opacity=v.getFloat("hudOptOpacity",0.57f),
+                size=v.getString("hudOptSize")?:"regular",
+                layout=v.getString("hudOptLayout")?:"pill",
+                indicatorColor=v.getString("hudOptIndicator")?:"red",
+                blink=v.getBoolean("hudOptBlink",true),
+                showCpuTemp=v.getBoolean("hudOptCpuTemp",true),
+                showGpuTemp=v.getBoolean("hudOptGpuTemp",true),
+                showCpuLoad=v.getBoolean("hudOptCpuLoad",false),
+                showGpuLoad=v.getBoolean("hudOptGpuLoad",false),
+                showRam=v.getBoolean("hudOptRam",true),
+                showPower=v.getBoolean("hudOptPower",true),
+                showFps=v.getBoolean("hudOptFps",false),
+                showSparkline=v.getBoolean("hudOptSparkline",true)
+            ) else null,
             lastAt = v.getLong("lastSampleAt", 0)
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
@@ -258,6 +275,13 @@ class MainActivity : ComponentActivity() {
                             cpuEma=null
                             cpuPeak=null
                             cpuTrend=ThermalTrendFilter.Direction.UNKNOWN
+                        }
+                        if(next.hudOptionRevision>status.hudOptionRevision &&
+                            next.hudChanged!=null) {
+                            // Synchronize preferences across Android processes without
+                            // a HUD_CONFIG echo and without overwriting drawer changes.
+                            hudOptions=next.hudChanged
+                            hudOptions.save(this@MainActivity)
                         }
                         status = next
                         overlayAllowed=Settings.canDrawOverlays(this@MainActivity)
