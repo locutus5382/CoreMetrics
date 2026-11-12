@@ -145,8 +145,10 @@ class RecordingService : Service() {
                                     "HUD_SHOW_FAILED_" + it.javaClass.simpleName
                                 }
                             }
+                            MonitorState.hudState = result
                             RecorderJournal.event(this@RecordingService,"HUD_START",result)
                         }
+                        if (!hudOn) MonitorState.hudState = "HUD_OFF"
                         var next = SystemClock.elapsedRealtime()
                         var lastNotification = 0L
                         while (isActive && !stopping) {
@@ -197,6 +199,7 @@ class RecordingService : Service() {
                                     "HUD_REMOVE_EXCEPTION_" + it.javaClass.simpleName
                                 }
                             }
+                            MonitorState.hudState = hudResult
                             RecorderJournal.event(this@RecordingService,
                                 "HUD_STOP",hudResult)
                             withContext(Dispatchers.IO) {
