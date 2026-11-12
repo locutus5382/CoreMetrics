@@ -9,12 +9,19 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.7.0-lmk-analytics-test"
+        versionCode = 8
+        versionName = "0.8.0-analytics-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
     }
     buildTypes {
+        create("v08base") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".v08base"
+            versionNameSuffix = "-analytics"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8 Analytics"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8 Analytics Record"
+        }
         create("v07test") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".v07test"
