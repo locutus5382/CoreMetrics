@@ -361,18 +361,44 @@ class MainActivity : ComponentActivity() {
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 when (page) {
                                     "Live" -> {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                            InstrumentKpi("Layer FPS",status.fps,
-                                                status.fpsStatus ?: "Opt-in experimental",coreAmber,Modifier.weight(1f))
-                                            InstrumentKpi("CPU / SoC",status.cpu,
-                                                "Named thermal",coreCyan,Modifier.weight(1f))
-                                            InstrumentKpi("GPU",status.gpu,
-                                                "Named thermal",coreMint,Modifier.weight(1f))
-                                            InstrumentKpi("RAM",status.ram,
-                                                "System-wide",coreCyan,Modifier.weight(1f))
-                                            InstrumentKpi("Battery",status.power,
-                                                "Net battery watts",coreAmber,Modifier.weight(1f))
+                                        Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                                            Button(onClick={ if(status.standby || status.running) {
+                                                page="HUD"
+                                            } else armHud() },
+                                                colors=ButtonDefaults.buttonColors(
+                                                    containerColor=solarOrange)) {
+                                                Text(if(status.standby) "HUD READY"
+                                                    else if(status.running) "● REC"
+                                                    else "LAUNCH HUD STANDBY")
+                                            }
+                                            OutlinedButton(onClick={page="HUD"}) {
+                                                Text("Customize HUD")
+                                            }
+                                            OutlinedButton(onClick={
+                                                requestQuickSettingsTile { message=it }
+                                            }) { Text("Add QS tile") }
                                         }
+                                        Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                                            PureGlassGauge("CPU",status.cpu,
+                                                (((status.cpu?.removeSuffix("°C")
+                                                    ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
+                                                solarOrange,Modifier.weight(1f))
+                                            PureGlassGauge("GPU",status.gpu,
+                                                (((status.gpu?.removeSuffix("°C")
+                                                    ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
+                                                solarGold,Modifier.weight(1f))
+                                            PureGlassGauge("Battery W",status.power,
+                                                ((status.power?.removeSuffix(" W")
+                                                    ?.toDoubleOrNull() ?: 0.0)/12.0).toFloat(),
+                                                solarGold,Modifier.weight(1f))
+                                            PureGlassGauge("FPS",status.fps,
+                                                ((status.fps?.toDoubleOrNull() ?: 0.0)/120.0).toFloat(),
+                                                iceBlue,Modifier.weight(1f))
+                                        }
+                                        Text("Ring arcs use display-only reference scales; " +
+                                            "they are not thermal safety limits.",
+                                            color=coreSecondary,
+                                            style=MaterialTheme.typography.labelSmall)
                                         LiveScope(liveTrace)
                                         PerCoreLoadMatrix(status.coreLoads)
                                         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -590,6 +616,23 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     }
+                                    "HUD" -> {
+                                        HudSettingsPanel(
+                                            options=hudOptions,
+                                            isArmed=status.standby || status.running,
+                                            recording=status.running,
+                                            permissionGranted=Settings.canDrawOverlays(this@MainActivity),
+                                            onChange={ persistHud(it) },
+                                            onArm={ armHud() },
+                                            onDisarm={ closeHud() },
+                                            onGrantPermission={
+                                                startActivity(Intent(
+                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                    Uri.parse("package:"+packageName)))
+                                            },
+                                            onTile={requestQuickSettingsTile {message=it}}
+                                        )
+                                    }
                                     else -> {
                                         GlassPanel {
                                             Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
@@ -611,11 +654,11 @@ class MainActivity : ComponentActivity() {
                                             HorizontalDivider(color=coreBorder)
                                             Text("IN-GAME HUD",color=coreCyan,
                                                 style=MaterialTheme.typography.titleSmall)
-                                            Text("Compact, draggable, updated from the existing session " +
-                                                "sampler. Enabled only while recording.",
+                                            Text("HUD customization is available on the dedicated HUD tab. " +
+                                                "Standby is visible but samples nothing; REC activates sampling.",
                                                 color=muted,style=MaterialTheme.typography.bodySmall)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
-                                                Text("Show HUD when recording",Modifier.weight(1f),
+                                                Text("Automatically display HUD when starting recording from app or QS",Modifier.weight(1f),
                                                     color=white)
                                                 Switch(hudEnabled,onCheckedChange={ enabled ->
                                                     hudEnabled=enabled
@@ -689,9 +732,7 @@ private fun time(ms: Long) = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).f
 @Composable
 private fun GlassPanel(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .background(Color(0xAD1A2A3D))
-            .border(1.dp, Color(0x447ED2E2), RoundedCornerShape(18.dp))
+        Modifier.fillMaxWidth().pureGlass(18)
             .padding(15.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
         content = content
@@ -699,8 +740,7 @@ private fun GlassPanel(content: @Composable ColumnScope.() -> Unit) {
 }
 @Composable
 private fun MetricCard(title: String, value: String?, source: String, modifier: Modifier = Modifier) {
-    Column(modifier.clip(RoundedCornerShape(15.dp)).background(Color(0xAA1A2B3A))
-        .border(1.dp, Color(0x447ED2E2), RoundedCornerShape(15.dp)).padding(12.dp)) {
+    Column(modifier.pureGlass(15).padding(12.dp)) {
         Text(title, style = MaterialTheme.typography.labelMedium, color = muted)
         Text(value ?: "Unavailable", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold, color = white)
