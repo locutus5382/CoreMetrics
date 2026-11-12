@@ -40,8 +40,10 @@ internal fun HudSettingsPanel(
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("FLOATING HUD STUDIO",color=iceBlue,
             style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
-        Text("Launch the standby pill, load Eden, then tap REC in-game. " +
-            "Standby records nothing and does not sample sensors.",
+        Text("Launch standby, load Eden, then tap REC. Drag the glass pill to within " +
+            "16dp of either edge to dock into a 12dp visual tab with a 44dp tap area. " +
+            "Tap tab to expand, or ⚙ for live metric, opacity and REC controls. " +
+            "Standby performs no telemetry sampling.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
             Button(onClick=onArm,enabled=permissionGranted && !isArmed,
@@ -133,7 +135,8 @@ internal fun HudSettingsPanel(
         if(options.showFps)Text("FPS source currently unavailable; the HUD displays —.",
             color=solarGold,style=MaterialTheme.typography.bodySmall)
         Row(verticalAlignment=Alignment.CenterVertically) {
-            Text("Temperature sparkline in Pro layout",color=coreText,
+            Text("Four 30-sample graphs in Pro layout: CPU %, GPU %, CPU temp, " +
+                "and layer FPS if available",color=coreText,
                 modifier=Modifier.weight(1f))
             Switch(checked=options.showSparkline,
                 onCheckedChange={onChange(options.copy(showSparkline=it))})
@@ -156,8 +159,9 @@ internal fun HudSettingsPanel(
             Switch(checked=options.blink,
                 onCheckedChange={onChange(options.copy(blink=it))})
         }
-        Text("Settings persist across sessions and are sent to an active HUD " +
-            "without starting an additional sampler.",
+        Text("HUD drawer saves controls immediately. Micrographs reuse the " +
+            "existing recorder data, with no extra polling. " +
+            "When locked, unlock via notification or this Studio.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
     }
 }

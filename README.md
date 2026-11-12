@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.5 draft experimental benchmark/HUD build, stacked on the unmerged v0.4 branch. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.6 draft experimental HUD/analysis build, stacked on the unmerged v0.4 branch. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -18,6 +18,19 @@
 - Google Play build baseline uses **compileSdk/targetSdk 36**, minSdk 31. User-initiated `specialUse` foreground recording must be approved by Play Console. Neither target SDK nor a manifest declaration guarantees approval.
 - No PServer in initial Play-compatible version. A separate strictly read-only Odin variant may be designed later only if it provides validated value and clear permissions; a read-only observer cannot claim LMK immunity.
 - On-device collected readings and session history stay in app-private storage unless the user chooses to export them.
+
+**Parallel test build (recommended):** GitHub Actions now also generates **CoreMetrics Preview**, package `com.locutus5382.coremetrics.preview`. It has a separate provider authority, tile, preferences and SQLite database, so it can coexist with the v0.5 installation even if CI debug signing keys differ. Export v0.5 CSVs and import them inside Preview to compare the same recorded runs. Do not use the regular v0.6 debug APK if you want to preserve v0.5 installed simultaneously. Preview is not an upgrade/migration and will not automatically see v0.5 private sessions.
+
+## v0.6 draft — CSV import, A/B chart scrubber, four HUD graphs, edge dock and FPS Lab
+
+- Four per-metric bounded 30-sample sparklines in the floating Pro HUD: CPU %, GPU %, EMA CPU temp and available layer FPS. No separate sensor loop; standby samples nothing.
+- Drag the HUD metric area near a bezel (within 16dp) to collapse it into a 12dp visible tab with 44dp touch target. Tap to expand. The in-game ⚙ drawer controls metric visibility, opacity, graph visibility and REC/STOP. Lock/unlock continues using the notification or Studio.
+- Offline, atomic CSV import using the Android Storage Access Framework. Compatible CoreMetrics CSV exports become separate `IMPORTED` sessions with a 12,000-record cap, valid timestamps and headers, and no database migration. Partial/malformed imports roll back. `game_label`, `observed_cpu_limits` and power statuses are preserved.
+- Elapsed-time-aligned A/B comparison with CPU/GPU temperatures and loads, battery-terminal power and (when measured) SurfaceFlinger layer FPS. Touch/drag on the graph or use its controller-friendly slider. Nearest point shown within ±10 s; no made-up values across gaps or beyond end.
+- FPS Lab is a separately compiled, **not connected, not running** read-only interface/probe state machine with fake-host tests, handshake attestation requirements, unique SurfaceView selection, chosen presentation column, cooldown and two-failure circuit breaker. It does not include a PServer host launcher or privilege adapter. Activating this requires physical Odin read-only host verification and timestamp provenance before implementation.
+- No additional Android permissions, no root escalation, frequency writes, user-supplied privileged shell commands, extra background recorder, 1 Hz SurfaceFlinger dumps or data transmission.
+
+**Testing two versions:** Install the **v0.6 Preview** APK alongside the original v0.5 APK, which uses a different package name. They each keep their own sessions. Stop/disarm one HUD and its recorder before starting the other to avoid changing measurements and overlay-touch behavior. The regular v0.6 APK retains the original package ID and therefore is an upgrade rather than a parallel installation; debug signing differences may block an in-place upgrade.
 
 ## v0.5 draft — observed regimes, thermal trends, original icon, touch-lock
 

@@ -13,6 +13,9 @@ internal object MonitorState {
     @Volatile var message = "Idle"
     @Volatile var hudState = "HUD_OFF"
     @Volatile var hudLocked = false
+    // Drawer edits occur in :monitor, not the Compose UI process.
+    @Volatile var hudOptionRevision = 0L
+    @Volatile var hudOptions: HudOptions? = null
     @Volatile var latest: Snapshot? = null
     fun clear(messageText: String) {
         running = false; starting = false; sessionId = 0L

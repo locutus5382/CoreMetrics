@@ -9,10 +9,19 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.5.0-regimes-thermal-alpha"
+        versionCode = 6
+        versionName = "0.6.0-hud-analysis-fpslab-alpha"
+        manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
+        manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
     }
     buildTypes {
+        create("preview") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics Preview"
+            manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Preview Record"
+        }
         release {
             isMinifyEnabled = false
         }

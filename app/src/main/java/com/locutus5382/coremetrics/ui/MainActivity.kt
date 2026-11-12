@@ -19,6 +19,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
@@ -49,6 +51,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -93,6 +96,7 @@ private data class ScreenStatus(
     val observedLimits: String? = null,
     val coreLoads: String? = null,
     val hudStatus: String? = null, val hudLocked: Boolean = false,
+    val hudOptionRevision: Long = 0L, val hudChanged: HudOptions? = null,
     val lastAt: Long = 0
 )
 
@@ -106,7 +110,8 @@ class MainActivity : ComponentActivity() {
             val statusBar = getSystemService(StatusBarManager::class.java)
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
-                "CoreMetrics • Record",
+                if(packageName.endsWith(".preview")) "CoreMetrics Preview • Record"
+                    else "CoreMetrics • Record",
                 Icon.createWithResource(this, com.locutus5382.coremetrics.R.drawable.ic_coremetrics_notification),
                 mainExecutor
             ) { result ->
@@ -126,7 +131,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun query(): ScreenStatus = try {
-        val uri = Uri.parse("content://com.locutus5382.coremetrics.monitor.status")
+        val uri = Uri.parse("content://" + packageName + ".monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
         if (v == null) ScreenStatus(message = "Recorder status unavailable")
         else ScreenStatus(
@@ -146,6 +151,22 @@ class MainActivity : ComponentActivity() {
             coreLoads = v.getString("coreLoads"),
             hudStatus = v.getString("hudStatus"),
             hudLocked = v.getBoolean("hudLocked",false),
+            hudOptionRevision = v.getLong("hudOptionRevision",0L),
+            hudChanged = if(v.getLong("hudOptionRevision",0L)>0L) HudOptions(
+                opacity=v.getFloat("hudOptOpacity",0.57f),
+                size=v.getString("hudOptSize")?:"regular",
+                layout=v.getString("hudOptLayout")?:"pill",
+                indicatorColor=v.getString("hudOptIndicator")?:"red",
+                blink=v.getBoolean("hudOptBlink",true),
+                showCpuTemp=v.getBoolean("hudOptCpuTemp",true),
+                showGpuTemp=v.getBoolean("hudOptGpuTemp",true),
+                showCpuLoad=v.getBoolean("hudOptCpuLoad",false),
+                showGpuLoad=v.getBoolean("hudOptGpuLoad",false),
+                showRam=v.getBoolean("hudOptRam",true),
+                showPower=v.getBoolean("hudOptPower",true),
+                showFps=v.getBoolean("hudOptFps",false),
+                showSparkline=v.getBoolean("hudOptSparkline",true)
+            ) else null,
             lastAt = v.getLong("lastSampleAt", 0)
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
@@ -184,6 +205,7 @@ class MainActivity : ComponentActivity() {
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
+            var scrubFraction by rememberSaveable { mutableFloatStateOf(0.5f) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var exportId by remember { mutableLongStateOf(0L) }
@@ -209,6 +231,28 @@ class MainActivity : ComponentActivity() {
                         onFailure = { "Export failed: " + (it.message ?: it.javaClass.simpleName) })
                 }
             }
+            val importFile=rememberLauncherForActivityResult(
+                ActivityResultContracts.OpenDocument()
+            ) { uri ->
+                if(uri!=null) scope.launch {
+                    val result=withContext(Dispatchers.IO) {
+                        runCatching {
+                            contentResolver.openInputStream(uri)?.reader(Charsets.UTF_8)?.use {
+                                database.importCsv(it)
+                            } ?: error("Cannot open selected CSV")
+                        }
+                    }
+                    result.fold(onSuccess={ id ->
+                        message="Imported as session #"+id
+                        sessionList=withContext(Dispatchers.IO){database.list()}
+                        firstId=id
+                        page="Compare"
+                    }, onFailure={ e ->
+                        message="Import failed without partial save: "+
+                            (e.message ?: e.javaClass.simpleName)
+                    })
+                }
+            }
             LaunchedEffect(Unit) {
                 lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     while (isActive) {
@@ -232,6 +276,13 @@ class MainActivity : ComponentActivity() {
                             cpuEma=null
                             cpuPeak=null
                             cpuTrend=ThermalTrendFilter.Direction.UNKNOWN
+                        }
+                        if(next.hudOptionRevision>status.hudOptionRevision &&
+                            next.hudChanged!=null) {
+                            // Synchronize preferences across Android processes without
+                            // a HUD_CONFIG echo and without overwriting drawer changes.
+                            hudOptions=next.hudChanged
+                            hudOptions.save(this@MainActivity)
                         }
                         status = next
                         overlayAllowed=Settings.canDrawOverlays(this@MainActivity)
@@ -552,7 +603,11 @@ class MainActivity : ComponentActivity() {
                                     "Sessions" -> {
                                         GlassPanel {
                                             Text("Recorded runs", style = MaterialTheme.typography.titleMedium)
-                                            Text("Only explicit sessions are recorded. Labels are not proof of applied limits.",
+                                            OutlinedButton(onClick={importFile.launch(arrayOf("*/*"))},
+                                                 enabled=!status.running && !status.starting) {
+                                                 Text("Import CSV")
+                                             }
+                                             Text("Only explicit sessions are recorded. Labels are not proof of applied limits.",
                                                 color = muted, style = MaterialTheme.typography.bodySmall)
                                             OutlinedButton(onClick = {
                                                 scope.launch { sessionList = withContext(Dispatchers.IO) { database.list() } }
@@ -579,7 +634,13 @@ class MainActivity : ComponentActivity() {
                                     "Compare" -> {
                                         GlassPanel {
                                             Text("Analysis & Session Compare", style = MaterialTheme.typography.titleMedium)
-                                            Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
+                                            OutlinedButton(onClick={importFile.launch(arrayOf("*/*"))},
+                                                 enabled=!status.running && !status.starting) {
+                                                 Text("Import CSV")
+                                             }
+                                             Text("Import creates an offline session; compare elapsed time, not identical game events.",
+                                                 color=muted,style=MaterialTheme.typography.bodySmall)
+                                             Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
                                                 Text("Active 3D gameplay: GPU ≥ 15% (heuristic)",
@@ -714,7 +775,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 Text("CPU temperature · elapsed time · A cyan, B amber",
                                                     color=coreSecondary)
-                                                CompareChart(viewA,viewB)
+                                                CompareScrubPanel(viewA,viewB)
                                                 Text("Frame rate remains unavailable if SurfaceFlinger layer access fails. " +
                                                     "Time alignment uses first selected sample, not synchronized in-game events.",
                                                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
@@ -757,10 +818,11 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick = {
                                                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                                             }) { Text("Open Usage Access settings") }
-                                            Text("FPS: the Portal denied SurfaceFlinger access on every " +
-                                                "recording. System dumps are disabled in this stability build. " +
-                                                "No fabricated FPS values. We will test a read-only FPS " +
-                                                "provider separately.", color=coreSecondary,
+                                            Text("FPS LAB · Off by default. No PServer command is executed. " +
+                                                "An authenticated privileged read-only host and device-verified " +
+                                                "presentation timestamps are required before enabling FPS. " +
+                                                "PServerBinder visibility alone does not establish access.",
+                                                color=coreSecondary,
                                                 style=MaterialTheme.typography.bodySmall)
                                             HorizontalDivider(color=coreBorder)
                                             Text("IN-GAME HUD",color=coreCyan,

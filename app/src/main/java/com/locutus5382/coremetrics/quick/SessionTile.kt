@@ -16,7 +16,7 @@ class SessionTile : TileService() {
     private data class RecState(val running:Boolean,val starting:Boolean,val standby:Boolean)
     private fun status(): RecState = try {
         val b = contentResolver.call(
-            Uri.parse("content://com.locutus5382.coremetrics.monitor.status"),
+            Uri.parse("content://" + packageName + ".monitor.status"),
             "status", null, null)
         RecState(b?.getBoolean("running", false) == true,
             b?.getBoolean("starting", false) == true,
