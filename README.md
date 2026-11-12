@@ -34,6 +34,20 @@ This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier 
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
 
+## v0.8 practical add-ons (two side-by-side installable apps)
+
+**Both variants use one shared telemetry, SQLite and analysis codebase.** `v08base` always preserves the original **Frosted Glass** styling. `v08themes` defaults to Frosted, but may opt into static-gradient **Liquid Glass** or opaque **Tactical Flat** from Settings. The experimental finishes affect app screens only, never the native in-game HUD. No runtime blur of text, additional telemetry sampler, background animation or root.
+
+- **Manual session tags:** In Sessions, expand **Tags** for one-tap `System` / `Turnip` / `Custom: ...` driver and `Handheld 1x` / `Docked` / `Custom: ...` resolution/scale; `None` means unknown. This is a compact optional editor, not automatic driver detection. Tags persist in SQLite schema v4 and two appended CSV columns (28 total; the 26 original columns remain intact). v1→v4, v2→v4 and v3→v4 migration retain old samples. A/B text reports contain tags and warnings for unknown/different driver or resolution.
+- **Power conditions:** Session History distinguishes `PLUGGED IN` and `MIXED POWER` from explicit Android battery-status evidence. Unknown charging state does not imply plugged. Energy cards and reports disclose power condition; Wh, mWh/min and time-weighted W integrate **discharging intervals only** and omit charging/bypass/missing readings. A/B warns when conditions differ.
+- **Warm-up:** Analysis/Compare switch **Skip first 30s (Warm-Up)** excludes the first 30 seconds *after the first recorded sample*, not necessarily game-world load completion. This changes analysis and filtered A/B charts and exported A/B reports, but never changes source SQLite rows, raw CSV export, manual linked timestamps or unfiltered CPU-ceiling phases.
+- **History:** Optional **Hide runs under 15s** filter; no deletions, no hiding from Compare/CSV exports.
+- **Controller:** Shoulder L1/R1 navigation handled at Activity key dispatch even after touchscreen focus; D-pad moves between focusable session chips and adjusts a focused A/B scrub Slider. Android's focus management can differ on Portal firmware; this needs physical test on all five tabs (Live, Sessions, Compare, HUD, Settings).
+- **Quick Settings:** Separate `CM HUD` standby tile with an outlined floating-panel/telemetry icon. It arms/closes *standby only*, refuses to terminate a running recording, and never samples sensors alone. Existing `CM REC` tile stays dedicated to start/stop recording. The HUD Studio offers **Add HUD tile** and **Add REC tile**. Both variants have separate tile instances/providers.
+- No change to recording sampling cadence, PServer privilege, OOM scores, original Frosted styling or the new independent vector unlock chip.
+
+**Developer test gates:** Run `docs/PORTAL_V08_PRACTICAL_TEST_PLAN.md`; CI passing alone is not proof of controller navigation, overlay stability or experimental themes on the Odin.
+
 ## v0.8 analytics-only (default Frosted Glass UI is unchanged)
 
 Four targeted improvements, no hardware control or sensor polling:
