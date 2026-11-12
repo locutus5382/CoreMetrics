@@ -1093,6 +1093,25 @@ class MainActivity : ComponentActivity() {
                                             }) { Text("Add Record tile to Quick Settings") }
                                             Text("No root, PServer, INTERNET permission or hardware writes.",
                                                 style=MaterialTheme.typography.bodySmall,color=muted)
+                                            Text("SENSOR PROVENANCE · READ-ONLY",color=coreCyan,
+                                                style=MaterialTheme.typography.titleSmall)
+                                            Text("CPU/GPU °C: readable sysfs thermal zones selected by " +
+                                                "cpu-/cpuss- and gpu-/gpuss- sensor TYPE, not a fixed zone number.\n"+
+                                                "GPU MHz: KGSL cur_freq or gpuclk (instantaneous frequency; " +
+                                                "not an inferred performance-mode floor).\n"+
+                                                "Battery °C/%: Android ACTION_BATTERY_CHANGED; " +
+                                                "temperature reported in tenths of a degree.\n"+
+                                                "Net battery W: Android battery current × voltage where valid.\n"+
+                                                "System RAM used: /proc/meminfo MemTotal − MemAvailable.\n"+
+                                                "Busiest core: /proc/stat interval winner, NOT core residency.\n"+
+                                                "Game FPS: not verified on the Portal; no interpolation.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
+                                            Text("Constant GPU MHz or integer battery temperature is not " +
+                                                "automatically a sensor error; source precision and " +
+                                                "mode effects require device verification.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.labelSmall)
                                             Text("Battery power shows battery-terminal flow, not whole-device or wall power. Charging/bypass sessions cannot be compared as power efficiency.",
                                                 style = MaterialTheme.typography.bodySmall,color=muted)
                                             HorizontalDivider(color=coreBorder)
