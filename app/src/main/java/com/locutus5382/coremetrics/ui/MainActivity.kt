@@ -2,6 +2,7 @@ package com.locutus5382.coremetrics.ui
 
 import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -246,6 +247,15 @@ class MainActivity : ComponentActivity() {
             }
             val appliedFinish=if(supportsThemeChoice)finish else SurfaceFinish.FROSTED
             var page by rememberSaveable { mutableStateOf("Live") }
+            // Device-reported capacity, read once for the display gauge.
+            // Do not hard-code a Portal-specific (or decimal GB) memory ceiling.
+            val ramTotalGiB=remember {
+                runCatching {
+                    val info=ActivityManager.MemoryInfo()
+                    getSystemService(ActivityManager::class.java)?.getMemoryInfo(info)
+                    info.totalMem.takeIf{it>0L}?.toDouble()?.div(1_073_741_824.0)
+                }.getOrNull()
+            }
             val rootFocus=remember {FocusRequester()}
             SideEffect {
                 controllerTabAction={ delta ->
@@ -637,8 +647,14 @@ class MainActivity : ComponentActivity() {
                                                 ((status.power?.removeSuffix(" W")
                                                     ?.toDoubleOrNull() ?: 0.0)/12.0).toFloat(),
                                                 solarGold,Modifier.weight(1f))
-                                            PureGlassGauge("FPS",status.fps,
-                                                ((status.fps?.toDoubleOrNull() ?: 0.0)/120.0).toFloat(),
+                                            val usedRamGiB=status.ram
+                                                ?.removeSuffix(" GiB")?.toDoubleOrNull()
+                                            PureGlassGauge("RAM GiB",usedRamGiB?.let{
+                                                String.format(Locale.US,"%.2f",it)
+                                            },if(usedRamGiB!=null && ramTotalGiB!=null &&
+                                                ramTotalGiB>0.0)
+                                                (usedRamGiB/ramTotalGiB).toFloat()
+                                            else 0f,
                                                 iceBlue,Modifier.weight(1f))
                                         }
                                         Text("CPU EMA · raw peak " +
@@ -650,8 +666,8 @@ class MainActivity : ComponentActivity() {
                                                 else -> "—"
                                             },color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
-                                         Text("Ring arcs use display-only reference scales; " +
-                                            "they are not thermal safety limits.",
+                                         Text("RAM ring uses Android-reported total system memory; " +
+                                            "other rings use display-only reference scales, not safety limits.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
                                         LiveScope(liveTrace)
@@ -663,8 +679,19 @@ class MainActivity : ComponentActivity() {
                                                 "Adreno KGSL",Modifier.weight(1f))
                                             MetricCard("Prime / busiest",status.peakCore?.plus("%"),
                                                 "Observed single core",Modifier.weight(1f))
-                                            MetricCard("Frame time",status.frameMs,
-                                                "Surface layer only",Modifier.weight(1f))
+                                            val powerState=when {
+                                                status.powerStatus?.startsWith("DISCHARGING")==true ->
+                                                    "Discharging"
+                                                status.powerStatus?.startsWith(
+                                                    "CHARGING_OR_EXTERNAL_POWER")==true ->
+                                                    "Plugged in"
+                                                status.powerStatus?.startsWith("FULL")==true ->
+                                                    "Plugged in"
+                                                status.powerStatus==null -> null
+                                                else -> "Unknown"
+                                            }
+                                            MetricCard("Battery status",powerState,
+                                                "Android battery state",Modifier.weight(1f))
                                         }
                                         GlassPanel {
                                             Text("RECORDING CONTROL  ·  ONE USER-STARTED SESSION",
@@ -1070,35 +1097,46 @@ class MainActivity : ComponentActivity() {
                                                         firstId+"_"+secondId+".txt")
                                                 }){Text("Export A/B report")}
                                             }
-                                            val eligibleA=if(skipWarmUp && firstPoints.isNotEmpty())
-                                                 firstPoints.filter{
-                                                     it.timeMs-firstPoints.first().timeMs>=30_000L
-                                                 }else firstPoints
-                                             val eligibleB=if(skipWarmUp && secondPoints.isNotEmpty())
-                                                 secondPoints.filter{
-                                                     it.timeMs-secondPoints.first().timeMs>=30_000L
-                                                 }else secondPoints
+                                            val eligibleA=remember(firstPoints,skipWarmUp) {
+                                                if(skipWarmUp && firstPoints.isNotEmpty())
+                                                    firstPoints.filter {
+                                                        it.timeMs-firstPoints.first().timeMs>=30_000L
+                                                    }
+                                                else firstPoints
+                                            }
+                                            val eligibleB=remember(secondPoints,skipWarmUp) {
+                                                if(skipWarmUp && secondPoints.isNotEmpty())
+                                                    secondPoints.filter {
+                                                        it.timeMs-secondPoints.first().timeMs>=30_000L
+                                                    }
+                                                else secondPoints
+                                            }
                                              val viewA = if(activeOnly) eligibleA.filter {
                                                 (it.gpuLoad ?: 0.0) >= 15.0
                                             } else eligibleA
                                             val viewB = if(activeOnly) eligibleB.filter {
                                                 (it.gpuLoad ?: 0.0) >= 15.0
                                             } else eligibleB
-                                            // Segment the ORIGINAL timeline, before gameplay filtering.
-                                            val regimes=remember(firstPoints,activeOnly) {
-                                                SessionRegimeAnalyzer.analyze(firstPoints.map { p ->
+                                            // Segment the original chronology *within the
+                                            // selected analysis window* before the GPU-load
+                                            // gameplay filter. Keep real sample timestamps.
+                                            val regimes=remember(eligibleA,activeOnly) {
+                                                SessionRegimeAnalyzer.analyze(eligibleA.map { p ->
                                                     SessionRegimeAnalyzer.Sample(
                                                         p.timeMs,p.observedCpuLimits,p.cpu,p.gpu,
                                                         p.cpuLoad,p.busiestCorePct,p.gpuLoad,p.ram,
                                                         p.batteryWatts,p.batteryPowerStatus)
                                                 },activeGameplayOnly=activeOnly)
                                             }
-                                            if(firstPoints.isNotEmpty()) {
+                                            if(eligibleA.isNotEmpty()) {
                                                 HorizontalDivider(color=Color.White.copy(alpha=.14f))
                                                 Text("IN-SESSION CPU CEILING REGIMES · A",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
                                                 Text("Observed limits (not proof of an applied tuner). " +
-                                                    "One/two-sample switching glitches are ignored.",
+                                                    "One/two-sample switching glitches are ignored."+
+                                                    if(skipWarmUp) " First 30 s excluded; elapsed " +
+                                                        "times remain relative to the original start."
+                                                    else "",
                                                     style=MaterialTheme.typography.bodySmall,
                                                     color=coreSecondary)
                                                 Row(Modifier.horizontalScroll(rememberScrollState()),
