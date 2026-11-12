@@ -170,6 +170,11 @@ class RecordingService:Service() {
                 return START_NOT_STICKY
             }
             HUD_CONFIG -> {
+                // A stale UI status must not create an idle :monitor service.
+                if(!armed && task?.isActive!=true) {
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
                 settings=HudOptions.from(this,intent)
                 if(hud.attached()){
                     hud.configure(settings)
