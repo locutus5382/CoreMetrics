@@ -12,6 +12,7 @@ import kotlin.math.roundToInt
  * is active. Every unavailable source remains null. No root / PServer / writes.
  */
 class DirectSampler(private val app: Application) {
+    private val batteryPower = BatteryPowerReader(app)
     private var priorCpu: CpuMath.Times? = null
     private val priorCore = mutableMapOf<String, CpuMath.Times>()
     private data class Sensor(val type: String, val path: String)
@@ -82,7 +83,25 @@ class DirectSampler(private val app: Application) {
             (values[0] * 100.0 / values[1]).roundToInt() else null
     }
 
-    fun sample(appPackage: String?): Snapshot {
+    private fun cpuLimits(): String? {
+        // Read-only, instantaneous policy limits. Never infer which tuner set
+        // them; never use observed scaling_cur_freq as a cap.
+        val names = listOf("policy0", "policy3", "policy7")
+        val parts = names.mapNotNull { p ->
+            val path = "/sys/devices/system/cpu/cpufreq/" + p + "/"
+            val ceiling = read(path + "scaling_max_freq")?.toLongOrNull()
+                ?.takeIf { it in 100_000L..5_000_000L }
+                ?: return@mapNotNull null
+            val hardware = read(path + "cpuinfo_max_freq")?.toLongOrNull()
+                ?.takeIf { it in 100_000L..5_000_000L }
+            val limited = hardware != null && ceiling < hardware
+            p + " max " + String.format(java.util.Locale.US, "%.2f", ceiling/1e6) +
+                " GHz" + if (limited) " (below hw)" else ""
+        }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    }
+
+    fun sample(appPackage: String?, frame: FrameEstimate? = null): Snapshot {
         val now = System.currentTimeMillis()
         val lines = read("/proc/stat")?.lineSequence()?.toList().orEmpty()
         val current = CpuMath.parse(lines.firstOrNull())
@@ -105,12 +124,22 @@ class DirectSampler(private val app: Application) {
         val ram = if (total != null && available != null && available in 0..total)
             (total - available) / 1048576.0 else null
         val battery = battery()
+        val power = batteryPower.read()
         return Snapshot(
             timeMs = now, cpuTempC = thermal(true), gpuTempC = thermal(false),
             batteryTempC = battery.first, batteryPercent = battery.second,
             cpuPercent = cpuPercent, busiestPercent = peak?.second, busiestCore = peak?.first,
             gpuPercent = gpuLoad(), gpuMHz = gpuClock(), ramGiB = ram,
-            cpuClockSummary = cpuClockSummary(), appPackage = appPackage
+            cpuClockSummary = cpuClockSummary(), appPackage = appPackage,
+            signedBatteryWatts = power.signedBatteryWatts,
+            batteryCurrentMicroAmps = power.currentMicroAmps,
+            batteryVoltageMilliVolts = power.voltageMilliVolts,
+            batteryPowerSource = power.source,
+            batteryPowerStatus = power.status,
+            surfaceFps = frame?.fps,
+            surfaceFrameMs = frame?.frameMs,
+            surfaceFpsStatus = frame?.status ?: "OFF_BY_DEFAULT",
+            observedCpuLimits = cpuLimits()
         )
     }
 }
