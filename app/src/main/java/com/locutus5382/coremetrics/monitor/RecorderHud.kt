@@ -195,11 +195,12 @@ internal class RecorderHud(private val context:Context) {
         val icon=lockControl
         val oldX=(main.x+(pill?.left?:0)+(icon?.left?:dp(280f)))-dp(6f)
         val oldY=main.y+(pill?.top?:0)+(icon?.top?:0)-dp(5f)
-        val handle=styledLabel("🔒",21f).apply {
+        val handle=styledLabel("",11f).apply {
             gravity=Gravity.CENTER
-            background=rounded(.78f)
-            contentDescription="Unlock CoreMetrics HUD"
+            background=FlatLockChipDrawable(locked=true)
+            contentDescription="Unlock HUD; make the telemetry controls touchable"
             isClickable=true
+            isFocusable=false
             setOnClickListener { onUnlock?.invoke() }
         }
         val p=WindowManager.LayoutParams(dp(48f),dp(48f),
@@ -379,7 +380,13 @@ internal class RecorderHud(private val context:Context) {
         line.addView(rec)
         drawerControl=action("⚙"){drawerOpen=!drawerOpen;applyAppearance()}
         line.addView(drawerControl)
-        lockControl=action("🔓"){onLock?.invoke()}
+        lockControl=action(""){onLock?.invoke()}.apply {
+            background=FlatLockChipDrawable(locked=false)
+            setPadding(0,0,0,0)
+            minimumWidth=dp(38f)
+            minimumHeight=dp(38f)
+            contentDescription="Lock HUD: let touches pass through to the game"
+        }
         line.addView(lockControl)
         closeControl=action("×"){onClose?.invoke()}
         line.addView(closeControl)
@@ -557,7 +564,8 @@ internal class RecorderHud(private val context:Context) {
         mainText?.textSize=12f*scale
         mainText?.maxWidth=dp(if(opts.layout=="pro")370f*scale else 300f*scale)
         recText?.textSize=11f*scale
-        lockControl?.text="🔓"
+        // The unlocked main control and separate locked recovery chip share the
+        // same vector linework, without an OS-dependent emoji glyph.
         // Retain the icon's layout width so the separate unlock chip is exactly
         // where the user expects it, but it cannot receive main-window touches.
         lockControl?.visibility=if(locked)View.INVISIBLE else View.VISIBLE
