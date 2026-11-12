@@ -16,6 +16,7 @@ import android.os.SystemClock
 import android.service.quicksettings.TileService
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.quick.SessionTile
+import com.locutus5382.coremetrics.quick.HudTile
 import com.locutus5382.coremetrics.telemetry.DirectSampler
 import com.locutus5382.coremetrics.telemetry.ForegroundAttribution
 import com.locutus5382.coremetrics.telemetry.FrameEstimate
@@ -91,9 +92,18 @@ class RecordingService:Service() {
         RecorderJournal.event(this,"FGS_START_FAILED",e.javaClass.simpleName)
         false
     }
-    private fun refreshTile()=runCatching{
-        TileService.requestListeningState(this,ComponentName(this,SessionTile::class.java))
-    }.getOrNull()
+    private fun refreshTile() {
+        // Keep BOTH independent Quick Settings tiles accurate when the HUD
+        // changes from the app, a notification, or another tile.
+        runCatching {
+            TileService.requestListeningState(this,
+                ComponentName(this,SessionTile::class.java))
+        }
+        runCatching {
+            TileService.requestListeningState(this,
+                ComponentName(this,HudTile::class.java))
+        }
+    }
     private fun stopServiceNow(){
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
