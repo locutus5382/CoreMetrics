@@ -129,6 +129,8 @@ class RecordingService:Service() {
             }},
             onLockClick={startService(Intent(this,RecordingService::class.java)
                 .setAction(HUD_LOCK))},
+            onUnlockClick={startService(Intent(this,RecordingService::class.java)
+                .setAction(HUD_UNLOCK))},
             onDismissClick={startService(Intent(this,RecordingService::class.java)
                 .setAction(DISARM))},
             onOptionsChanged={ changed ->
