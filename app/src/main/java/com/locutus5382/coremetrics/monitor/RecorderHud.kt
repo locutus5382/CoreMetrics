@@ -119,6 +119,7 @@ internal class RecorderHud(private val context: Context) {
     private var recordLabel: TextView? = null
     private var recordDot: TextView? = null
     private var closeButton: TextView? = null
+    private var lockButton: TextView? = null
     private var trend: TrendView? = null
     private var params: WindowManager.LayoutParams? = null
     private var opts = HudOptions()
@@ -130,6 +131,8 @@ internal class RecorderHud(private val context: Context) {
     private var blinkOn = true
     private var onToggle: (() -> Unit)? = null
     private var onClose: (() -> Unit)? = null
+    private var onLock: (() -> Unit)? = null
+    private var locked = false
     private var disposed = false
     private val heartbeat = object: Runnable {
         override fun run() {
@@ -149,6 +152,33 @@ internal class RecorderHud(private val context: Context) {
     }
     fun permissionGranted() = Settings.canDrawOverlays(context)
     fun attached(): Boolean = root?.isAttachedToWindow == true
+    fun isLocked(): Boolean = locked
+    /**
+     * When locked the entire application overlay is not touchable; its window
+     * alpha must be <= 0.8 for Android 12+ pass-through touches to be allowed.
+     * It cannot unlock itself: notification and HUD Studio offer recovery.
+     */
+    fun setLocked(enabled:Boolean):String {
+        val v=root ?: return "HUD_NOT_ATTACHED"
+        val p=params ?: return "HUD_NO_PARAMS"
+        val oldFlags=p.flags
+        val oldAlpha=p.alpha
+        p.flags=if(enabled)
+            p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            else p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        p.alpha=if(enabled) .70f else 1f
+        return try {
+            windows.updateViewLayout(v,p)
+            locked=enabled
+            applyAppearance()
+            if(enabled) "HUD_LOCKED" else "HUD_UNLOCKED"
+        } catch(e:Exception) {
+            p.flags=oldFlags
+            p.alpha=oldAlpha
+            runCatching { windows.updateViewLayout(v,p) }
+            "HUD_LOCK_FAILED_"+e.javaClass.simpleName
+        }
+    }
 
     private fun rounded(
         cornerDp: Float, alpha: Float, border: Int, dark: Boolean = true
@@ -167,13 +197,15 @@ internal class RecorderHud(private val context: Context) {
     private fun applyAppearance() {
         val frame = root ?: return
         val scale=when(opts.size) { "small"->.82f;"large"->1.22f;else->1f }
-        frame.background=rounded(32f,opts.opacity,Color.argb(140,211,233,255))
+        frame.background=rounded(32f,opts.opacity*(if(locked) .90f else 1f),
+            Color.argb(140,211,233,255))
         frame.setPadding(dp(9f*scale),dp(6f*scale),dp(8f*scale),dp(6f*scale))
         content?.textSize=12f*scale
         content?.setLineSpacing(0f,1.06f)
         recordDot?.textSize=12f*scale
         recordLabel?.textSize=11f*scale
         closeButton?.textSize=14f*scale
+        lockButton?.textSize=14f*scale
         recordButton?.apply {
             background=rounded(19f,opts.opacity*.86f,Color.argb(105,
                 Color.red(accent()),Color.green(accent()),Color.blue(accent())),false)
@@ -189,13 +221,16 @@ internal class RecorderHud(private val context: Context) {
     }
 
     /** Display a single view; left telemetry area drags, REC button clicks. */
-    fun show(options: HudOptions,onRecordClick: () -> Unit,onDismissClick: () -> Unit): String {
+    fun show(options: HudOptions,onRecordClick: () -> Unit,
+        onLockClick: () -> Unit,onDismissClick: () -> Unit): String {
         if (!permissionGranted()) return "HUD_PERMISSION_MISSING"
         opts=options
         onToggle=onRecordClick
         onClose=onDismissClick
+        onLock=onLockClick
         if(attached()) { applyAppearance();return "HUD_ALREADY_ATTACHED" }
         disposed=false
+        locked=false
         val row=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -231,6 +266,17 @@ internal class RecorderHud(private val context: Context) {
         ctl.setOnClickListener { onToggle?.invoke() }
         recordButton=ctl
         row.addView(ctl)
+        val lock=TextView(context).apply {
+            text="🔓"
+            setTextColor(Color.WHITE)
+            setPadding(dp(8f),dp(4f),dp(6f),dp(4f))
+            isClickable=true
+            isFocusable=false
+            contentDescription="Lock HUD touch; unlock from CoreMetrics notification"
+            setOnClickListener { onLock?.invoke() }
+        }
+        lockButton=lock
+        row.addView(lock)
         val close=TextView(context).apply {
             text="×"
             setTextColor(Color.argb(200,218,237,255))
@@ -360,15 +406,18 @@ internal class RecorderHud(private val context: Context) {
         val duration=String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60)
         label.text=if(recording) "STOP $duration" else "REC"
         closeButton?.visibility=if(recording)View.GONE else View.VISIBLE
+        lockButton?.text=if(locked) "🔒" else "🔓"
     }
 
     fun hide():String {
         disposed=true
+        locked=false
         ui.removeCallbacks(heartbeat)
         val v=root ?: return "HUD_NOT_ATTACHED"
         return try {
             windows.removeViewImmediate(v)
             root=null;content=null;recordButton=null;recordDot=null
+            lockButton=null
             recordLabel=null;params=null;trend=null
             "HUD_REMOVED"
         } catch(e:Exception) {
