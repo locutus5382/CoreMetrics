@@ -236,12 +236,20 @@ class MainActivity : ComponentActivity() {
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
+            var skipWarmUp by rememberSaveable { mutableStateOf(false) }
+            var hideShortRuns by rememberSaveable { mutableStateOf(false) }
+            var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
+            var customDriverActive by rememberSaveable { mutableStateOf(false) }
+            var customScaleActive by rememberSaveable { mutableStateOf(false) }
+            var draftDriver by rememberSaveable { mutableStateOf("") }
+            var draftScale by rememberSaveable { mutableStateOf("") }
             var scrubFraction by rememberSaveable { mutableFloatStateOf(0.5f) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var exportId by remember { mutableLongStateOf(0L) }
             var reportAId by remember { mutableLongStateOf(0L) }
             var reportBId by remember { mutableLongStateOf(0L) }
+            var reportSkipWarmup by remember { mutableStateOf(false) }
             val scope = rememberCoroutineScope()
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
@@ -273,12 +281,12 @@ class MainActivity : ComponentActivity() {
                             val list=database.list(200)
                             val a=list.firstOrNull{it.id==reportAId}
                                 ?:error("Report session A is missing")
-                            val analyzedA=BenchmarkAnalyzer.analyze(a,database.points(a.id))
+                            val analyzedA=BenchmarkAnalyzer.analyze(a,database.points(a.id),if(reportSkipWarmup)30 else 0)
                             val content=if(reportBId!=0L && reportBId!=a.id) {
                                 val b=list.firstOrNull{it.id==reportBId}
                                     ?:error("Report session B is missing")
                                 BenchmarkAnalyzer.comparison(analyzedA,
-                                    BenchmarkAnalyzer.analyze(b,database.points(b.id)))
+                                    BenchmarkAnalyzer.analyze(b,database.points(b.id),if(reportSkipWarmup)30 else 0))
                             } else BenchmarkAnalyzer.text(analyzedA)
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
                                 it.write(content)
@@ -355,12 +363,12 @@ class MainActivity : ComponentActivity() {
                         linkedPairs=withContext(Dispatchers.IO){database.links()}
                 }
             }
-            LaunchedEffect(page,detailedId) {
+            LaunchedEffect(page,detailedId,skipWarmUp) {
                 if(page=="Sessions" && detailedId>0L) {
                     val response=withContext(Dispatchers.IO) {
                         val session=database.list(200).firstOrNull{it.id==detailedId}
                         val points=database.points(detailedId)
-                        val report=session?.let{BenchmarkAnalyzer.analyze(it,points)}
+                        val report=session?.let{BenchmarkAnalyzer.analyze(it,points,if(skipWarmUp)30 else 0)}
                         report to points
                     }
                     detailReport=response.first
@@ -714,7 +722,16 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick = {
                                                 scope.launch { sessionList = withContext(Dispatchers.IO) { database.list() } }
                                             }) { Text("Refresh history") }
-                                            if (sessionList.isEmpty()) Text("No sessions yet.", color = muted)
+                                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                                 Text("Hide runs < 15 s",
+                                                     Modifier.weight(1f),color=coreText)
+                                                 Switch(hideShortRuns,
+                                                     onCheckedChange={hideShortRuns=it})
+                                             }
+                                             Text("Only filters this list; no recordings are deleted.",
+                                                 color=coreSecondary,
+                                                 style=MaterialTheme.typography.labelSmall)
+                                             if (sessionList.isEmpty()) Text("No sessions yet.", color = muted)
                                             detailReport?.takeIf{detailedId>0L}?.let{r ->
                                                 Text("Session "+detailedId+" · "+
                                                     r.quality.category+" · "+
@@ -728,7 +745,10 @@ class MainActivity : ComponentActivity() {
                                                     detailReport=null;detailPoints=emptyList()
                                                 }){Text("Close session analysis")}
                                             }
-                                            sessionList.forEach { s ->
+                                            sessionList.filter { s ->
+                                                 !hideShortRuns || s.endedAt==null ||
+                                                     s.endedAt-s.startedAt>=15_000L
+                                             }.forEach { s ->
                                                 HorizontalDivider(color = Color(0x335F91A7))
                                                 Row(verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -768,6 +788,17 @@ class MainActivity : ComponentActivity() {
                                              Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
+                                                 Text("Skip first 30s (Warm-Up)",
+                                                     Modifier.weight(1f),color=coreText,
+                                                     style=MaterialTheme.typography.bodySmall)
+                                                 Switch(skipWarmUp,
+                                                     onCheckedChange={skipWarmUp=it})
+                                             }
+                                             Text("After REC, not proven game-world start. "+
+                                                 "Original samples and linked timelines remain unchanged.",
+                                                 color=coreSecondary,
+                                                 style=MaterialTheme.typography.labelSmall)
+                                             Row(verticalAlignment=Alignment.CenterVertically) {
                                                 Text("Active 3D gameplay: GPU ≥ 15% (heuristic)",
                                                     Modifier.weight(1f),color=muted,
                                                     style=MaterialTheme.typography.bodySmall)
@@ -828,15 +859,15 @@ class MainActivity : ComponentActivity() {
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                             }
-                                            val analysisA=remember(firstPoints,firstId,sessionList) {
+                                            val analysisA=remember(firstPoints,firstId,sessionList,skipWarmUp) {
                                                 sessionList.firstOrNull{it.id==firstId}
                                                     ?.takeIf{firstPoints.isNotEmpty()}
-                                                    ?.let{BenchmarkAnalyzer.analyze(it,firstPoints)}
+                                                    ?.let{BenchmarkAnalyzer.analyze(it,firstPoints,if(skipWarmUp)30 else 0)}
                                             }
-                                            val analysisB=remember(secondPoints,secondId,sessionList) {
+                                            val analysisB=remember(secondPoints,secondId,sessionList,skipWarmUp) {
                                                 sessionList.firstOrNull{it.id==secondId}
                                                     ?.takeIf{secondPoints.isNotEmpty()}
-                                                    ?.let{BenchmarkAnalyzer.analyze(it,secondPoints)}
+                                                    ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
                                             analysisA?.let { r ->
                                                 ObservedProfilePanel(r.session.configuration,firstPoints)
@@ -875,6 +906,7 @@ class MainActivity : ComponentActivity() {
                                                     style=MaterialTheme.typography.labelSmall)
                                                 OutlinedButton(onClick={
                                                     reportAId=firstId;reportBId=0L
+                                                     reportSkipWarmup=skipWarmUp
                                                     reportFile.launch("CoreMetrics_Report_A_"+
                                                         firstId+".txt")
                                                 }){Text("Export evidence report")}
@@ -914,16 +946,25 @@ class MainActivity : ComponentActivity() {
                                                     }?:"—"),color=coreSecondary)
                                                 OutlinedButton(onClick={
                                                     reportAId=firstId;reportBId=secondId
+                                                     reportSkipWarmup=skipWarmUp
                                                     reportFile.launch("CoreMetrics_AB_"+
                                                         firstId+"_"+secondId+".txt")
                                                 }){Text("Export A/B report")}
                                             }
-                                            val viewA = if(activeOnly) firstPoints.filter {
+                                            val eligibleA=if(skipWarmUp && firstPoints.isNotEmpty())
+                                                 firstPoints.filter{
+                                                     it.timeMs-firstPoints.first().timeMs>=30_000L
+                                                 }else firstPoints
+                                             val eligibleB=if(skipWarmUp && secondPoints.isNotEmpty())
+                                                 secondPoints.filter{
+                                                     it.timeMs-secondPoints.first().timeMs>=30_000L
+                                                 }else secondPoints
+                                             val viewA = if(activeOnly) eligibleA.filter {
                                                 (it.gpuLoad ?: 0.0) >= 15.0
-                                            } else firstPoints
-                                            val viewB = if(activeOnly) secondPoints.filter {
+                                            } else eligibleA
+                                            val viewB = if(activeOnly) eligibleB.filter {
                                                 (it.gpuLoad ?: 0.0) >= 15.0
-                                            } else secondPoints
+                                            } else eligibleB
                                             // Segment the ORIGINAL timeline, before gameplay filtering.
                                             val regimes=remember(firstPoints,activeOnly) {
                                                 SessionRegimeAnalyzer.analyze(firstPoints.map { p ->
