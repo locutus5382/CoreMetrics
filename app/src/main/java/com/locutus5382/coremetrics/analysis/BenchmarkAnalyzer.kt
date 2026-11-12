@@ -138,9 +138,10 @@ object BenchmarkAnalyzer {
         )
         val reasons=mutableListOf<String>()
         var score=100
-        if(session.status !in setOf("COMPLETED","IMPORTED")) {
+        if(session.status !in setOf("COMPLETED","IMPORTED_COMPLETED")) {
             score-=25
-            reasons+="Session status is ${session.status}; recording may be incomplete"
+            reasons+="Session status is ${session.status}; source may be interrupted, " +
+                "incomplete or its original status may be unknown"
         }
         if(elapsed<60.0) {
             score-=20

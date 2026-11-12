@@ -184,7 +184,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                         put("started_at",firstTime)
                         put("label","CSV · "+label)
                         put("configuration",config)
-                        put("status","IMPORTED")
+                        put("status",ImportedSessionStatus.store(
+                            columns.field(row,"status")))
                         put("ended_at",firstTime)
                     })
                 }

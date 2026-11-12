@@ -2,11 +2,22 @@ package com.locutus5382.coremetrics
 
 import com.locutus5382.coremetrics.data.CsvRecordReader
 import com.locutus5382.coremetrics.data.CsvSessionColumns
+import com.locutus5382.coremetrics.data.ImportedSessionStatus
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.StringReader
 
 class CsvImportParserTest {
+    @Test fun importPreservesOriginalFailureRatherThanClaimingCompletion() {
+        assertEquals("IMPORTED_INTERRUPTED_RECOVERED",
+            ImportedSessionStatus.store("INTERRUPTED_RECOVERED"))
+        assertEquals("IMPORTED_COMPLETED",ImportedSessionStatus.store("COMPLETED"))
+        assertEquals("IMPORTED_UNKNOWN",ImportedSessionStatus.store(null))
+        assertEquals("IMPORTED_UNKNOWN",
+            ImportedSessionStatus.store("UNTRUSTED_UNRECOGNIZED"))
+        assertEquals("IMPORTED_FAILED",
+            ImportedSessionStatus.store("IMPORTED_FAILED"))
+    }
     @Test fun escapedCommasQuotesCrLfAndNewline() {
         val parser=CsvRecordReader(StringReader(
             "sample_epoch_ms,cpu_temp_c,game_label\r\n"+
