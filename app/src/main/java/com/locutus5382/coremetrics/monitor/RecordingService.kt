@@ -58,6 +58,9 @@ class RecordingService:Service() {
     private var armed=false
     private var disarmAfterStop=false
     private var settings=HudOptions()
+    private var armedLabel="Gameplay"
+    private var armedConfig="Stock"
+    private var armedInterval=5000L
 
     override fun onCreate() {
         super.onCreate()
@@ -106,14 +109,13 @@ class RecordingService:Service() {
         refreshTile()
     }
     private fun hudClick(){
-        val p=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
         val i=Intent(this,RecordingService::class.java)
         if(MonitorState.running || MonitorState.starting) i.action=STOP
         else {
             i.action=START
-            i.putExtra(LABEL,p.getString("label","Gameplay")?:"Gameplay")
-            i.putExtra(CONFIG,p.getString("configuration","Stock")?:"Stock")
-            i.putExtra(INTERVAL,p.getLong("interval_ms",5000L))
+            i.putExtra(LABEL,armedLabel)
+            i.putExtra(CONFIG,armedConfig)
+            i.putExtra(INTERVAL,armedInterval)
         }
         startService(i)
     }
@@ -142,6 +144,13 @@ class RecordingService:Service() {
                     return START_NOT_STICKY
                 }
                 settings=HudOptions.from(this,intent)
+                val prefs=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
+                armedLabel=(intent.getStringExtra(LABEL)
+                    ?:prefs.getString("label","Gameplay")?:"Gameplay").take(64)
+                armedConfig=(intent.getStringExtra(CONFIG)
+                    ?:prefs.getString("configuration","Stock")?:"Stock").take(40)
+                armedInterval=if(intent.getLongExtra(INTERVAL,
+                    prefs.getLong("interval_ms",5000L))==2000L)2000L else 5000L
                 if(task?.isActive!=true && !foreground("CoreMetrics · HUD standby",
                         "No telemetry until REC",true)){
                     MonitorState.message="Foreground standby failed"
@@ -210,6 +219,9 @@ class RecordingService:Service() {
                     ?:p.getString("label","Gameplay")?:"Gameplay").take(64)
                 val config=(intent.getStringExtra(CONFIG)
                     ?:p.getString("configuration","Stock")?:"Stock").take(40)
+                armedLabel=label
+                armedConfig=config
+                armedInterval=interval
                 RecorderJournal.event(this,"START_REQUESTED","every="+interval)
                 if(!foreground("CoreMetrics · starting",label,false)){
                     MonitorState.message="Foreground recorder unavailable"
