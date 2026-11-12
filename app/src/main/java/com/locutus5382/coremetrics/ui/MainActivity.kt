@@ -524,20 +524,50 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick = {
                                                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                                             }) { Text("Open Usage Access settings") }
-                                            Text("Experimental FPS: attempts a read-only SurfaceFlinger DUMP. " +
-                                                "Android may deny access. If denied, FPS remains unavailable. " +
-                                                "Does not measure emulated game-engine frame rate.",
-                                                color = muted,style=MaterialTheme.typography.bodySmall)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("Try SurfaceFlinger FPS next session",
-                                                    Modifier.weight(1f),color=white)
-                                                Switch(fpsExperimental, onCheckedChange = {
-                                                    fpsExperimental=it
-                                                    prefs.edit().putBoolean("experimental_fps",it).apply()
+                                            Text("FPS: the Portal denied SurfaceFlinger access on every " +
+                                                "recording. System dumps are disabled in this stability build. " +
+                                                "No fabricated FPS values. We will test a read-only FPS " +
+                                                "provider separately.", color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
+                                            HorizontalDivider(color=coreBorder)
+                                            Text("IN-GAME HUD",color=coreCyan,
+                                                style=MaterialTheme.typography.titleSmall)
+                                            Text("Compact, draggable, updated from the existing session " +
+                                                "sampler. Enabled only while recording.",
+                                                color=muted,style=MaterialTheme.typography.bodySmall)
+                                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                                Text("Show HUD when recording",Modifier.weight(1f),
+                                                    color=white)
+                                                Switch(hudEnabled,onCheckedChange={ enabled ->
+                                                    hudEnabled=enabled
+                                                    prefs.edit().putBoolean("hud_enabled",enabled).apply()
+                                                    if(enabled && !Settings.canDrawOverlays(this@MainActivity)) {
+                                                        message="Grant overlay permission; HUD starts on the NEXT session."
+                                                    }
                                                 })
                                             }
-                                            Text("No overlay, root, PServer, INTERNET permission, or kernel writes in this alpha.",
-                                                style = MaterialTheme.typography.bodySmall, color = muted)
+                                            Text(if(Settings.canDrawOverlays(this@MainActivity))
+                                                    "Overlay permission granted"
+                                                else "Overlay permission required for HUD",
+                                                color=if(Settings.canDrawOverlays(this@MainActivity))
+                                                    coreMint else coreAmber,
+                                                style=MaterialTheme.typography.labelSmall)
+                                            OutlinedButton(onClick={
+                                                startActivity(Intent(
+                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                    Uri.parse("package:" + packageName)))
+                                            }) { Text("Open overlay permission") }
+                                            HorizontalDivider(color=coreBorder)
+                                            Text("QUICK SETTINGS",color=coreCyan,
+                                                style=MaterialTheme.typography.titleSmall)
+                                            Text("The Record tile is separate from the application icon. " +
+                                                "Add it once, then use it to start/stop recording after Eden opens.",
+                                                color=muted,style=MaterialTheme.typography.bodySmall)
+                                            OutlinedButton(onClick={
+                                                requestQuickSettingsTile { message=it }
+                                            }) { Text("Add Record tile to Quick Settings") }
+                                            Text("No root, PServer, INTERNET permission or hardware writes.",
+                                                style=MaterialTheme.typography.bodySmall,color=muted)
                                             Text("Battery power shows battery-terminal flow, not whole-device or wall power. Charging/bypass sessions cannot be compared as power efficiency.",
                                                 style = MaterialTheme.typography.bodySmall,color=muted)
                                             HorizontalDivider(color=coreBorder)
