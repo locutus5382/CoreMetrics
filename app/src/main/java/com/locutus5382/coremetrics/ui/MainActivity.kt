@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
+import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.HudOptions
@@ -160,6 +161,12 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
             }
             val liveTrace = remember { mutableStateListOf<LiveTracePoint>() }
+            val thermalGauge = remember { ThermalTrendFilter() }
+            var cpuEma by remember { mutableStateOf<Double?>(null) }
+            var cpuPeak by remember { mutableStateOf<Double?>(null) }
+            var cpuTrend by remember {
+                mutableStateOf(ThermalTrendFilter.Direction.UNKNOWN)
+            }
             var diagnosticReport by remember { mutableStateOf("") }
             var label by rememberSaveable { mutableStateOf(prefs.getString("label", "NFS benchmark") ?: "NFS benchmark") }
             var configuration by rememberSaveable {
@@ -208,12 +215,23 @@ class MainActivity : ComponentActivity() {
                         val next = withContext(Dispatchers.IO) { query() }
                         if (next.lastAt > 0L && next.lastAt != status.lastAt &&
                             next.running) {
+                            val smoothed=thermalGauge.update(next.lastAt,
+                                next.cpu?.removeSuffix("°C")?.toDoubleOrNull())
+                            cpuEma=smoothed.smoothedC
+                            cpuPeak=smoothed.rawPeakC
+                            cpuTrend=smoothed.direction
                             liveTrace.add(LiveTracePoint(next.lastAt,
                                 next.cpu?.removeSuffix("°C")?.toDoubleOrNull(),
                                 next.gpu?.removeSuffix("°C")?.toDoubleOrNull(),
                                 next.cpuLoad?.toDoubleOrNull(),
                                 next.gpuLoad?.toDoubleOrNull()))
                             while (liveTrace.size > 70) liveTrace.removeAt(0)
+                        }
+                        if(!next.running && status.running) {
+                            thermalGauge.reset()
+                            cpuEma=null
+                            cpuPeak=null
+                            cpuTrend=ThermalTrendFilter.Direction.UNKNOWN
                         }
                         status = next
                         overlayAllowed=Settings.canDrawOverlays(this@MainActivity)
@@ -395,8 +413,11 @@ class MainActivity : ComponentActivity() {
                                             }) { Text("Add QS tile") }
                                         }
                                         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
-                                            PureGlassGauge("CPU",status.cpu,
-                                                (((status.cpu?.removeSuffix("°C")
+                                            val cpuDisplay=cpuEma?.let {
+                                                String.format(Locale.US,"%.1f°C",it)
+                                            } ?: status.cpu
+                                            PureGlassGauge("CPU",cpuDisplay,
+                                                (((cpuDisplay?.removeSuffix("°C")
                                                     ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
                                                 solarOrange,Modifier.weight(1f))
                                             PureGlassGauge("GPU",status.gpu,
@@ -411,7 +432,16 @@ class MainActivity : ComponentActivity() {
                                                 ((status.fps?.toDoubleOrNull() ?: 0.0)/120.0).toFloat(),
                                                 iceBlue,Modifier.weight(1f))
                                         }
-                                        Text("Ring arcs use display-only reference scales; " +
+                                        Text("CPU EMA · raw peak " +
+                                            (cpuPeak?.let { fmt(it)+"°C" } ?: "—") +
+                                            " · " + when(cpuTrend) {
+                                                ThermalTrendFilter.Direction.RISING -> "▲ rising"
+                                                ThermalTrendFilter.Direction.FALLING -> "▼ falling"
+                                                ThermalTrendFilter.Direction.STABLE -> "— stable"
+                                                else -> "—"
+                                            },color=coreSecondary,
+                                            style=MaterialTheme.typography.labelSmall)
+                                         Text("Ring arcs use display-only reference scales; " +
                                             "they are not thermal safety limits.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
