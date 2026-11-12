@@ -10,6 +10,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -143,5 +145,54 @@ private fun ScopeTrack(points: List<LiveTracePoint>, metric: Int) {
             trace(points.map { it.cpuLoad },coreCyan)
             trace(points.map { it.gpuLoad },coreAmber)
         }
+    }
+}
+
+
+/** Eight individual /proc/stat deltas. Policy clocks are separate measurements. */
+@Composable
+internal fun PerCoreLoadMatrix(encoded: String?) {
+    val values = encoded?.split(';')?.mapNotNull { row ->
+        val bits = row.split(':')
+        if (bits.size == 2) bits[0] to bits[1].toIntOrNull() else null
+    }?.toMap().orEmpty()
+    val shape = RoundedCornerShape(15.dp)
+    Column(Modifier.fillMaxWidth().background(coreCard,shape)
+        .border(1.dp,coreBorder,shape).padding(12.dp)) {
+        Text("CPU TOPOLOGY  ·  PER-CORE LOAD",color=coreText,
+            style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            (0..7).forEach { core ->
+                val load = values["cpu$core"]
+                val col = when {
+                    core <= 2 -> coreCyan
+                    core <= 6 -> coreMint
+                    else -> coreAmber
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("C$core",color=coreSecondary,
+                        style=MaterialTheme.typography.labelSmall,fontFamily=FontFamily.Monospace)
+                    Canvas(Modifier.fillMaxWidth().height(44.dp)) {
+                        val bw = size.width * .55f
+                        val x = (size.width-bw)/2f
+                        val radius=CornerRadius(5.dp.toPx())
+                        drawRoundRect(Color(0xFF263849),topLeft=Offset(x,0f),
+                            size=Size(bw,size.height),cornerRadius=radius)
+                        if(load!=null) {
+                            val amt = load.coerceIn(0,100)/100f
+                            val height = size.height*amt
+                            drawRoundRect(col,topLeft=Offset(x,size.height-height),
+                                size=Size(bw,height.coerceAtLeast(1f)),cornerRadius=radius)
+                        }
+                    }
+                    Text(load?.let { "$it%" } ?: "—",color=if(load==null) coreSecondary else col,
+                        style=MaterialTheme.typography.labelSmall,fontFamily=FontFamily.Monospace)
+                }
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        Text("C0–2 efficiency · C3–6 performance · C7 prime. Source: per-core /proc/stat.",
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
     }
 }
