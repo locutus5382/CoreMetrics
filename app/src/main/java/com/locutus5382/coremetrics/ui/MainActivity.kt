@@ -3,6 +3,8 @@ package com.locutus5382.coremetrics.ui
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -39,6 +41,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
+import com.locutus5382.coremetrics.monitor.RecorderJournal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -64,6 +67,10 @@ private data class ScreenStatus(
     val cpuLoad: String? = null, val gpuLoad: String? = null,
     val peakCore: String? = null, val ram: String? = null,
     val clock: String? = null, val app: String? = null,
+    val power: String? = null, val powerStatus: String? = null,
+    val powerSource: String? = null, val fps: String? = null,
+    val frameMs: String? = null, val fpsStatus: String? = null,
+    val observedLimits: String? = null,
     val lastAt: Long = 0
 )
 
@@ -81,6 +88,10 @@ class MainActivity : ComponentActivity() {
             cpuLoad = v.getString("cpuLoad"), gpuLoad = v.getString("gpuLoad"),
             peakCore = v.getString("peakCore"), ram = v.getString("ram"),
             clock = v.getString("clock"), app = v.getString("app"),
+            power = v.getString("power"), powerStatus = v.getString("powerStatus"),
+            powerSource = v.getString("powerSource"), fps = v.getString("fps"),
+            frameMs = v.getString("frameMs"),fpsStatus=v.getString("fpsStatus"),
+            observedLimits = v.getString("observedLimits"),
             lastAt = v.getLong("lastSampleAt", 0)
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
@@ -92,6 +103,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             var page by rememberSaveable { mutableStateOf("Live") }
             var status by remember { mutableStateOf(ScreenStatus()) }
+            val liveTrace = remember { mutableStateListOf<LiveTracePoint>() }
+            var fpsExperimental by rememberSaveable {
+                mutableStateOf(prefs.getBoolean("experimental_fps",false))
+            }
+            var diagnosticReport by remember { mutableStateOf("") }
             var label by rememberSaveable { mutableStateOf(prefs.getString("label", "NFS benchmark") ?: "NFS benchmark") }
             var configuration by rememberSaveable {
                 mutableStateOf(prefs.getString("configuration", "Stock") ?: "Stock")
@@ -129,7 +145,17 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     while (isActive) {
-                        status = withContext(Dispatchers.IO) { query() }
+                        val next = withContext(Dispatchers.IO) { query() }
+                        if (next.lastAt > 0L && next.lastAt != status.lastAt &&
+                            next.running) {
+                            liveTrace.add(LiveTracePoint(next.lastAt,
+                                next.cpu?.removeSuffix("°C")?.toDoubleOrNull(),
+                                next.gpu?.removeSuffix("°C")?.toDoubleOrNull(),
+                                next.cpuLoad?.toDoubleOrNull(),
+                                next.gpuLoad?.toDoubleOrNull()))
+                            while (liveTrace.size > 70) liveTrace.removeAt(0)
+                        }
+                        status = next
                         delay(1300L)
                     }
                 }
@@ -151,11 +177,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            MaterialTheme(colorScheme = darkColorScheme(primary = cyan, surface = night,
-                background = night, onSurface = white)) {
+            MaterialTheme(colorScheme = darkColorScheme(primary = coreCyan, surface = coreNight,
+                background = coreNight, onSurface = coreText)) {
                 Box(
                     Modifier.fillMaxSize().background(Brush.linearGradient(
-                        listOf(night, Color(0xFF0E2940), Color(0xFF15152E), night)
+                        listOf(coreNight, Color(0xFF0E1E30), Color(0xFF111827), coreNight)
                     )).onPreviewKeyEvent { event ->
                         val key = event.nativeKeyEvent
                         if (key.action != KeyEvent.ACTION_DOWN || key.repeatCount != 0) false
@@ -170,14 +196,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val r = size.minDimension
-                        drawCircle(Brush.radialGradient(
-                            listOf(glow.copy(alpha = .6f), Color.Transparent),
-                            center = Offset(size.width * .89f, size.height * .08f),
-                            radius = r * .85f
-                        ), radius = r * .85f, center = Offset(size.width * .89f, size.height * .08f))
-                    }
+                    InstrumentBackdrop()
                     Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Column(
                             Modifier.width(170.dp).fillMaxHeight()
@@ -190,7 +209,7 @@ class MainActivity : ComponentActivity() {
                             Text("CORE", color = cyan, style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold)
                             Text("METRICS", color = white, style = MaterialTheme.typography.titleMedium)
-                            Text("GAMEPLAY ANALYTICS", color = muted, style = MaterialTheme.typography.labelSmall)
+                            Text("TELEMETRY STUDIO", color = muted, style = MaterialTheme.typography.labelSmall)
                             Spacer(Modifier.height(6.dp))
                             pages.forEach { item ->
                                 Button(onClick = { page = item }, modifier = Modifier.fillMaxWidth(),
@@ -203,7 +222,7 @@ class MainActivity : ComponentActivity() {
                             Text(if (status.running) "● RECORDING" else if (status.starting) "◌ STARTING" else "○ IDLE",
                                 color = if (status.running) cyan else muted,
                                 style = MaterialTheme.typography.labelMedium)
-                            Text("v0.1 alpha · read-only", color = muted,
+                            Text("v0.2 alpha · read-only", color = muted,
                                 style = MaterialTheme.typography.labelSmall)
                         }
                         Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -219,13 +238,31 @@ class MainActivity : ComponentActivity() {
                                 when (page) {
                                     "Live" -> {
                                         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                            MetricCard("CPU / SoC", status.cpu, "Named thermal", Modifier.weight(1f))
-                                            MetricCard("GPU", status.gpu, "Named thermal", Modifier.weight(1f))
-                                            MetricCard("CPU Load", status.cpuLoad?.plus("%"), "System /proc/stat", Modifier.weight(1f))
-                                            MetricCard("GPU Load", status.gpuLoad?.plus("%"), "KGSL if readable", Modifier.weight(1f))
+                                            InstrumentKpi("Layer FPS",status.fps,
+                                                status.fpsStatus ?: "Opt-in experimental",coreAmber,Modifier.weight(1f))
+                                            InstrumentKpi("CPU / SoC",status.cpu,
+                                                "Named thermal",coreCyan,Modifier.weight(1f))
+                                            InstrumentKpi("GPU",status.gpu,
+                                                "Named thermal",coreMint,Modifier.weight(1f))
+                                            InstrumentKpi("RAM",status.ram,
+                                                "System-wide",coreCyan,Modifier.weight(1f))
+                                            InstrumentKpi("Battery",status.power,
+                                                "Net battery watts",coreAmber,Modifier.weight(1f))
+                                        }
+                                        LiveScope(liveTrace)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                                            MetricCard("CPU load",status.cpuLoad?.plus("%"),
+                                                "All cores",Modifier.weight(1f))
+                                            MetricCard("GPU load",status.gpuLoad?.plus("%"),
+                                                "Adreno KGSL",Modifier.weight(1f))
+                                            MetricCard("Prime / busiest",status.peakCore?.plus("%"),
+                                                "Observed single core",Modifier.weight(1f))
+                                            MetricCard("Frame time",status.frameMs,
+                                                "Surface layer only",Modifier.weight(1f))
                                         }
                                         GlassPanel {
-                                            Text("Live recording", color = white, style = MaterialTheme.typography.titleMedium)
+                                            Text("RECORDING CONTROL  ·  ONE USER-STARTED SESSION",
+                                                color = coreCyan, style = MaterialTheme.typography.titleMedium)
                                             Text("Game label", color = muted)
                                             OutlinedTextField(label, { label = it.take(64) },
                                                 modifier = Modifier.fillMaxWidth(), singleLine = true,
@@ -290,11 +327,21 @@ class MainActivity : ComponentActivity() {
                                                 time(status.lastAt) else null, "Device-local time", Modifier.weight(1f))
                                         }
                                         GlassPanel {
-                                            Text("Current CPU clocks", color = muted)
+                                            Text("ACTUAL CPU CLOCKS", color = coreCyan)
                                             Text(status.clock ?: "Unavailable", color = white)
+                                            Text("OBSERVED LIMITS  ·  not proof of tuner identity",
+                                                color = muted,style=MaterialTheme.typography.labelSmall)
+                                            Text(status.observedLimits ?: "Unavailable",color=white)
+                                            Text("BATTERY ELECTRICAL MEASUREMENT",color=muted)
+                                            Text((status.power ?: "Unavailable") + "  ·  " +
+                                                (status.powerStatus ?: "Start to measure"),
+                                                color=white,style=MaterialTheme.typography.bodySmall)
+                                            Text("FRAME SOURCE",color=muted)
+                                            Text(status.fpsStatus ?: "FPS probe disabled",
+                                                color=white,style=MaterialTheme.typography.bodySmall)
                                             Text("App package: " + (status.app ?: "Unavailable / Usage Access off"),
                                                 color = muted, style = MaterialTheme.typography.bodySmall)
-                                            Text("FPS, watts and 1% lows are not yet validated. No values are invented.",
+                                            Text("FPS is SurfaceFlinger layer-present rate only; watts are signed battery-net power. No low-percentiles or CPU watts are invented.",
                                                 color = muted, style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
@@ -379,10 +426,39 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick = {
                                                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                                             }) { Text("Open Usage Access settings") }
+                                            Text("Experimental FPS: attempts a read-only SurfaceFlinger DUMP. " +
+                                                "Android may deny access. If denied, FPS remains unavailable. " +
+                                                "Does not measure emulated game-engine frame rate.",
+                                                color = muted,style=MaterialTheme.typography.bodySmall)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("Try SurfaceFlinger FPS next session",
+                                                    Modifier.weight(1f),color=white)
+                                                Switch(fpsExperimental, onCheckedChange = {
+                                                    fpsExperimental=it
+                                                    prefs.edit().putBoolean("experimental_fps",it).apply()
+                                                })
+                                            }
                                             Text("No overlay, root, PServer, INTERNET permission, or kernel writes in this alpha.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
-                                            Text("FPS and battery watts require independent device validation before display.",
-                                                style = MaterialTheme.typography.bodySmall, color = muted)
+                                            Text("Battery power shows battery-terminal flow, not whole-device or wall power. Charging/bypass sessions cannot be compared as power efficiency.",
+                                                style = MaterialTheme.typography.bodySmall,color=muted)
+                                            HorizontalDivider(color=coreBorder)
+                                            Text("RECORDER DIAGNOSTICS",color=coreCyan)
+                                            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                OutlinedButton(onClick = {
+                                                    diagnosticReport=RecorderJournal.report(this@MainActivity)
+                                                }) { Text("View process-exit & lifecycle log") }
+                                                OutlinedButton(enabled=diagnosticReport.isNotEmpty(),onClick = {
+                                                    val clipboard=getSystemService(ClipboardManager::class.java)
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText(
+                                                        "CoreMetrics diagnostic report",diagnosticReport))
+                                                    message="Diagnostic report copied"
+                                                }) { Text("Copy report") }
+                                            }
+                                            if (diagnosticReport.isNotBlank()) {
+                                                Text(diagnosticReport,color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
+                                            }
                                         }
                                     }
                                 }
