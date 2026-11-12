@@ -9,12 +9,19 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.6.0-hud-analysis-fpslab-alpha"
+        versionCode = 7
+        versionName = "0.7.0-lmk-analytics-test"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
     }
     buildTypes {
+        create("v07test") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".v07test"
+            versionNameSuffix = "-side-by-side"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.7 Test"
+            manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics v0.7 Record"
+        }
         create("preview") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".preview"

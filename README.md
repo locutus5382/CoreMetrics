@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.6 draft experimental HUD/analysis build, stacked on the unmerged v0.4 branch. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.7 draft memory-resilience and benchmark-analysis test build, stacked on the unmerged v0.4 branch. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -20,6 +20,16 @@
 - On-device collected readings and session history stay in app-private storage unless the user chooses to export them.
 
 **Parallel test build (recommended):** GitHub Actions now also generates **CoreMetrics Preview**, package `com.locutus5382.coremetrics.preview`. It has a separate provider authority, tile, preferences and SQLite database, so it can coexist with the v0.5 installation even if CI debug signing keys differ. Export v0.5 CSVs and import them inside Preview to compare the same recorded runs. Do not use the regular v0.6 debug APK if you want to preserve v0.5 installed simultaneously. Preview is not an upgrade/migration and will not automatically see v0.5 private sessions.
+
+## v0.7 draft — touchable lock, bounded memory recovery and benchmark evidence
+
+- **Lock controls fixed:** The main telemetry HUD uses `FLAG_NOT_TOUCHABLE` at window alpha 0.70, with a **second 48dp, touchable 🔒 unlock chip** placed near its original icon. The chip is created *before* locking or the lock fails safe. It is removed on unlock/disarm; the notification and HUD Studio are separate fallbacks. Unlike a normal child of the locked HUD, this chip can accept touches independently.
+- **Low-memory diagnosis:** The user-supplied recorder log shows Android `LOW_MEMORY` process kills for both UI and recorder. Fixed a misleading memory unit: Android's `ApplicationExitInfo.pss` is already in kB, so dividing by 1024 reports **MiB** (57–78 MiB at last measurement, not KiB). New diagnostics include a current system RAM snapshot.
+- **Best-effort recovery:** A user-enabled foreground standby/recording now returns `START_STICKY`. On an Android-managed restart with a null intent, a private authenticated-by-app-state lease must be fresh (standby within 10 min, REC within 90 s of last heartbeat), from this boot, have at most two recovery attempts, and have a still-active SQLite session for REC. Recording continues under the SAME ID, preserving the original start time and leaving a genuine sample gap. STOP/DISARM explicitly clears the lease. The app **cannot prevent Android/AYN from killing it** and a restart is not guaranteed. No boot receiver, root, memory boosting, wake lock or concealed recording.
+- **Import provenance correction:** Imported CoreMetrics CSV files retain their original completion outcome as `IMPORTED_COMPLETED`, `IMPORTED_INTERRUPTED_RECOVERED`, etc., rather than converting every source to the indistinguishable `IMPORTED`. Unknown/legacy imported source status is assessed conservatively.
+- **Benchmark analytics:** (1) disclosed heuristic quality score with interrupted/gapped/short-session penalties, observed cap mismatch flags; (2) 60-second CPU thermal regression and conservative steady-state candidate; (3) integration of battery-net discharge watts over valid adjacent samples to estimate **Wh consumed** (no gap fill, charging or bypass); (4) FPS/W and joules/frame **unavailable** until independently validated game-frame timestamps (do not invent 1% lows); (5) exportable, offline text session and A/B evidence reports plus in-app cards.
+- **Observed profile warning:** The uploaded Mario Kart recordings were manually labelled `Stock` but showed P3 1.79 GHz / P7 1.84 GHz, matching previously documented Large UC ceilings. A live label/cap warning and report flag identify this mismatch; measured ceilings do not prove which tuner applied them.
+- A separate `CoreMetrics v0.7 Test` APK uses `com.locutus5382.coremetrics.v07test`, independent database, provider, Quick Settings tile and preferences. It can coexist with the older v0.6 Preview and v0.5. Import the user's CSVs into the Test app; **run only one HUD/recorder at a time**.
 
 ## v0.6 draft — CSV import, A/B chart scrubber, four HUD graphs, edge dock and FPS Lab
 

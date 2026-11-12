@@ -49,12 +49,21 @@ object RecorderJournal {
                     }
                     t + " | " + record.processName + " | pid=" + record.pid +
                         " | " + reason + " | importance=" + record.importance +
-                        " | pssKiB=" + record.pss / 1024
+                        " | lastPssMiB=" + record.pss / 1024 +
+                        " (Android last sampled, not size at termination)"
                 }
         } catch (e: Exception) { "Process exit history unavailable: " + e.javaClass.simpleName }
-        return "CoreMetrics v0.2 recorder diagnostics\n" +
+        val liveMemory=try {
+            val mgr=context.getSystemService(ActivityManager::class.java)
+            val info=ActivityManager.MemoryInfo()
+            mgr.getMemoryInfo(info)
+            "System RAM at report time: available="+(info.availMem/(1024*1024))+
+                " MiB / total="+(info.totalMem/(1024*1024))+
+                " MiB, lowMemory="+info.lowMemory+"; historical exits may predate this report"
+        }catch(e:Exception){"System memory unavailable: "+e.javaClass.simpleName}
+        return "CoreMetrics v0.7 recorder diagnostics\n" +
             "Current UI PID: " + Process.myPid() + "\n\n" +
             "Recent lifecycle events:\n" + read(context) +
-            "\n\nAndroid process exit history:\n" + exits + "\n"
+            "\n\n"+liveMemory+"\nAndroid process exit history:\n" + exits + "\n"
     }
 }

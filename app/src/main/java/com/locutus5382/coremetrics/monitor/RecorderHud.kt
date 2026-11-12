@@ -132,6 +132,10 @@ internal class RecorderHud(private val context:Context) {
     private var recDot:TextView?=null
     private var recControl:LinearLayout?=null
     private var lockControl:TextView?=null
+    // A separate bounded touchable overlay is mandatory: FLAG_NOT_TOUCHABLE
+    // on the telemetry window also makes ALL its child icons untouchable.
+    private var unlockWindow:TextView?=null
+    private var unlockParams:WindowManager.LayoutParams?=null
     private var drawerControl:TextView?=null
     private var closeControl:TextView?=null
     private var params:WindowManager.LayoutParams?=null
@@ -149,6 +153,7 @@ internal class RecorderHud(private val context:Context) {
     private var expandedX=0
     private var onRecord:(()->Unit)?=null
     private var onLock:(()->Unit)?=null
+    private var onUnlock:(()->Unit)?=null
     private var onClose:(()->Unit)?=null
     private var onOptionsChanged:((HudOptions)->Unit)?=null
     private var disposed=false
@@ -182,24 +187,80 @@ internal class RecorderHud(private val context:Context) {
     fun attached()=root?.isAttachedToWindow==true
     fun isLocked()=locked
 
+    /** Positions the independent unlock handle exactly above the original lock.
+     * Only 48 dp of screen can intercept taps; the rest of the HUD is click-through.
+     */
+    private fun makeUnlockHandle(): Pair<TextView,WindowManager.LayoutParams> {
+        val main=params ?:error("HUD_NO_PARAMS")
+        val icon=lockControl
+        val oldX=(main.x+(pill?.left?:0)+(icon?.left?:dp(280f)))-dp(6f)
+        val oldY=main.y+(pill?.top?:0)+(icon?.top?:0)-dp(5f)
+        val handle=styledLabel("🔒",21f).apply {
+            gravity=Gravity.CENTER
+            background=rounded(.78f)
+            contentDescription="Unlock CoreMetrics HUD"
+            isClickable=true
+            setOnClickListener { onUnlock?.invoke() }
+        }
+        val p=WindowManager.LayoutParams(dp(48f),dp(48f),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT).apply {
+            gravity=Gravity.TOP or Gravity.START
+            x=oldX.coerceIn(0,(windowWidth()-dp(48f)).coerceAtLeast(0))
+            y=oldY.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
+            alpha=1f
+        }
+        return handle to p
+    }
+
     fun setLocked(enabled:Boolean):String {
-        val frame=root ?: return "HUD_NOT_ATTACHED"
-        val p=params ?: return "HUD_NO_PARAMS"
-        val flags=p.flags
-        val alpha=p.alpha
-        p.flags=if(enabled) p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            else p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-        // Android 12+ requires total obscuring opacity <= 0.8.
-        p.alpha=if(enabled) .70f else 1f
+        val frame=root ?:return "HUD_NOT_ATTACHED"
+        val p=params ?:return "HUD_NO_PARAMS"
+        if(locked==enabled)return if(enabled)"HUD_ALREADY_LOCKED" else "HUD_ALREADY_UNLOCKED"
+        if(enabled) {
+            // Add recovery control FIRST. If Android refuses another overlay,
+            // do not strand the user behind an untouchable main HUD.
+            val (chip,chipParams)=try { makeUnlockHandle() }
+                catch(e:Exception){return "HUD_UNLOCK_HANDLE_CREATE_FAILED_"+e.javaClass.simpleName}
+            try { wm.addView(chip,chipParams) }
+            catch(e:Exception){return "HUD_UNLOCK_HANDLE_ADD_FAILED_"+e.javaClass.simpleName}
+            val oldFlags=p.flags
+            val oldAlpha=p.alpha
+            p.flags=p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            p.alpha=.70f
+            try {
+                wm.updateViewLayout(frame,p)
+                unlockWindow=chip
+                unlockParams=chipParams
+                locked=true
+                applyAppearance()
+                return "HUD_LOCKED_WITH_TOUCHABLE_UNLOCK"
+            }catch(e:Exception){
+                p.flags=oldFlags;p.alpha=oldAlpha
+                runCatching{wm.updateViewLayout(frame,p)}
+                runCatching{wm.removeViewImmediate(chip)}
+                return "HUD_LOCK_FAILED_"+e.javaClass.simpleName
+            }
+        }
+        // Restore the main window before removing the recovery control.
+        val oldFlags=p.flags
+        val oldAlpha=p.alpha
+        p.flags=p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        p.alpha=1f
         return try {
             wm.updateViewLayout(frame,p)
-            locked=enabled
+            locked=false
+            unlockWindow?.let { runCatching {wm.removeViewImmediate(it)} }
+            unlockWindow=null;unlockParams=null
             applyAppearance()
-            if(enabled)"HUD_LOCKED" else "HUD_UNLOCKED"
+            "HUD_UNLOCKED_TOUCH_CONTROLS_RESTORED"
         }catch(e:Exception){
-            p.flags=flags;p.alpha=alpha
+            p.flags=oldFlags;p.alpha=oldAlpha
             runCatching{wm.updateViewLayout(frame,p)}
-            "HUD_LOCK_FAILED_"+e.javaClass.simpleName
+            "HUD_UNLOCK_FAILED_"+e.javaClass.simpleName
         }
     }
 
@@ -280,11 +341,13 @@ internal class RecorderHud(private val context:Context) {
     }
 
     fun show(options:HudOptions,onRecordClick:()->Unit,onLockClick:()->Unit,
-        onDismissClick:()->Unit,onOptionsChanged:(HudOptions)->Unit = {}):String {
+        onUnlockClick:()->Unit,onDismissClick:()->Unit,
+        onOptionsChanged:(HudOptions)->Unit = {}):String {
         if(!permissionGranted())return "HUD_PERMISSION_MISSING"
         opts=options
         onRecord=onRecordClick
         onLock=onLockClick
+        onUnlock=onUnlockClick
         onClose=onDismissClick
         this.onOptionsChanged=onOptionsChanged
         if(attached()){applyAppearance();return "HUD_ALREADY_ATTACHED"}
@@ -460,6 +523,17 @@ internal class RecorderHud(private val context:Context) {
         applyAppearance()
     }
     fun configure(options:HudOptions) {opts=options;applyAppearance()}
+    private fun repositionUnlockControl() {
+        val chip=unlockWindow ?:return
+        val cp=unlockParams ?:return
+        val p=params ?:return
+        val icon=lockControl ?:return
+        cp.x=(p.x+(pill?.left?:0)+icon.left-dp(6f))
+            .coerceIn(0,(windowWidth()-dp(48f)).coerceAtLeast(0))
+        cp.y=(p.y+(pill?.top?:0)+icon.top-dp(5f))
+            .coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
+        runCatching {wm.updateViewLayout(chip,cp)}
+    }
 
     private fun applyAppearance() {
         val frame=root ?:return
@@ -483,7 +557,10 @@ internal class RecorderHud(private val context:Context) {
         mainText?.textSize=12f*scale
         mainText?.maxWidth=dp(if(opts.layout=="pro")370f*scale else 300f*scale)
         recText?.textSize=11f*scale
-        lockControl?.text=if(locked)"🔒" else "🔓"
+        lockControl?.text="🔓"
+        // Retain the icon's layout width so the separate unlock chip is exactly
+        // where the user expects it, but it cannot receive main-window touches.
+        lockControl?.visibility=if(locked)View.INVISIBLE else View.VISIBLE
         closeControl?.visibility=if(recording)View.GONE else View.VISIBLE
         val color=when(thermalValue?.direction) {
             ThermalTrendFilter.Direction.RISING -> Color.rgb(255,107,0)
@@ -497,6 +574,7 @@ internal class RecorderHud(private val context:Context) {
         renderTelemetry()
         renderAction()
         if(attached())runCatching{params?.let{wm.updateViewLayout(frame,it)}}
+        if(locked)frame.post{if(root===frame)repositionUnlockControl()}
     }
 
     fun mode(isRecording:Boolean,startedMs:Long=0L) {
@@ -580,6 +658,9 @@ internal class RecorderHud(private val context:Context) {
     fun hide():String {
         disposed=true
         ui.removeCallbacks(blink)
+        // Prevent an orphan touch-stealing chip after STOP or process cleanup.
+        unlockWindow?.let { runCatching {wm.removeViewImmediate(it)} }
+        unlockWindow=null;unlockParams=null
         val frame=root ?:return "HUD_NOT_ATTACHED"
         return try {
             wm.removeViewImmediate(frame)

@@ -93,6 +93,26 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         }, "id=?", arrayOf(id.toString()))
     }
 
+    /** Count already persisted points when recovering the same SQLite ID. */
+    @Synchronized fun storedSampleCount(id:Long):Long =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM samples WHERE session_id=?",
+            arrayOf(id.toString())
+        ).use { c -> if(c.moveToFirst())c.getLong(0) else 0L }
+
+    /** Preserve the original elapsed session timer across an LMK restart. */
+    @Synchronized fun originalStartMs(id:Long):Long? =
+        readableDatabase.rawQuery("SELECT started_at FROM sessions WHERE id=?",
+            arrayOf(id.toString())
+        ).use { c -> if(c.moveToFirst() && !c.isNull(0))c.getLong(0) else null }
+
+    /** Verify the old ID is an unfinished user-started recording. */
+    @Synchronized fun canResume(id:Long):Boolean =
+        readableDatabase.rawQuery(
+            "SELECT status FROM sessions WHERE id=?",
+            arrayOf(id.toString())
+        ).use { c -> c.moveToFirst() && c.getString(0)=="RECORDING" }
+
     /** Reconcile a previous process death without deleting its persisted samples. */
     @Synchronized fun recoverInterruptedSessions(time: Long): Int {
         val values = ContentValues().apply {
@@ -164,7 +184,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                         put("started_at",firstTime)
                         put("label","CSV · "+label)
                         put("configuration",config)
-                        put("status","IMPORTED")
+                        put("status",ImportedSessionStatus.store(
+                            columns.field(row,"status")))
                         put("ended_at",firstTime)
                     })
                 }

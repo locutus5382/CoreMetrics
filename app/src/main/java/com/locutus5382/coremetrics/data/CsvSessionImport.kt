@@ -97,3 +97,19 @@ internal class CsvSessionColumns(header:List<String>) {
             .also { require(it in 1_000_000_000_000L..4_102_444_800_000L) { "Timestamp out of range" } }
     val width = header.size
 }
+
+/**
+ * Keep original recording outcome when importing historical CSVs. Using only
+ * "IMPORTED" erased whether a source recording was killed/interrupted.
+ * This is metadata only: no SQLite migration and no trust in arbitrary values.
+ */
+internal object ImportedSessionStatus {
+    private val recognized=setOf(
+        "COMPLETED","INTERRUPTED_RECOVERED","INTERRUPTED","FAILED","RECORDING")
+    fun store(value:String?):String {
+        val source=value?.trim()?.uppercase(java.util.Locale.US)
+            ?.removePrefix("IMPORTED_") ?: "UNKNOWN"
+        return "IMPORTED_"+source.takeIf { it in recognized }.orEmpty()
+            .ifBlank { "UNKNOWN" }
+    }
+}

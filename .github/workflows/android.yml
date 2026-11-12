@@ -25,14 +25,19 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Unit tests and assemble debug APK
-        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assemblePreview --no-daemon
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assemblePreview :app:assembleV07test --no-daemon
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.6-hud-analysis-debug
+          name: CoreMetrics-v0.7-analytics-debug
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Upload parallel-install Preview APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.6-preview-side-by-side
+          name: CoreMetrics-v0.7-preview-debug
           path: app/build/outputs/apk/preview/app-preview.apk
+      - name: Upload separate CoreMetrics v0.7 Test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CoreMetrics-v0.7-test-side-by-side
+          path: app/build/outputs/apk/v07test/app-v07test.apk

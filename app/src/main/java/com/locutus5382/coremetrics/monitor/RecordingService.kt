@@ -49,6 +49,9 @@ class RecordingService:Service() {
         const val LABEL="label"
         const val CONFIG="configuration"
         const val INTERVAL="interval"
+        private const val RECOVERY_ID="recovery_id"
+        private const val RECOVERY_HUD="recovery_hud"
+        private const val RESTORED="restarted_by_android"
         private const val CHANNEL="coremetrics_monitor"
         private const val NOTIFICATION_ID=4411
     }
@@ -101,12 +104,14 @@ class RecordingService:Service() {
         MonitorState.hudState=hud.hide()
         MonitorState.hudLocked=false
         MonitorState.clear("Standby closed")
+        RecorderLease.clear(this)
         refreshTile()
         stopServiceNow()
     }
-    private fun standby(){
+    private fun standby(recovered:Boolean=false){
         MonitorState.clear("HUD ready · tap REC in game")
         MonitorState.standby=true
+        RecorderLease.standby(this,armedLabel,armedConfig,armedInterval,recovered)
         hud.mode(false)
         foreground("CoreMetrics · standby","No sensors sampled until REC",true)
         refreshTile()
@@ -129,6 +134,8 @@ class RecordingService:Service() {
             }},
             onLockClick={startService(Intent(this,RecordingService::class.java)
                 .setAction(HUD_LOCK))},
+            onUnlockClick={startService(Intent(this,RecordingService::class.java)
+                .setAction(HUD_UNLOCK))},
             onDismissClick={startService(Intent(this,RecordingService::class.java)
                 .setAction(DISARM))},
             onOptionsChanged={ changed ->
@@ -143,8 +150,31 @@ class RecordingService:Service() {
     }
 
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
-        RecorderJournal.event(this,"SERVICE_COMMAND",intent?.action?:"null")
-        when(intent?.action){
+        // START_STICKY is only a *request* to Android; the OEM can still kill
+        // this process. A null restart intent requires a fresh, explicitly
+        // user-created lease and (for REC) the SAME active SQLite session ID.
+        val command=if(intent!=null)intent else {
+            val old=RecorderLease.recover(this)
+            if(old==null || (old.recording && !db.canResume(old.id)) ||
+                !RecorderLease.markRecovery(this)) {
+                RecorderJournal.event(this,"RESTART_DECLINED","missing/stale lease")
+                RecorderLease.clear(this)
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            RecorderJournal.event(this,"RESTART_ACCEPTED",
+                if(old.recording)"REC id="+old.id else "STANDBY")
+            Intent(this,RecordingService::class.java)
+                .setAction(if(old.recording)START else ARM)
+                .putExtra(LABEL,old.label)
+                .putExtra(CONFIG,old.configuration)
+                .putExtra(INTERVAL,old.intervalMs)
+                .putExtra(RECOVERY_HUD,old.hudEnabled)
+                .putExtra(RECOVERY_ID,if(old.recording)old.id else 0L)
+                .putExtra(RESTORED,true)
+        }
+        RecorderJournal.event(this,"SERVICE_COMMAND",command.action?:"null")
+        when(command.action){
             ARM -> {
                 if(!notificationsAllowed() || !hud.permissionGranted()){
                     MonitorState.message=if(!hud.permissionGranted())
@@ -154,13 +184,13 @@ class RecordingService:Service() {
                     if(!armed && task?.isActive!=true)stopSelf(startId)
                     return START_NOT_STICKY
                 }
-                settings=HudOptions.from(this,intent)
+                settings=HudOptions.from(this,command)
                 val prefs=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
-                armedLabel=(intent.getStringExtra(LABEL)
+                armedLabel=(command.getStringExtra(LABEL)
                     ?:prefs.getString("label","Gameplay")?:"Gameplay").take(64)
-                armedConfig=(intent.getStringExtra(CONFIG)
+                armedConfig=(command.getStringExtra(CONFIG)
                     ?:prefs.getString("configuration","Stock")?:"Stock").take(40)
-                armedInterval=if(intent.getLongExtra(INTERVAL,
+                armedInterval=if(command.getLongExtra(INTERVAL,
                     prefs.getLong("interval_ms",5000L))==2000L)2000L else 5000L
                 if(task?.isActive!=true && !foreground("CoreMetrics · HUD standby",
                         "No telemetry until REC",true)){
@@ -170,22 +200,24 @@ class RecordingService:Service() {
                 }
                 val status=attachHud()
                 if(status.startsWith("HUD_ADD_FAILED") || status=="HUD_PERMISSION_MISSING"){
+                    RecorderLease.clear(this)
                     if(task?.isActive!=true)stopServiceNow()
                     return START_NOT_STICKY
                 }
                 armed=true
-                if(task?.isActive!=true && !MonitorState.starting)standby()
+                if(task?.isActive!=true && !MonitorState.starting)
+                    standby(command.getBooleanExtra(RESTORED,false))
                 else hud.mode(true,MonitorState.startedAt)
                 RecorderJournal.event(this,"ARMED_NO_SAMPLING")
                 refreshTile()
-                return START_NOT_STICKY
+                return START_STICKY
             }
             HUD_LOCK, HUD_UNLOCK -> {
                 if(!armed && task?.isActive!=true) {
                     stopSelf(startId)
                     return START_NOT_STICKY
                 }
-                val result=hud.setLocked(intent.action==HUD_LOCK)
+                val result=hud.setLocked(command.action==HUD_LOCK)
                 MonitorState.hudLocked=hud.isLocked()
                 MonitorState.hudState=result
                 RecorderJournal.event(this,"HUD_TOUCH_LOCK",result)
@@ -203,7 +235,7 @@ class RecordingService:Service() {
                     stopSelf(startId)
                     return START_NOT_STICKY
                 }
-                settings=HudOptions.from(this,intent)
+                settings=HudOptions.from(this,command)
                 if(hud.attached()){
                     hud.configure(settings)
                     MonitorState.hudState="HUD_CONFIGURED"
@@ -212,6 +244,7 @@ class RecordingService:Service() {
             }
             DISARM -> {
                 RecorderJournal.event(this,"DISARM_REQUESTED")
+                RecorderLease.clear(this)
                 armed=false
                 disarmAfterStop=true
                 MonitorState.standby=false
@@ -224,6 +257,7 @@ class RecordingService:Service() {
             }
             STOP -> {
                 RecorderJournal.event(this,"STOP_REQUESTED","id="+MonitorState.sessionId)
+                RecorderLease.clear(this)
                 stopping=true
                 MonitorState.message="Stopping and saving…"
                 val current=task
@@ -246,15 +280,17 @@ class RecordingService:Service() {
                     return START_NOT_STICKY
                 }
                 val p=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
-                val request=intent.getLongExtra(INTERVAL,p.getLong("interval_ms",5000L))
+                val request=command.getLongExtra(INTERVAL,p.getLong("interval_ms",5000L))
                 val interval=if(request==2000L)2000L else 5000L
-                val label=(intent.getStringExtra(LABEL)
+                val label=(command.getStringExtra(LABEL)
                     ?:p.getString("label","Gameplay")?:"Gameplay").take(64)
-                val config=(intent.getStringExtra(CONFIG)
+                val config=(command.getStringExtra(CONFIG)
                     ?:p.getString("configuration","Stock")?:"Stock").take(40)
                 armedLabel=label
                 armedConfig=config
                 armedInterval=interval
+                val restoredId=command.getLongExtra(RECOVERY_ID,0L)
+                val restored=command.getBooleanExtra(RESTORED,false)
                 RecorderJournal.event(this,"START_REQUESTED","every="+interval)
                 if(!foreground("CoreMetrics · starting",label,false)){
                     MonitorState.message="Foreground recorder unavailable"
@@ -263,9 +299,10 @@ class RecordingService:Service() {
                 }
                 MonitorState.starting=true
                 MonitorState.standby=false
-                val wantsHud=armed || p.getBoolean("hud_enabled",false)
+                val wantsHud=if(restored)command.getBooleanExtra(RECOVERY_HUD,false)
+                    else armed || p.getBoolean("hud_enabled",false)
                 if(wantsHud && hud.permissionGranted()){
-                    settings=HudOptions.from(this,intent)
+                    settings=HudOptions.from(this,command)
                     val result=attachHud()
                     if(result=="HUD_ATTACHED" || result=="HUD_ALREADY_ATTACHED") {
                         armed=true
@@ -278,18 +315,38 @@ class RecordingService:Service() {
                     var outcome="INTERRUPTED"
                     try{
                         id=withContext(Dispatchers.IO){
-                            val recovered=db.recoverInterruptedSessions(System.currentTimeMillis())
-                            if(recovered>0)RecorderJournal.event(this@RecordingService,
-                                "RECOVERED_INTERRUPTED",recovered.toString())
-                            db.begin(label,config,System.currentTimeMillis())
+                            if(restoredId>0L) {
+                                check(db.canResume(restoredId)) {
+                                    "Previously recording session is no longer active"
+                                }
+                                restoredId
+                            } else {
+                                val recovered=db.recoverInterruptedSessions(
+                                    System.currentTimeMillis())
+                                if(recovered>0)RecorderJournal.event(this@RecordingService,
+                                    "RECOVERED_INTERRUPTED",recovered.toString())
+                                db.begin(label,config,System.currentTimeMillis())
+                            }
+                        }
+                        withContext(Dispatchers.IO){
+                            RecorderLease.start(this@RecordingService,id,label,config,
+                                interval,wantsHud,restored)
                         }
                         MonitorState.sessionId=id
-                        MonitorState.startedAt=System.currentTimeMillis()
-                        MonitorState.sampleCount=0L
+                        MonitorState.startedAt=if(restoredId>0L)
+                            withContext(Dispatchers.IO){
+                                db.originalStartMs(id)
+                            } ?: System.currentTimeMillis()
+                        else System.currentTimeMillis()
+                        MonitorState.sampleCount=if(restoredId>0L)
+                            withContext(Dispatchers.IO){db.storedSampleCount(id)}
+                        else 0L
                         MonitorState.starting=false
                         MonitorState.running=true
                         MonitorState.message=label+" · "+config
-                        RecorderJournal.event(this@RecordingService,"SESSION_PERSISTED","id="+id)
+                        RecorderJournal.event(this@RecordingService,
+                            if(restoredId>0L)"SESSION_RESUMED" else "SESSION_PERSISTED",
+                            "id="+id+" persisted_count="+MonitorState.sampleCount)
                         withContext(Dispatchers.Main.immediate) {
                             if(armed)hud.mode(true,MonitorState.startedAt)
                             refreshTile()
@@ -317,6 +374,9 @@ class RecordingService:Service() {
                             val elapsed=SystemClock.elapsedRealtime()
                             if(elapsed-lastNotice>12_000L){
                                 lastNotice=elapsed
+                                withContext(Dispatchers.IO){
+                                    RecorderLease.heartbeat(this@RecordingService)
+                                }
                                 getSystemService(NotificationManager::class.java).notify(
                                     NOTIFICATION_ID,
                                     notification("● REC · "+MonitorState.sampleCount+
@@ -335,6 +395,7 @@ class RecordingService:Service() {
                             e.javaClass.simpleName+":"+(e.message?:""))
                     }finally{
                         withContext(NonCancellable){
+                            RecorderLease.clear(this@RecordingService)
                             withContext(Dispatchers.IO){
                                 if(id!=0L)runCatching{
                                     db.finish(id,System.currentTimeMillis(),outcome)
@@ -358,7 +419,7 @@ class RecordingService:Service() {
                         }
                     }
                 }
-                return START_NOT_STICKY
+                return START_STICKY
             }
             else -> return START_NOT_STICKY
         }
