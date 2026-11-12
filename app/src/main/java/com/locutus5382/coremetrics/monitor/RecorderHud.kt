@@ -230,6 +230,7 @@ internal class RecorderHud(private val context:Context) {
             catch(e:Exception){return "HUD_UNLOCK_HANDLE_ADD_FAILED_"+e.javaClass.simpleName}
             val oldFlags=p.flags
             val oldAlpha=p.alpha
+            val drawerWasOpen=drawerOpen
             p.flags=p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             p.alpha=.70f
             try {
@@ -237,12 +238,24 @@ internal class RecorderHud(private val context:Context) {
                 unlockWindow=chip
                 unlockParams=chipParams
                 locked=true
+                // The user must see only the compact HUD when touch passthrough
+                // is active. Hide an open settings drawer without losing its
+                // saved choices. The separate unlock chip stays touchable.
+                drawerOpen=false
                 applyAppearance()
                 return "HUD_LOCKED_WITH_TOUCHABLE_UNLOCK"
             }catch(e:Exception){
-                p.flags=oldFlags;p.alpha=oldAlpha
+                // Restore both interaction and visual state if *either*
+                // WindowManager update or the appearance update fails.
+                locked=false
+                drawerOpen=drawerWasOpen
+                unlockWindow=null
+                unlockParams=null
+                p.flags=oldFlags
+                p.alpha=oldAlpha
                 runCatching{wm.updateViewLayout(frame,p)}
                 runCatching{wm.removeViewImmediate(chip)}
+                runCatching{applyAppearance()}
                 return "HUD_LOCK_FAILED_"+e.javaClass.simpleName
             }
         }

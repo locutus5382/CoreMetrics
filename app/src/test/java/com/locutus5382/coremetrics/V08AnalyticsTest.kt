@@ -31,6 +31,21 @@ class V08AnalyticsTest {
         assertEquals(100_000L,t.startMs)
         assertEquals(296_200L,t.endMs)
     }
+    @Test fun underclockSelectionWithOnlyStockLikeLimitsNeedsReview() {
+        val stock="policy3 max 2.80 GHz · policy7 max 3.19 GHz"
+        val points=(0..5).map { p(1000L+it*2000,null,stock) }
+        val selectedUnderclock=V08Analytics.profile("Underclocking",points)
+        assertTrue(selectedUnderclock.conflict)
+        assertTrue(selectedUnderclock.note.contains("GPU-only"))
+        val custom=V08Analytics.profile("Custom",points)
+        assertFalse(custom.conflict)
+        val stockSelected=V08Analytics.profile("Stock",points)
+        assertFalse(stockSelected.conflict)
+        val unknown=V08Analytics.profile("Underclocking",
+            listOf(p(0L,null,null)))
+        assertFalse(unknown.conflict)
+    }
+
     @Test fun unknownAndMultipleCeilingsRetainPhases() {
         val stock="policy3 max 2.80 GHz · policy7 max 3.19 GHz"
         val large="policy3 max 1.79 GHz · policy7 max 1.84 GHz"

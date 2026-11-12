@@ -34,6 +34,21 @@ This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier 
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
 
+## v0.8.1 Gemini-review fixes — separate Odin validation builds
+
+Draft fix branch stacked on `feature/coremetrics-v08-practical-refinements`. No changes to sampling, source CSV contents, native HUD style, user-selected Frosted Glass default, energy integration, GPU driver control, permissions or recovery policies.
+
+1. **Warm-up really applies to CPU regime cards:** optional `Skip First 30s` now passes the same trimmed Session A window to the ceiling regime analyzer as the A/B charts. Source timestamps remain absolute and elapsed labels refer to the original first sample. The untrimmed linked session timeline and source rows remain intact.
+2. **Lock closes settings drawer safely:** when a touchable independent 48dp unlock chip is attached, the HUD main window becomes click-through and the expanded drawer is hidden. Lock failures restore the previous window flags, alpha, lock state and drawer state; the notification unlock fallback is unchanged.
+3. **No two perpetually unavailable Live gauges:** the fourth ring now shows observed **RAM used (GiB)**, scaled by `ActivityManager.MemoryInfo.totalMem` queried once for display, not by a fabricated 7.02GiB constant. The fourth metric card now shows Android's explicit **Battery status** or Unknown. Unverified layer FPS and frame time remain absent rather than pretending they were measured.
+4. **Bidirectional label review:** selected `Underclocking` combined with only stock-like observed P3/P7 ceilings is marked as a possible CPU mismatch in profile and benchmark analysis. This **does not prove the tuner failed**: GPU-only or other underclocking may be active. Stock selected plus observed Medium/Large UC remains flagged. Diagnostic report heading updated to v0.8.1.
+5. Two separately installable and distinct-storage APK variants:
+   - `CoreMetrics-v0.8.1-analytics-only` → `app-v081base.apk` / `com.locutus5382.coremetrics.v081base`, original Frosted Glass;
+   - `CoreMetrics-v0.8.1-themes` → `app-v081themes.apk` / `com.locutus5382.coremetrics.v081themes`, Frosted by default with optional Liquid/Tactical app-screen finishes.
+   The v0.8 packages are not overwritten. Imported CSVs do not automatically synchronize across package databases.
+
+Acceptance: See `docs/PORTAL_V081_REGRESSION_TEST.md`. Successful **final commit** CI and direct Portal tests (lock/overlay, RAM capacity, warm-up, both theme variants) are required before merging or publishing. Keep the PR draft until physical verification.
+
 ## v0.8 practical add-ons (two side-by-side installable apps)
 
 **Both variants use one shared telemetry, SQLite and analysis codebase.** `v08base` always preserves the original **Frosted Glass** styling. `v08themes` defaults to Frosted, but may opt into static-gradient **Liquid Glass** or opaque **Tactical Flat** from Settings. The experimental finishes affect app screens only, never the native in-game HUD. No runtime blur of text, additional telemetry sampler, background animation or root.

@@ -162,7 +162,9 @@ object BenchmarkAnalyzer {
             (normalized.contains("stock") && labels.any {
                 it.startsWith("Medium UC") || it.startsWith("Large UC") }) ||
             (normalized.contains("medium") && labels.any {it.startsWith("Large UC")}) ||
-            (normalized.contains("large") && labels.any {it.startsWith("Medium UC")})
+            (normalized.contains("large") && labels.any {it.startsWith("Medium UC")}) ||
+            (normalized.contains("underclock") && labels.isNotEmpty() &&
+                labels.all { it.startsWith("Stock (") })
         )
         val reasons=mutableListOf<String>()
         var score=100
@@ -198,7 +200,8 @@ object BenchmarkAnalyzer {
         }
         if(conflict) {
             score-=20
-            reasons+="Manual profile label conflicts with observed CPU ceilings"
+            reasons+="Manual profile label may not match observed CPU " +
+                "ceilings; generic Underclocking may still mean GPU-only tuning"
         }
         if(labels.isEmpty())reasons+="Observed CPU frequency limits unavailable"
         else reasons+="Observed ceilings are not authenticated tuner identity"
