@@ -54,10 +54,6 @@ class RecordingService : Service() {
         db = SessionStore(applicationContext)
         hud = RecorderHud(applicationContext)
         RecorderJournal.event(this, "SERVICE_CREATED", "pid=" + android.os.Process.myPid())
-        runCatching {
-            val recovered = db.recoverInterruptedSessions(System.currentTimeMillis())
-            if (recovered > 0) RecorderJournal.event(this,"RECOVERED_INTERRUPTED",recovered.toString())
-        }
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, "CoreMetrics recording",
                 NotificationManager.IMPORTANCE_LOW)
@@ -120,6 +116,13 @@ class RecordingService : Service() {
                     var finalStatus = "INTERRUPTED"
                     try {
                         id = withContext(Dispatchers.IO) {
+                            // Disk IO must never precede startForeground on the
+                            // service main thread. Eden launch may be memory-heavy.
+                            val recovered = db.recoverInterruptedSessions(System.currentTimeMillis())
+                            if (recovered > 0) RecorderJournal.event(
+                                this@RecordingService, "RECOVERED_INTERRUPTED",
+                                recovered.toString()
+                            )
                             db.begin(label, config, System.currentTimeMillis())
                         }
                         RecorderJournal.event(this@RecordingService, "SESSION_PERSISTED", "id=" + id)
