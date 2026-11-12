@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.CompareArrows
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
@@ -53,6 +54,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
+import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.RecorderJournal
 import com.locutus5382.coremetrics.quick.SessionTile
 import kotlinx.coroutines.Dispatchers
@@ -70,10 +72,11 @@ private val cyan = Color(0xFF71D7E2)
 private val white = Color(0xFFF0F5FA)
 private val muted = Color(0xFFA8C4D1)
 private val glow = Color(0xFF18445A)
-private val pages = listOf("Live", "Sessions", "Compare", "Settings")
+private val pages = listOf("Live", "Sessions", "Compare", "HUD", "Settings")
 
 private data class ScreenStatus(
     val running: Boolean = false, val starting: Boolean = false,
+    val standby: Boolean = false,
     val sessionId: Long = 0, val count: Long = 0,
     val message: String = "Idle",
     val cpu: String? = null, val gpu: String? = null,
@@ -125,6 +128,7 @@ class MainActivity : ComponentActivity() {
         else ScreenStatus(
             running = v.getBoolean("running", false),
             starting = v.getBoolean("starting", false),
+            standby = v.getBoolean("standby", false),
             sessionId = v.getLong("id", 0), count = v.getLong("count", 0),
             message = v.getString("message") ?: "Idle",
             cpu = v.getString("cpu"), gpu = v.getString("gpu"),
@@ -160,6 +164,7 @@ class MainActivity : ComponentActivity() {
             var hudEnabled by rememberSaveable {
                 mutableStateOf(prefs.getBoolean("hud_enabled", false))
             }
+            var hudOptions by remember { mutableStateOf(HudOptions.from(this@MainActivity)) }
             var message by remember { mutableStateOf("") }
             var sessionList by remember { mutableStateOf(emptyList<SessionStore.Session>()) }
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
@@ -225,11 +230,54 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            MaterialTheme(colorScheme = darkColorScheme(primary = coreCyan, surface = coreNight,
-                background = coreNight, onSurface = coreText)) {
+            fun persistHud(updated: HudOptions) {
+                hudOptions=updated
+                updated.save(this@MainActivity)
+                if(status.running || status.starting || status.standby) {
+                    val i=HudOptions.addExtras(
+                        Intent(this@MainActivity,RecordingService::class.java)
+                            .setAction(RecordingService.HUD_CONFIG),updated)
+                    runCatching{startService(i)}.onFailure{
+                        message="HUD change failed: "+it.javaClass.simpleName
+                    }
+                }
+            }
+            fun armHud() {
+                if(!Settings.canDrawOverlays(this@MainActivity)) {
+                    message="Grant overlay permission, then tap Launch standby again."
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:"+packageName)))
+                    return
+                }
+                if(Build.VERSION.SDK_INT>=33 &&
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=
+                        PackageManager.PERMISSION_GRANTED) {
+                    notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    message="Allow notifications, then tap Launch standby again."
+                    return
+                }
+                // Commit metadata before :monitor process sees the HUD click.
+                prefs.edit().putString("label",label.trim())
+                    .putString("configuration",configuration)
+                    .putLong("interval_ms",interval).commit()
+                hudOptions.save(this@MainActivity)
+                val i=HudOptions.addExtras(
+                    Intent(this@MainActivity,RecordingService::class.java)
+                        .setAction(RecordingService.ARM),hudOptions)
+                runCatching{startForegroundService(i)}.fold(
+                    onSuccess={message="Standby requested · no recording until REC"},
+                    onFailure={message="Standby failed: "+it.javaClass.simpleName})
+            }
+            fun closeHud() {
+                runCatching{startService(Intent(this@MainActivity,
+                    RecordingService::class.java).setAction(RecordingService.DISARM))}
+                    .onFailure{message="Close failed: "+it.javaClass.simpleName}
+            }
+            MaterialTheme(colorScheme = darkColorScheme(primary = iceBlue, surface = cobaltNavy,
+                background = cobaltNavy, onSurface = coreText)) {
                 Box(
                     Modifier.fillMaxSize().background(Brush.linearGradient(
-                        listOf(coreNight, Color(0xFF0E1E30), Color(0xFF111827), coreNight)
+                        listOf(cobaltNavy, Color(0xFF09173A), Color(0xFF10265C), cobaltNavy)
                     )).onPreviewKeyEvent { event ->
                         val key = event.nativeKeyEvent
                         if (key.action != KeyEvent.ACTION_DOWN || key.repeatCount != 0) false
@@ -244,7 +292,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) {
-                    InstrumentBackdrop()
+                    PureGlassBackdrop()
                     Row(Modifier.fillMaxSize().padding(9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         // Compact, icon-led rail fits four destinations even on
                         // the Portal's 360dp landscape configuration. Scroll is
@@ -252,8 +300,7 @@ class MainActivity : ComponentActivity() {
                         Column(
                             Modifier.width(84.dp).fillMaxHeight()
                                 .clip(RoundedCornerShape(15.dp))
-                                .background(Color(0xDD132337))
-                                .border(1.dp, Color(0xAA41687B), RoundedCornerShape(15.dp))
+                                .pureGlass(15)
                                 .verticalScroll(rememberScrollState())
                                 .padding(horizontal=5.dp, vertical=6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -270,7 +317,9 @@ class MainActivity : ComponentActivity() {
                             HorizontalDivider(color=coreBorder)
                             Text(if(status.running) "● REC"
                                 else if(status.starting) "START"
-                                else "IDLE",color=if(status.running) coreMint else muted,
+                                else if(status.standby) "READY"
+                                else "IDLE",color=if(status.running) solarOrange
+                                    else if(status.standby) solarGold else muted,
                                 style=MaterialTheme.typography.labelSmall,
                                 fontWeight=FontWeight.Bold)
                         }
@@ -278,15 +327,14 @@ class MainActivity : ComponentActivity() {
                             Row(
                                 Modifier.fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xDD182B3D))
-                                    .border(1.dp,coreBorder,RoundedCornerShape(14.dp))
+                                    .pureGlass(14)
                                     .padding(horizontal=14.dp,vertical=10.dp),
                                 verticalAlignment=Alignment.CenterVertically,
                                 horizontalArrangement=Arrangement.spacedBy(10.dp)
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("COREMETRICS  /  INSTRUMENT GLASS",
-                                        color=coreCyan,
+                                    Text("COREMETRICS  /  COBALT & SOLAR GLASS",
+                                        color=iceBlue,
                                         style=MaterialTheme.typography.labelSmall)
                                     Text(page.uppercase(Locale.US),color=coreText,
                                         style=MaterialTheme.typography.titleLarge,
@@ -302,6 +350,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Text(if(status.running) "● REC  " + status.count + " samples"
                                         else if(status.starting) "◌ STARTING"
+                                        else if(status.standby) "◌ HUD READY · tap REC"
                                         else status.message.take(52),
                                         color=if(status.running) coreMint else coreSecondary,
                                         style=MaterialTheme.typography.labelMedium)
@@ -694,6 +743,7 @@ private fun railIcon(label: String): ImageVector = when (label) {
     "Live" -> Icons.Rounded.Dashboard
     "Sessions" -> Icons.Rounded.History
     "Compare" -> Icons.Rounded.CompareArrows
+    "HUD" -> Icons.Rounded.Tune
     else -> Icons.Rounded.Settings
 }
 
