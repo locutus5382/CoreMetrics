@@ -339,7 +339,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             arrayOf(id.toString())
         ).use { c ->
             while (c.moveToNext()) {
-                val values = listOf(id.toString(),session.label,session.configuration,session.status) +
+                val values = listOf(id.toString(),session.note?.takeIf{it.isNotBlank()} ?: session.label,session.configuration,session.status) +
                     (0 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" }
                 writer.append(values.joinToString(",") { Csv.escape(it) }).append('\n')
             }
