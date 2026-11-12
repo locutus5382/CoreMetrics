@@ -200,6 +200,7 @@ object BenchmarkAnalyzer {
         appendLine("COREMETRICS | BENCHMARK ASSESSMENT (OBSERVATIONAL)")
         appendLine("Session #${r.session.id}: ${r.session.label} · ${r.session.configuration}")
         appendLine("Session status: ${r.session.status}; samples ${r.sampleCount}")
+        r.session.note?.let{ appendLine("Game/track note: "+it) }
         appendLine("Duration (first-to-last sample): ${fmt(r.elapsedSeconds,1)} s")
         appendLine("QUALITY / COVERAGE")
         appendLine("Heuristic data quality: ${r.quality.score}/100 — ${r.quality.category}")
