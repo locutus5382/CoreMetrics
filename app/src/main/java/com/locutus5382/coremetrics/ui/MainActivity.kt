@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +52,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
@@ -103,6 +106,26 @@ private data class ScreenStatus(
 )
 
 class MainActivity : ComponentActivity() {
+    /** Hardware shoulder navigation even after touch focus is lost. */
+    private var controllerTabAction:((Int)->Unit)?=null
+    override fun dispatchKeyEvent(event:KeyEvent):Boolean {
+        if(event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) {
+            val delta=when(event.keyCode) {
+                KeyEvent.KEYCODE_BUTTON_L1 -> -1
+                KeyEvent.KEYCODE_BUTTON_R1 -> 1
+                else -> 0
+            }
+            if(delta!=0) {
+                val handler=controllerTabAction
+                if(handler!=null) {
+                    handler(delta)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     private fun requestQuickSettingsTile(onResult: (String) -> Unit) {
         if (Build.VERSION.SDK_INT < 33) {
             onResult("Edit Quick Settings and add CoreMetrics Record manually")
@@ -223,6 +246,17 @@ private fun query(): ScreenStatus = try {
             }
             val appliedFinish=if(supportsThemeChoice)finish else SurfaceFinish.FROSTED
             var page by rememberSaveable { mutableStateOf("Live") }
+            val rootFocus=remember {FocusRequester()}
+            SideEffect {
+                controllerTabAction={ delta ->
+                    page=pages[Math.floorMod(pages.indexOf(page)+delta,pages.size)]
+                }
+            }
+            DisposableEffect(Unit) {
+                onDispose {controllerTabAction=null}
+            }
+            LaunchedEffect(Unit) {rootFocus.requestFocus()}
+
             var status by remember { mutableStateOf(ScreenStatus()) }
             var overlayAllowed by remember {
                 mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
@@ -483,7 +517,9 @@ private fun query(): ScreenStatus = try {
                     Color(0xFF04060C) else cobaltNavy,
                 onSurface=coreText)) {
                 Box(
-                    Modifier.fillMaxSize().background(rootBackground).onPreviewKeyEvent { event ->
+                    Modifier.fillMaxSize().background(rootBackground)
+                        .focusRequester(rootFocus)
+                        .onPreviewKeyEvent { event ->
                         val key = event.nativeKeyEvent
                         if (key.action != KeyEvent.ACTION_DOWN || key.repeatCount != 0) false
                         else when(key.keyCode) {
@@ -495,7 +531,7 @@ private fun query(): ScreenStatus = try {
                             }
                             else -> false
                         }
-                    }
+                    }.focusable()
                 ) {
                     PureGlassBackdrop()
                     Row(Modifier.fillMaxSize().padding(9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -869,7 +905,7 @@ private fun query(): ScreenStatus = try {
                                                     style=MaterialTheme.typography.bodySmall)
                                                 Switch(activeOnly,onCheckedChange={activeOnly=it})
                                             }
-                                            Text("Select session A", color = cyan)
+                                            Text("Select session A · D-pad focus + A", color = cyan)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 sessionList.take(14).forEach { s ->
@@ -878,7 +914,7 @@ private fun query(): ScreenStatus = try {
                                                         label = { Text("Session " + s.id + " · " + s.configuration) })
                                                 }
                                             }
-                                            Text("Select session B", color = cyan)
+                                            Text("Select session B · D-pad focus + A", color = cyan)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 sessionList.take(14).forEach { s ->
@@ -1169,6 +1205,11 @@ private fun query(): ScreenStatus = try {
                                     else -> {
                                         GlassPanel {
                                             Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
+                                             Text("CONTROLLER · L1/R1 switches tabs; D-pad navigates "+
+                                                 "session chips and adjusts the focused A/B slider; "+
+                                                 "A selects. Touch and controller can be mixed.",
+                                                 color=coreSecondary,
+                                                 style=MaterialTheme.typography.bodySmall)
                                             if(supportsThemeChoice) {
                                                 Text("APP APPEARANCE · OPTIONAL FINISHES",
                                                     color=iceBlue,
