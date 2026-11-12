@@ -18,7 +18,9 @@ object BenchmarkAnalyzer {
     )
     data class Energy(
         val wh:Double?, val measuredSeconds:Double, val coveragePct:Double,
-        val meanDischargeW:Double?
+        val meanDischargeW:Double?,
+        val milliWhPerMinute:Double? = null,
+        val weightedMeanW:Double? = null
     )
     data class Thermal(
         val state:String, val slopeCPerMin:Double?,
@@ -104,11 +106,9 @@ object BenchmarkAnalyzer {
         var coveredMs=0L
         var dischargeMs=0L
         var wh=0.0
-        val validPowers=mutableListOf<Double>()
         fun discharge(p:SessionStore.Point):Double? =
             p.batteryWatts?.takeIf { it.isFinite() && it>0.0 &&
                 it<100.0 && p.batteryPowerStatus?.startsWith("DISCHARGING")==true }
-        for(p in pts) discharge(p)?.let { validPowers.add(it) }
         for(i in 1 until pts.size) {
             val prev=pts[i-1];val next=pts[i]
             val dt=next.timeMs-prev.timeMs
@@ -124,6 +124,10 @@ object BenchmarkAnalyzer {
         val durationMs=if(pts.size>=2)pts.last().timeMs-pts.first().timeMs else 0L
         val coverage=if(durationMs>0L)100.0*coveredMs/durationMs else 0.0
         val energyCoverage=if(durationMs>0L)100.0*dischargeMs/durationMs else 0.0
+        // All three figures derive from exactly the same time-integrated
+        // valid discharge intervals, not an unweighted point average.
+        val weightedW=if(dischargeMs>0L)wh*3_600_000.0/dischargeMs else null
+        val mWhPerMinute=if(dischargeMs>0L)wh*60_000_000.0/dischargeMs else null
         val capGroups=pts.map { SessionRegimeAnalyzer.key(it.observedCpuLimits) }
             .filterNot { it=="P3:?|P7:?" }
             .distinct()
@@ -187,7 +191,7 @@ object BenchmarkAnalyzer {
             mean(pts.map {it.gpuLoad}),
             Quality(score,level,reasons,coverage,typical,gapCount,observed,conflict),
             Energy(if(dischargeMs>0L)wh else null,dischargeMs/1000.0,
-                energyCoverage,mean(validPowers)),
+                energyCoverage,weightedW,mWhPerMinute,weightedW),
             thermal(pts),frames)
     }
 
@@ -214,7 +218,10 @@ object BenchmarkAnalyzer {
             "slope ${fmt(r.thermal.slopeCPerMin)} °C/min")
         appendLine("LOAD AND BATTERY NET")
         appendLine("Mean CPU/GPU load: ${fmt(r.meanCpuLoad)}% / ${fmt(r.meanGpuLoad)}%")
-        appendLine("Mean battery discharge: ${fmt(r.energy.meanDischargeW)} W")
+        appendLine("Time-weighted battery-terminal discharge: "+
+            "${fmt(r.energy.weightedMeanW)} W")
+        appendLine("Normalized discharge: "+
+            "${fmt(r.energy.milliWhPerMinute)} mWh/min")
         appendLine("Integrated discharge energy: ${fmt(r.energy.wh,4)} Wh")
         appendLine("Valid discharge integration: ${fmt(r.energy.measuredSeconds,1)} s; " +
             "coverage: ${fmt(r.energy.coveragePct,1)}%")
@@ -240,6 +247,21 @@ object BenchmarkAnalyzer {
             delta(a.energy.meanDischargeW,b.energy.meanDischargeW," W"))
         appendLine("B − A integrated energy (durations may differ): " +
             delta(a.energy.wh,b.energy.wh," Wh"))
+        appendLine("B − A normalized battery discharge: " +
+            delta(a.energy.milliWhPerMinute,b.energy.milliWhPerMinute," mWh/min"))
+        appendLine("B − A time-weighted discharge: " +
+            delta(a.energy.weightedMeanW,b.energy.weightedMeanW," W"))
+        if(a.elapsedSeconds>0.0 && b.elapsedSeconds>0.0 &&
+            maxOf(a.elapsedSeconds,b.elapsedSeconds)/
+                minOf(a.elapsedSeconds,b.elapsedSeconds)>1.2)
+            appendLine("CAUTION: Different recording durations (>20%).")
+        if(a.meanGpuLoad!=null && b.meanGpuLoad!=null &&
+            abs(a.meanGpuLoad-b.meanGpuLoad)>10.0)
+            appendLine("CAUTION: GPU workloads differ by >10 percentage points.")
+        if(a.quality.labelConflict || b.quality.labelConflict)
+            appendLine("CAUTION: At least one manual configuration label conflicts with observed caps.")
+        if(a.energy.coveragePct<80 || b.energy.coveragePct<80)
+            appendLine("CAUTION: Discharge energy has less than 80% valid coverage.")
         appendLine("A observed limits: ${a.quality.observedCeilings}")
         appendLine("B observed limits: ${b.quality.observedCeilings}")
         appendLine("A steady-state: ${a.thermal.state}")
