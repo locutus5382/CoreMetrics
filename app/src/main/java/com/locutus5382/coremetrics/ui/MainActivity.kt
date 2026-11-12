@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
 import com.locutus5382.coremetrics.data.SessionStore
@@ -209,6 +210,8 @@ class MainActivity : ComponentActivity() {
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var exportId by remember { mutableLongStateOf(0L) }
+            var reportAId by remember { mutableLongStateOf(0L) }
+            var reportBId by remember { mutableLongStateOf(0L) }
             val scope = rememberCoroutineScope()
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
@@ -229,6 +232,31 @@ class MainActivity : ComponentActivity() {
                     }
                     message = result.fold(onSuccess = { "CSV exported successfully" },
                         onFailure = { "Export failed: " + (it.message ?: it.javaClass.simpleName) })
+                }
+            }
+            val reportFile=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("text/plain")
+            ) { uri ->
+                if(uri!=null && reportAId!=0L)scope.launch {
+                    val outcome=withContext(Dispatchers.IO) {
+                        runCatching {
+                            val list=database.list(200)
+                            val a=list.firstOrNull{it.id==reportAId}
+                                ?:error("Report session A is missing")
+                            val analyzedA=BenchmarkAnalyzer.analyze(a,database.points(a.id))
+                            val content=if(reportBId!=0L && reportBId!=a.id) {
+                                val b=list.firstOrNull{it.id==reportBId}
+                                    ?:error("Report session B is missing")
+                                BenchmarkAnalyzer.comparison(analyzedA,
+                                    BenchmarkAnalyzer.analyze(b,database.points(b.id)))
+                            } else BenchmarkAnalyzer.text(analyzedA)
+                            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
+                                it.write(content)
+                            } ?:error("Cannot write report")
+                        }
+                    }
+                    message=outcome.fold(onSuccess={"Report exported"},
+                        onFailure={"Report failed: "+(it.message?:it.javaClass.simpleName)})
                 }
             }
             val importFile=rememberLauncherForActivityResult(
@@ -627,6 +655,14 @@ class MainActivity : ComponentActivity() {
                                                         exportId = s.id
                                                         exportFile.launch("CoreMetrics_" + s.id + ".csv")
                                                     }) { Text("CSV") }
+                                                    OutlinedButton(onClick={
+                                                        firstId=s.id;page="Compare"
+                                                    }){Text("Analyze")}
+                                                    OutlinedButton(onClick={
+                                                        reportAId=s.id;reportBId=0L
+                                                        reportFile.launch("CoreMetrics_Report_"+
+                                                            s.id+".txt")
+                                                    }){Text("Report")}
                                                 }
                                             }
                                         }
@@ -665,6 +701,65 @@ class MainActivity : ComponentActivity() {
                                                         onClick = { secondId = s.id },
                                                         label = { Text("#" + s.id + " " + s.configuration) })
                                                 }
+                                            }
+                                            val analysisA=remember(firstPoints,firstId,sessionList) {
+                                                sessionList.firstOrNull{it.id==firstId}
+                                                    ?.takeIf{firstPoints.isNotEmpty()}
+                                                    ?.let{BenchmarkAnalyzer.analyze(it,firstPoints)}
+                                            }
+                                            val analysisB=remember(secondPoints,secondId,sessionList) {
+                                                sessionList.firstOrNull{it.id==secondId}
+                                                    ?.takeIf{secondPoints.isNotEmpty()}
+                                                    ?.let{BenchmarkAnalyzer.analyze(it,secondPoints)}
+                                            }
+                                            analysisA?.let { r ->
+                                                HorizontalDivider(color=coreBorder)
+                                                Text("BENCHMARK RELIABILITY · "+r.quality.score+
+                                                    "/100 · "+r.quality.category,
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                Row(Modifier.horizontalScroll(rememberScrollState()),
+                                                    horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    InstrumentKpi("Measured energy",
+                                                        r.energy.wh?.let{String.format(
+                                                            Locale.US,"%.4f Wh",it)},
+                                                        "Battery terminal; no gap filling",solarGold,
+                                                        Modifier.width(185.dp))
+                                                    InstrumentKpi("Data coverage",
+                                                        fmt(r.quality.coveragePct)+"%",
+                                                        r.quality.gapCount.toString()+" gaps",
+                                                        coreCyan,Modifier.width(155.dp))
+                                                    InstrumentKpi("Thermal slope",
+                                                        r.thermal.slopeCPerMin?.let{
+                                                            fmt(it)+"°C/min"},
+                                                        r.thermal.state,coreMint,
+                                                        Modifier.width(185.dp))
+                                                }
+                                                Text("Observed: "+r.quality.observedCeilings,
+                                                    color=if(r.quality.labelConflict)solarOrange
+                                                        else coreSecondary,
+                                                    style=MaterialTheme.typography.bodySmall)
+                                                r.quality.reasons.take(4).forEach{
+                                                    Text("• "+it,color=coreSecondary,
+                                                        style=MaterialTheme.typography.labelSmall)
+                                                }
+                                                Text(r.frames.note,color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
+                                                OutlinedButton(onClick={
+                                                    reportAId=firstId;reportBId=0L
+                                                    reportFile.launch("CoreMetrics_Report_A_"+
+                                                        firstId+".txt")
+                                                }){Text("Export evidence report")}
+                                            }
+                                            if(analysisA!=null && analysisB!=null) {
+                                                Text("B quality: "+analysisB.quality.score+"/100 · "+
+                                                    "B energy: "+(analysisB.energy.wh?.let{
+                                                        String.format(Locale.US,"%.4f Wh",it)
+                                                    }?:"—"),color=coreSecondary)
+                                                OutlinedButton(onClick={
+                                                    reportAId=firstId;reportBId=secondId
+                                                    reportFile.launch("CoreMetrics_AB_"+
+                                                        firstId+"_"+secondId+".txt")
+                                                }){Text("Export A/B report")}
                                             }
                                             val viewA = if(activeOnly) firstPoints.filter {
                                                 (it.gpuLoad ?: 0.0) >= 15.0
