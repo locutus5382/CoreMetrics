@@ -13,13 +13,15 @@ import com.locutus5382.coremetrics.monitor.RecordingService
 
 /** One role: toggle session recording. No profile or frequency controls. */
 class SessionTile : TileService() {
-    private fun status(): Pair<Boolean, Boolean> = try {
+    private data class RecState(val running:Boolean,val starting:Boolean,val standby:Boolean)
+    private fun status(): RecState = try {
         val b = contentResolver.call(
             Uri.parse("content://com.locutus5382.coremetrics.monitor.status"),
             "status", null, null)
-        Pair(b?.getBoolean("running", false) == true,
-            b?.getBoolean("starting", false) == true)
-    } catch (_: Exception) { Pair(false,false) }
+        RecState(b?.getBoolean("running", false) == true,
+            b?.getBoolean("starting", false) == true,
+            b?.getBoolean("standby",false)==true)
+    } catch (_: Exception) { RecState(false,false,false) }
 
     override fun onStartListening() {
         super.onStartListening()
@@ -33,14 +35,14 @@ class SessionTile : TileService() {
 
     private fun toggle() {
         val state = status()
-        if (!state.first && !state.second && Build.VERSION.SDK_INT >= 33 &&
+        if (!state.running && !state.starting && Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "Open CoreMetrics to allow notifications", Toast.LENGTH_LONG).show()
             return
         }
         try {
-            if (state.first || state.second) {
+            if (state.running || state.starting) {
                 startService(Intent(this, RecordingService::class.java)
                     .setAction(RecordingService.STOP))
             } else {
@@ -65,11 +67,12 @@ class SessionTile : TileService() {
         val state = status()
         qsTile?.apply {
             label = when {
-                state.first -> "● REC · Stop"
-                state.second -> "Starting…"
+                state.running -> "● REC · Stop"
+                state.starting -> "Starting…"
+                state.standby -> "HUD ready · REC"
                 else -> "CoreMetrics · Start"
             }
-            this.state = if (state.first || state.second)
+            this.state = if (state.running || state.starting)
                 Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             updateTile()
         }
