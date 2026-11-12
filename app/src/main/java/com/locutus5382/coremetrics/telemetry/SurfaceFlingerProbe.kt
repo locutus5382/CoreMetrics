@@ -19,23 +19,24 @@ class SurfaceFlingerProbe(private val context: Context, private val enabled: Boo
     private var last: FrameEstimate = FrameEstimate(null,null,0,"PROBE_NOT_RUN")
 
     private fun invoke(vararg args: String): String? {
-        val output = File.createTempFile("cm-fps-", ".txt", context.cacheDir)
+        var output: File? = null
         return try {
+            output = File.createTempFile("cm-fps-", ".txt", context.cacheDir)
             val cmd = listOf("dumpsys", "SurfaceFlinger") + args.toList()
             val process = ProcessBuilder(cmd).redirectErrorStream(true)
-                .redirectOutput(output).start()
+                .redirectOutput(output!!).start()
             if (!process.waitFor(1500, TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly()
                 disabledReason = "SF_COMMAND_TIMEOUT"
                 null
             } else {
-                output.bufferedReader().use { it.readText().take(72_000) }
+                output!!.bufferedReader().use { it.readText().take(72_000) }
             }
         } catch (e: Exception) {
             disabledReason = "SF_COMMAND_FAILED_" + e.javaClass.simpleName
             null
         } finally {
-            output.delete()
+            output?.delete()
         }
     }
 
