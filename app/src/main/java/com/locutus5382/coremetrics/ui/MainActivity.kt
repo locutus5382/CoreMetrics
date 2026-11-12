@@ -267,7 +267,10 @@ class MainActivity : ComponentActivity() {
                 hudOptions.save(this@MainActivity)
                 val i=HudOptions.addExtras(
                     Intent(this@MainActivity,RecordingService::class.java)
-                        .setAction(RecordingService.ARM),hudOptions)
+                        .setAction(RecordingService.ARM)
+                        .putExtra(RecordingService.LABEL,label.trim())
+                        .putExtra(RecordingService.CONFIG,configuration)
+                        .putExtra(RecordingService.INTERVAL,interval),hudOptions)
                 runCatching{startForegroundService(i)}.fold(
                     onSuccess={message="Standby requested · no recording until REC"},
                     onFailure={message="Standby failed: "+it.javaClass.simpleName})
