@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 internal val coreNight = Color(0xFF090D16)
 internal val coreCard = Color(0xD9111C2C)
@@ -71,7 +72,7 @@ internal fun InstrumentKpi(
         .border(1.dp,coreBorder,r)
         .padding(horizontal=12.dp,vertical=11.dp)) {
         Text(title.uppercase(),color=coreSecondary,
-            style=MaterialTheme.typography.labelSmall,letterSpacing=0.7.dp.value.let { androidx.compose.ui.unit.TextUnit(it, androidx.compose.ui.unit.TextUnitType.Sp) })
+            style=MaterialTheme.typography.labelSmall,letterSpacing=0.7.sp)
         Spacer(Modifier.height(5.dp))
         Text(value ?: "—",color=if(value==null) coreSecondary else color,
             style=MaterialTheme.typography.headlineSmall,
