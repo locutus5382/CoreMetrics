@@ -26,6 +26,7 @@ class StatusProvider : ContentProvider() {
             putLong("count", MonitorState.sampleCount)
             putString("message", MonitorState.message)
             putString("hudStatus", MonitorState.hudState)
+            putBoolean("hudLocked", MonitorState.hudLocked)
             putString("cpu", s?.cpuTempC?.let { "%.1f°C".format(java.util.Locale.US,it) })
             putString("gpu", s?.gpuTempC?.let { "%.1f°C".format(java.util.Locale.US,it) })
             putString("cpuLoad", s?.cpuPercent?.toString())

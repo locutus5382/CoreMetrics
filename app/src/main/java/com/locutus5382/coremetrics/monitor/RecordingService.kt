@@ -44,6 +44,8 @@ class RecordingService:Service() {
         const val ARM="com.locutus5382.coremetrics.ARM_HUD"
         const val DISARM="com.locutus5382.coremetrics.DISARM_HUD"
         const val HUD_CONFIG="com.locutus5382.coremetrics.HUD_CONFIG"
+        const val HUD_LOCK="com.locutus5382.coremetrics.HUD_LOCK"
+        const val HUD_UNLOCK="com.locutus5382.coremetrics.HUD_UNLOCK"
         const val LABEL="label"
         const val CONFIG="configuration"
         const val INTERVAL="interval"
@@ -97,6 +99,7 @@ class RecordingService:Service() {
         armed=false
         MonitorState.standby=false
         MonitorState.hudState=hud.hide()
+        MonitorState.hudLocked=false
         MonitorState.clear("Standby closed")
         refreshTile()
         stopServiceNow()
@@ -124,9 +127,12 @@ class RecordingService:Service() {
             onRecordClick={runCatching{hudClick()}.onFailure{
                 RecorderJournal.event(this,"HUD_CLICK_ERROR",it.javaClass.simpleName)
             }},
+            onLockClick={startService(Intent(this,RecordingService::class.java)
+                .setAction(HUD_LOCK))},
             onDismissClick={startService(Intent(this,RecordingService::class.java)
                 .setAction(DISARM))})
         MonitorState.hudState=result
+        MonitorState.hudLocked=hud.isLocked()
         RecorderJournal.event(this,"HUD_ATTACH",result)
         return result
     }
@@ -167,6 +173,23 @@ class RecordingService:Service() {
                 else hud.mode(true,MonitorState.startedAt)
                 RecorderJournal.event(this,"ARMED_NO_SAMPLING")
                 refreshTile()
+                return START_NOT_STICKY
+            }
+            HUD_LOCK, HUD_UNLOCK -> {
+                if(!armed && task?.isActive!=true) {
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+                val result=hud.setLocked(intent.action==HUD_LOCK)
+                MonitorState.hudLocked=hud.isLocked()
+                MonitorState.hudState=result
+                RecorderJournal.event(this,"HUD_TOUCH_LOCK",result)
+                getSystemService(NotificationManager::class.java).notify(
+                    NOTIFICATION_ID,notification(
+                        if(MonitorState.running) "● REC · CoreMetrics"
+                            else "CoreMetrics · standby",
+                        if(MonitorState.hudLocked) "HUD locked · use notification to unlock"
+                            else "HUD unlocked",!MonitorState.running))
                 return START_NOT_STICKY
             }
             HUD_CONFIG -> {
@@ -343,15 +366,22 @@ class RecordingService:Service() {
             Intent(this,RecordingService::class.java)
                 .setAction(if(standby)DISARM else STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this,CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+        val builder=Notification.Builder(this,CHANNEL)
+            .setSmallIcon(com.locutus5382.coremetrics.R.drawable.ic_coremetrics_notification)
             .setContentTitle(title).setContentText(detail)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .addAction(Notification.Action.Builder(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 if(standby) "Close standby" else "Stop and save",exit).build())
-            .build()
+        if(hud.isLocked()) {
+            val unlock=PendingIntent.getService(this,202,
+                Intent(this,RecordingService::class.java).setAction(HUD_UNLOCK),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            builder.addAction(Notification.Action.Builder(
+                android.R.drawable.ic_menu_manage,"Unlock HUD",unlock).build())
+        }
+        return builder.build()
     }
     override fun onDestroy(){
         RecorderJournal.event(this,"SERVICE_DESTROYED","armed="+armed+

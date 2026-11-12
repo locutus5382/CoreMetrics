@@ -24,10 +24,12 @@ internal fun HudSettingsPanel(
     options:HudOptions,
     isArmed:Boolean,
     recording:Boolean,
+    locked:Boolean,
     permissionGranted:Boolean,
     onChange:(HudOptions)->Unit,
     onArm:()->Unit,
     onDisarm:()->Unit,
+    onUnlock:()->Unit,
     onGrantPermission:()->Unit,
     onTile:()->Unit
 ) {
@@ -50,6 +52,19 @@ internal fun HudSettingsPanel(
                 Text(if(recording) "Stop & close" else "Close HUD")
             }
             OutlinedButton(onClick=onTile){Text("Add QS tile")}
+        }
+        if(isArmed) {
+            Row(verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Text(if(locked) "🔒 Click-through HUD" else "🔓 Interactive HUD",
+                    color=if(locked) solarGold else coreSecondary,
+                    style=MaterialTheme.typography.bodySmall)
+                if(locked) OutlinedButton(onClick=onUnlock) { Text("Unlock HUD") }
+            }
+            Text("Lock from the floating HUD. While locked, overlay REC and drag " +
+                "are disabled; unlock from the notification or here. On Android 12+, " +
+                "overlapping overlays can restrict pass-through.",
+                color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         }
         if(!permissionGranted) {
             Text("Android overlay permission is required for the floating HUD.",

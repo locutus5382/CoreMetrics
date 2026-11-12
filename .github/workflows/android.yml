@@ -29,5 +29,5 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.4-standby-hud-debug
+          name: CoreMetrics-v0.5-regimes-thermal-debug
           path: app/build/outputs/apk/debug/app-debug.apk
