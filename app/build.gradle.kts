@@ -9,28 +9,28 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.8.0-analytics-alpha"
+        versionCode = 9
+        versionName = "0.8.1-gemini-audit-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM · HUD"
     }
     buildTypes {
-        create("v08themes") {
+        create("v081themes") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v08themes"
+            applicationIdSuffix = ".v081themes"
             versionNameSuffix = "-themes"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8 Themes"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8 Themes Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8 Themes · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8.1 Themes"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8.1 Themes Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8.1 Themes · HUD"
         }
-        create("v08base") {
+        create("v081base") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v08base"
+            applicationIdSuffix = ".v081base"
             versionNameSuffix = "-analytics"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8 Analytics"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8 Analytics Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8 Analytics · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8.1 Analytics"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8.1 Analytics Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8.1 Analytics · HUD"
         }
         create("v07test") {
             initWith(getByName("debug"))
