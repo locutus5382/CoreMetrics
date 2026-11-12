@@ -94,6 +94,21 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             arrayOf(sessionId.toString()))==1
     }
 
+    /** Each chip edits one column atomically: fast two-tap changes cannot
+     * overwrite a different tag from a stale UI snapshot. */
+    @Synchronized fun updateGraphicsDriver(sessionId:Long,tag:String?):Boolean {
+        require(sessionId>0)
+        return writableDatabase.update("sessions",ContentValues().apply {
+            put("graphics_driver",SessionMetadata.driver(tag))
+        },"id=?",arrayOf(sessionId.toString()))==1
+    }
+    @Synchronized fun updateResolutionScale(sessionId:Long,tag:String?):Boolean {
+        require(sessionId>0)
+        return writableDatabase.update("sessions",ContentValues().apply {
+            put("resolution_scale",SessionMetadata.resolution(tag))
+        },"id=?",arrayOf(sessionId.toString()))==1
+    }
+
     /** User-controlled associations are non-destructive; never merge raw data. */
     @Synchronized fun links():List<Link> =
         readableDatabase.rawQuery("""

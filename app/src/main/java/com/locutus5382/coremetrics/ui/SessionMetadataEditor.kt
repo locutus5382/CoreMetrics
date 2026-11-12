@@ -13,7 +13,8 @@ import com.locutus5382.coremetrics.data.SessionStore
 /** Manually entered context. Never infer driver/resolution from sampling. */
 @Composable
 internal fun SessionMetadataEditor(session:SessionStore.Session,
-    onSave:(String?,String?)->Unit,onClose:()->Unit) {
+    onDriver:(String?)->Unit,onResolution:(String?)->Unit,
+    onClose:()->Unit) {
     var driverCustom by rememberSaveable(session.id){
         mutableStateOf(session.graphicsDriver?.startsWith("Custom: ")==true)
     }
@@ -44,7 +45,7 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                     onClick={
                         if(tag=="Custom")driverCustom=true else {
                             driverCustom=false
-                            onSave(tag.takeUnless{it=="None"},session.resolutionScale)
+                            onDriver(tag.takeUnless{it=="None"})
                         }
                     },label={Text(tag)})
             }
@@ -55,7 +56,7 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                 modifier=Modifier.fillMaxWidth(),singleLine=true,
                 label={Text("Custom driver / version")})
             OutlinedButton(enabled=driverName.isNotBlank(),
-                onClick={onSave("Custom: "+driverName.trim(),session.resolutionScale)}){
+                onClick={onDriver("Custom: "+driverName.trim())}){
                 Text("Save driver")
             }
         }
@@ -68,7 +69,7 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                     onClick={
                         if(tag=="Custom")scaleCustom=true else {
                             scaleCustom=false
-                            onSave(session.graphicsDriver,tag.takeUnless{it=="None"})
+                            onResolution(tag.takeUnless{it=="None"})
                         }
                     },label={Text(tag)})
             }
@@ -78,7 +79,7 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                 modifier=Modifier.fillMaxWidth(),singleLine=true,
                 label={Text("Custom resolution / scale")})
             OutlinedButton(enabled=scaleName.isNotBlank(),
-                onClick={onSave(session.graphicsDriver,"Custom: "+scaleName.trim())}){
+                onClick={onResolution("Custom: "+scaleName.trim())}){
                 Text("Save resolution")
             }
         }

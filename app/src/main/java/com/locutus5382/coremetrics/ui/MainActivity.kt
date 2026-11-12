@@ -854,25 +854,43 @@ private fun query(): ScreenStatus = try {
                                                 }
                                                 if(metadataEditorId==s.id) {
                                                     SessionMetadataEditor(session=s,
-                                                        onSave={driver,scale->
+                                                        onDriver={tag->
                                                             scope.launch {
-                                                                val result=withContext(Dispatchers.IO){
-                                                                    runCatching {
-                                                                        database.updateMetadata(s.id,
-                                                                            driver,scale)
+                                                                val outcome=withContext(Dispatchers.IO){
+                                                                    runCatching{
+                                                                        database.updateGraphicsDriver(s.id,tag)
                                                                     }
                                                                 }
-                                                                result.fold(onSuccess={
+                                                                outcome.fold(onSuccess={
                                                                     sessionList=withContext(Dispatchers.IO){
                                                                         database.list()
                                                                     }
-                                                                    message="Session tags saved"
+                                                                    message="Graphics driver tag saved"
                                                                 },onFailure={e->
-                                                                    message="Session tags failed: "+
+                                                                    message="Driver tag failed: "+
                                                                         (e.message?:e.javaClass.simpleName)
                                                                 })
                                                             }
-                                                        },onClose={metadataEditorId=0L})
+                                                        },
+                                                        onResolution={tag->
+                                                            scope.launch {
+                                                                val outcome=withContext(Dispatchers.IO){
+                                                                    runCatching{
+                                                                        database.updateResolutionScale(s.id,tag)
+                                                                    }
+                                                                }
+                                                                outcome.fold(onSuccess={
+                                                                    sessionList=withContext(Dispatchers.IO){
+                                                                        database.list()
+                                                                    }
+                                                                    message="Resolution tag saved"
+                                                                },onFailure={e->
+                                                                    message="Resolution tag failed: "+
+                                                                        (e.message?:e.javaClass.simpleName)
+                                                                })
+                                                            }
+                                                        },
+                                                        onClose={metadataEditorId=0L})
                                                 }
                                             }
                                         }
