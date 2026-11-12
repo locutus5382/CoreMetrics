@@ -139,7 +139,8 @@ class DirectSampler(private val app: Application) {
             surfaceFps = frame?.fps,
             surfaceFrameMs = frame?.frameMs,
             surfaceFpsStatus = frame?.status ?: "OFF_BY_DEFAULT",
-            observedCpuLimits = cpuLimits()
+            observedCpuLimits = cpuLimits(),
+            perCoreLoads = perCore.joinToString(";") { it.first + ":" + it.second }
         )
     }
 }
