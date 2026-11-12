@@ -16,11 +16,16 @@ object BenchmarkAnalyzer {
         val coveragePct:Double, val typicalIntervalMs:Long, val gapCount:Int,
         val observedCeilings:String, val labelConflict:Boolean
     )
+    enum class PowerCondition(val label:String) {
+        DISCHARGING("Discharging"), PLUGGED_IN("Plugged In"),
+        MIXED("Mixed plugged/discharging"), UNKNOWN("Power status unavailable")
+    }
     data class Energy(
         val wh:Double?, val measuredSeconds:Double, val coveragePct:Double,
         val meanDischargeW:Double?,
         val milliWhPerMinute:Double? = null,
-        val weightedMeanW:Double? = null
+        val weightedMeanW:Double? = null,
+        val powerCondition:PowerCondition = PowerCondition.UNKNOWN
     )
     data class Thermal(
         val state:String, val slopeCPerMin:Double?,
@@ -36,7 +41,7 @@ object BenchmarkAnalyzer {
         val meanCpuC:Double?, val peakCpuC:Double?, val meanGpuC:Double?,
         val meanCpuLoad:Double?, val meanGpuLoad:Double?,
         val quality:Quality, val energy:Energy, val thermal:Thermal,
-        val frames:FrameEfficiency
+        val frames:FrameEfficiency, val skippedWarmUpSeconds:Int = 0
     )
     private fun mean(v:List<Double?>):Double? {
         val values=v.filterNotNull().filter { it.isFinite() }
@@ -93,8 +98,27 @@ object BenchmarkAnalyzer {
     /** Integrates only valid adjacent discharge readings. No interpolation
      * over large gaps, charging or missing data. No extrapolation to full battery.
      */
-    fun analyze(session:SessionStore.Session,raw:List<SessionStore.Point>):Report {
-        val pts=raw.sortedBy { it.timeMs }
+    fun analyze(session:SessionStore.Session,raw:List<SessionStore.Point>,
+        skipFirstSeconds:Int=0):Report {
+        // Relative to first recorded sample, NOT guaranteed game world start.
+        val sorted=raw.sortedBy { it.timeMs }
+        val skip=skipFirstSeconds.coerceIn(0,300)
+        val origin=sorted.firstOrNull()?.timeMs ?: 0L
+        val pts=if(skip==0)sorted else sorted.filter {
+            it.timeMs-origin>=skip*1000L
+        }
+        val statuses=sorted.mapNotNull{it.batteryPowerStatus}
+        val sawPlugged=statuses.any{
+            it.startsWith("CHARGING_OR_EXTERNAL_POWER") ||
+                it.startsWith("FULL") || it.startsWith("PLUGGED")
+        }
+        val sawDischarge=statuses.any{it.startsWith("DISCHARGING")}
+        val condition=when{
+            sawPlugged && sawDischarge->PowerCondition.MIXED
+            sawPlugged ->PowerCondition.PLUGGED_IN
+            sawDischarge ->PowerCondition.DISCHARGING
+            else->PowerCondition.UNKNOWN
+        }
         val elapsed=if(pts.size>=2)
             (pts.last().timeMs-pts.first().timeMs).coerceAtLeast(0L)/1000.0
             else 0.0
@@ -163,6 +187,11 @@ object BenchmarkAnalyzer {
             score-=10
             reasons+="CPU temperature missing"
         }
+        if(condition==PowerCondition.PLUGGED_IN ||
+            condition==PowerCondition.MIXED) {
+            reasons+="Power conditions: ${condition.label}; " +
+                "charging/external intervals excluded from battery discharge"
+        }
         if(energyCoverage<60.0) {
             score-=10
             reasons+="Discharge-energy coverage under 60% (or charging)"
@@ -191,8 +220,8 @@ object BenchmarkAnalyzer {
             mean(pts.map {it.gpuLoad}),
             Quality(score,level,reasons,coverage,typical,gapCount,observed,conflict),
             Energy(if(dischargeMs>0L)wh else null,dischargeMs/1000.0,
-                energyCoverage,weightedW,mWhPerMinute,weightedW),
-            thermal(pts),frames)
+                energyCoverage,weightedW,mWhPerMinute,weightedW,condition),
+            thermal(pts),frames,skip)
     }
 
     fun text(report:Report):String=buildString {
@@ -201,6 +230,11 @@ object BenchmarkAnalyzer {
         appendLine("Session #${r.session.id}: ${r.session.label} · ${r.session.configuration}")
         appendLine("Session status: ${r.session.status}; samples ${r.sampleCount}")
         r.session.note?.let{ appendLine("Game/track note: "+it) }
+        appendLine("Manual driver tag: "+(r.session.graphicsDriver?:"unavailable"))
+        appendLine("Manual resolution tag: "+(r.session.resolutionScale?:"unavailable"))
+        if(r.skippedWarmUpSeconds>0)appendLine(
+            "Analysis excludes first ${r.skippedWarmUpSeconds} s after first recorded " +
+            "sample (not verified game-loading completion). Original data unchanged.")
         appendLine("Duration (first-to-last sample): ${fmt(r.elapsedSeconds,1)} s")
         appendLine("QUALITY / COVERAGE")
         appendLine("Heuristic data quality: ${r.quality.score}/100 — ${r.quality.category}")
@@ -218,6 +252,7 @@ object BenchmarkAnalyzer {
         appendLine("Thermal state: ${r.thermal.state}; " +
             "slope ${fmt(r.thermal.slopeCPerMin)} °C/min")
         appendLine("LOAD AND BATTERY NET")
+        appendLine("Power conditions: ${r.energy.powerCondition.label}")
         appendLine("Mean CPU/GPU load: ${fmt(r.meanCpuLoad)}% / ${fmt(r.meanGpuLoad)}%")
         appendLine("Time-weighted battery-terminal discharge: "+
             "${fmt(r.energy.weightedMeanW)} W")
@@ -238,6 +273,24 @@ object BenchmarkAnalyzer {
         appendLine("A: #${a.session.id} ${a.session.label} / ${a.session.configuration}")
         appendLine("B: #${b.session.id} ${b.session.label} / ${b.session.configuration}")
         appendLine("QUALITY A: ${a.quality.score}/100; B: ${b.quality.score}/100")
+        appendLine("Manual graphics driver A/B: "+
+            (a.session.graphicsDriver?:"unknown")+" / "+
+            (b.session.graphicsDriver?:"unknown"))
+        appendLine("Manual resolution scale A/B: "+
+            (a.session.resolutionScale?:"unknown")+" / "+
+            (b.session.resolutionScale?:"unknown"))
+        if(a.session.graphicsDriver!=b.session.graphicsDriver)
+            appendLine("CAUTION: Different or unknown driver tags; comparison is not causal.")
+        if(a.session.resolutionScale!=b.session.resolutionScale)
+            appendLine("CAUTION: Different or unknown resolution tags.")
+        if(a.skippedWarmUpSeconds>0 || b.skippedWarmUpSeconds>0)
+            appendLine("Warm-up excluded after first sample: A "+
+                a.skippedWarmUpSeconds+" s, B "+b.skippedWarmUpSeconds+" s.")
+        appendLine("Power status A/B: ${a.energy.powerCondition.label} / "+
+            b.energy.powerCondition.label)
+        if(a.energy.powerCondition!=PowerCondition.DISCHARGING ||
+            b.energy.powerCondition!=PowerCondition.DISCHARGING)
+            appendLine("CAUTION: Charging/external/unknown conditions limit battery comparisons.")
         fun delta(first:Double?,second:Double?,unit:String):String =
             if(first!=null && second!=null)fmt(second-first)+unit else "unavailable"
         appendLine("B − A mean CPU temperature: " +
