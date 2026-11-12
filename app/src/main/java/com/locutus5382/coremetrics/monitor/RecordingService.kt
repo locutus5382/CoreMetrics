@@ -18,7 +18,7 @@ import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.quick.SessionTile
 import com.locutus5382.coremetrics.telemetry.DirectSampler
 import com.locutus5382.coremetrics.telemetry.ForegroundAttribution
-import com.locutus5382.coremetrics.telemetry.SurfaceFlingerProbe
+import com.locutus5382.coremetrics.telemetry.FrameEstimate
 import com.locutus5382.coremetrics.ui.MainActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -45,17 +45,15 @@ class RecordingService : Service() {
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var db: SessionStore
+    private lateinit var hud: RecorderHud
     private var task: Job? = null
     private var stopping = false
 
     override fun onCreate() {
         super.onCreate()
         db = SessionStore(applicationContext)
+        hud = RecorderHud(applicationContext)
         RecorderJournal.event(this, "SERVICE_CREATED", "pid=" + android.os.Process.myPid())
-        runCatching {
-            val recovered = db.recoverInterruptedSessions(System.currentTimeMillis())
-            if (recovered > 0) RecorderJournal.event(this,"RECOVERED_INTERRUPTED",recovered.toString())
-        }
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, "CoreMetrics recording",
                 NotificationManager.IMPORTANCE_LOW)
@@ -81,8 +79,13 @@ class RecordingService : Service() {
                     return START_NOT_STICKY
                 }
                 RecorderJournal.event(this,"START_REQUESTED","User start")
-                val interval = intent.getLongExtra(INTERVAL, 5000L)
-                    .takeIf { it == 1000L || it == 2000L || it == 5000L } ?: 5000L
+                // Safety floor while launch/LMK issues are investigated: no 1 Hz IO
+                // loop in this build, even if an older v0.2 preference says 1 s.
+                val requestedInterval = intent.getLongExtra(INTERVAL, 5000L)
+                val interval = if (requestedInterval == 2000L) 2000L else 5000L
+                if (requestedInterval != interval)
+                    RecorderJournal.event(this,"SAMPLE_INTERVAL_NORMALIZED",
+                        "requested=" + requestedInterval + " actual=" + interval)
                 val label = (intent.getStringExtra(LABEL) ?: "Gameplay").take(64)
                 val config = (intent.getStringExtra(CONFIG) ?: "Unspecified").take(40)
                 if (Build.VERSION.SDK_INT >= 33 &&
@@ -113,6 +116,13 @@ class RecordingService : Service() {
                     var finalStatus = "INTERRUPTED"
                     try {
                         id = withContext(Dispatchers.IO) {
+                            // Disk IO must never precede startForeground on the
+                            // service main thread. Eden launch may be memory-heavy.
+                            val recovered = db.recoverInterruptedSessions(System.currentTimeMillis())
+                            if (recovered > 0) RecorderJournal.event(
+                                this@RecordingService, "RECOVERED_INTERRUPTED",
+                                recovered.toString()
+                            )
                             db.begin(label, config, System.currentTimeMillis())
                         }
                         RecorderJournal.event(this@RecordingService, "SESSION_PERSISTED", "id=" + id)
@@ -125,20 +135,42 @@ class RecordingService : Service() {
                         refreshTile()
                         val sampler = DirectSampler(application)
                         val detector = ForegroundAttribution(applicationContext)
-                        val fpsEnabled = getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
-                            .getBoolean("experimental_fps",false)
-                        val frameProbe = SurfaceFlingerProbe(this@RecordingService, fpsEnabled)
+                        // All seven supplied November Portal captures reported
+                        // SURFACEFLINGER_PERMISSION_DENIED. Do not keep starting
+                        // dumpsys child processes under heavy emulator load.
+                        val frame = FrameEstimate(null,null,0,
+                            "SURFACEFLINGER_PERMISSION_DENIED_ON_PORTAL")
+                        val hudOn = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
+                            .getBoolean("hud_enabled", false)
+                        if (hudOn) {
+                            val result = withContext(Dispatchers.Main.immediate) {
+                                runCatching { hud.show() }.getOrElse {
+                                    "HUD_SHOW_FAILED_" + it.javaClass.simpleName
+                                }
+                            }
+                            MonitorState.hudState = result
+                            RecorderJournal.event(this@RecordingService,"HUD_START",result)
+                        }
+                        if (!hudOn) MonitorState.hudState = "HUD_OFF"
                         var next = SystemClock.elapsedRealtime()
                         var lastNotification = 0L
                         while (isActive && !stopping) {
                             val s = withContext(Dispatchers.IO) {
                                 val foreground = detector.current(System.currentTimeMillis())
-                                val frame = frameProbe.probe(foreground)
                                 sampler.sample(foreground, frame)
                             }
                             withContext(Dispatchers.IO) { db.add(id, s) }
                             MonitorState.latest = s
                             MonitorState.sampleCount++
+                            if (hudOn && hud.attached()) {
+                                withContext(Dispatchers.Main.immediate) {
+                                    runCatching { hud.update(s,MonitorState.sampleCount) }
+                                        .onFailure {
+                                            RecorderJournal.event(this@RecordingService,
+                                                "HUD_UPDATE_FAILED",it.javaClass.simpleName)
+                                        }
+                                }
+                            }
                             if (MonitorState.sampleCount == 1L) {
                                 RecorderJournal.event(this@RecordingService,"FIRST_SAMPLE_WRITTEN","id=" + id)
                             }
@@ -164,7 +196,16 @@ class RecordingService : Service() {
                         finalStatus = "FAILED"
                         MonitorState.message = "Recording failure: " + e.javaClass.simpleName
                     } finally {
-                        withContext(NonCancellable + Dispatchers.IO) {
+                        withContext(NonCancellable) {
+                            val hudResult = withContext(Dispatchers.Main.immediate) {
+                                runCatching { hud.hide() }.getOrElse {
+                                    "HUD_REMOVE_EXCEPTION_" + it.javaClass.simpleName
+                                }
+                            }
+                            MonitorState.hudState = hudResult
+                            RecorderJournal.event(this@RecordingService,
+                                "HUD_STOP",hudResult)
+                            withContext(Dispatchers.IO) {
                             if (id != 0L) runCatching {
                                 db.finish(id, System.currentTimeMillis(), finalStatus)
                             }
@@ -177,6 +218,7 @@ class RecordingService : Service() {
                             )
                             refreshTile()
                             closeService()
+                            }
                         }
                     }
                 }
@@ -215,6 +257,7 @@ class RecordingService : Service() {
         RecorderJournal.event(this,"SERVICE_DESTROYED",
             "active=" + (task?.isActive == true) + " id=" + MonitorState.sessionId)
         stopping = true
+        runCatching { hud.hide() }.onSuccess { RecorderJournal.event(this,"HUD_DESTROY",it) }
         task?.cancel()
         scope.cancel()
         val active = task

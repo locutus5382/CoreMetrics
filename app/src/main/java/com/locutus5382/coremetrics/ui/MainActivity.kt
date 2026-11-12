@@ -5,6 +5,9 @@ import android.app.Activity
 import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
+import android.app.StatusBarManager
+import android.graphics.drawable.Icon
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -17,6 +20,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -24,6 +28,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.CompareArrows
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -36,12 +47,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.RecorderJournal
+import com.locutus5382.coremetrics.quick.SessionTile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -72,10 +85,39 @@ private data class ScreenStatus(
     val frameMs: String? = null, val fpsStatus: String? = null,
     val observedLimits: String? = null,
     val coreLoads: String? = null,
+    val hudStatus: String? = null,
     val lastAt: Long = 0
 )
 
 class MainActivity : ComponentActivity() {
+    private fun requestQuickSettingsTile(onResult: (String) -> Unit) {
+        if (Build.VERSION.SDK_INT < 33) {
+            onResult("Edit Quick Settings and add CoreMetrics Record manually")
+            return
+        }
+        try {
+            val statusBar = getSystemService(StatusBarManager::class.java)
+            statusBar?.requestAddTileService(
+                ComponentName(this, SessionTile::class.java),
+                "CoreMetrics • Record",
+                Icon.createWithResource(this, android.R.drawable.ic_media_play),
+                mainExecutor
+            ) { result ->
+                onResult(when (result) {
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ->
+                        "CoreMetrics Record tile added"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED ->
+                        "Tile is already in Quick Settings"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED ->
+                        "Tile not added; edit Quick Settings manually if preferred"
+                    else -> "System could not add tile (code " + result + ")"
+                })
+            } ?: onResult("Quick Settings manager unavailable")
+        } catch (e: Exception) {
+            onResult("Quick Settings request failed: " + e.javaClass.simpleName)
+        }
+    }
+
     private fun query(): ScreenStatus = try {
         val uri = Uri.parse("content://com.locutus5382.coremetrics.monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
@@ -94,6 +136,7 @@ class MainActivity : ComponentActivity() {
             frameMs = v.getString("frameMs"),fpsStatus=v.getString("fpsStatus"),
             observedLimits = v.getString("observedLimits"),
             coreLoads = v.getString("coreLoads"),
+            hudStatus = v.getString("hudStatus"),
             lastAt = v.getLong("lastSampleAt", 0)
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
@@ -106,15 +149,17 @@ class MainActivity : ComponentActivity() {
             var page by rememberSaveable { mutableStateOf("Live") }
             var status by remember { mutableStateOf(ScreenStatus()) }
             val liveTrace = remember { mutableStateListOf<LiveTracePoint>() }
-            var fpsExperimental by rememberSaveable {
-                mutableStateOf(prefs.getBoolean("experimental_fps",false))
-            }
             var diagnosticReport by remember { mutableStateOf("") }
             var label by rememberSaveable { mutableStateOf(prefs.getString("label", "NFS benchmark") ?: "NFS benchmark") }
             var configuration by rememberSaveable {
                 mutableStateOf(prefs.getString("configuration", "Stock") ?: "Stock")
             }
-            var interval by rememberSaveable { mutableLongStateOf(prefs.getLong("interval_ms", 5000L)) }
+            var interval by rememberSaveable { mutableLongStateOf(
+                if (prefs.getLong("interval_ms", 5000L) == 2000L) 2000L else 5000L
+            ) }
+            var hudEnabled by rememberSaveable {
+                mutableStateOf(prefs.getBoolean("hud_enabled", false))
+            }
             var message by remember { mutableStateOf("") }
             var sessionList by remember { mutableStateOf(emptyList<SessionStore.Session>()) }
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
@@ -200,42 +245,69 @@ class MainActivity : ComponentActivity() {
                     }
                 ) {
                     InstrumentBackdrop()
-                    Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(Modifier.fillMaxSize().padding(9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Compact, icon-led rail fits four destinations even on
+                        // the Portal's 360dp landscape configuration. Scroll is
+                        // still available when system font scaling is increased.
                         Column(
-                            Modifier.width(170.dp).fillMaxHeight()
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color(0xB518293A))
-                                .border(1.dp, Color(0x667ED2E2), RoundedCornerShape(20.dp))
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            Modifier.width(84.dp).fillMaxHeight()
+                                .clip(RoundedCornerShape(15.dp))
+                                .background(Color(0xDD132337))
+                                .border(1.dp, Color(0xAA41687B), RoundedCornerShape(15.dp))
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal=5.dp, vertical=6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Text("CORE", color = cyan, style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold)
-                            Text("METRICS", color = white, style = MaterialTheme.typography.titleMedium)
-                            Text("TELEMETRY STUDIO", color = muted, style = MaterialTheme.typography.labelSmall)
-                            Spacer(Modifier.height(6.dp))
+                            Text("CM",color=coreCyan,
+                                style=MaterialTheme.typography.titleMedium,
+                                fontWeight=FontWeight.Black)
+                            Text("CORE",color=coreSecondary, fontSize=9.sp,
+                                fontWeight=FontWeight.Bold)
                             pages.forEach { item ->
-                                Button(onClick = { page = item }, modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor =
-                                        if (item == page) Color(0xFF23637C) else Color(0x5530475B))) {
-                                    Text(item, color = white)
-                                }
+                                CompactRailAction(item, railIcon(item), page==item) { page=item }
                             }
-                            Spacer(Modifier.weight(1f))
-                            Text(if (status.running) "● RECORDING" else if (status.starting) "◌ STARTING" else "○ IDLE",
-                                color = if (status.running) cyan else muted,
-                                style = MaterialTheme.typography.labelMedium)
-                            Text("v0.2 alpha · read-only", color = muted,
-                                style = MaterialTheme.typography.labelSmall)
+                            HorizontalDivider(color=coreBorder)
+                            Text(if(status.running) "● REC"
+                                else if(status.starting) "START"
+                                else "IDLE",color=if(status.running) coreMint else muted,
+                                style=MaterialTheme.typography.labelSmall,
+                                fontWeight=FontWeight.Bold)
                         }
                         Column(Modifier.weight(1f).fillMaxHeight()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(page, color = white, style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                Text(if (status.running) "● REC · " + status.count + " samples"
-                                    else status.message, color = if (status.running) cyan else muted)
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xDD182B3D))
+                                    .border(1.dp,coreBorder,RoundedCornerShape(14.dp))
+                                    .padding(horizontal=14.dp,vertical=10.dp),
+                                verticalAlignment=Alignment.CenterVertically,
+                                horizontalArrangement=Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("COREMETRICS  /  INSTRUMENT GLASS",
+                                        color=coreCyan,
+                                        style=MaterialTheme.typography.labelSmall)
+                                    Text(page.uppercase(Locale.US),color=coreText,
+                                        style=MaterialTheme.typography.titleLarge,
+                                        fontWeight=FontWeight.Bold)
+                                }
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(9.dp))
+                                        .background(if(status.running) Color(0xBB19473F)
+                                            else Color(0xBB263343))
+                                        .border(1.dp,if(status.running) coreMint.copy(alpha=.60f)
+                                            else coreBorder,RoundedCornerShape(9.dp))
+                                        .padding(horizontal=11.dp,vertical=7.dp)
+                                ) {
+                                    Text(if(status.running) "● REC  " + status.count + " samples"
+                                        else if(status.starting) "◌ STARTING"
+                                        else status.message.take(52),
+                                        color=if(status.running) coreMint else coreSecondary,
+                                        style=MaterialTheme.typography.labelMedium)
+                                }
                             }
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(9.dp))
                             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 when (page) {
@@ -280,12 +352,16 @@ class MainActivity : ComponentActivity() {
                                             }
                                             Text("Sample interval", color = muted)
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                listOf(1000L,2000L,5000L).forEach { ms ->
+                                                listOf(2000L,5000L).forEach { ms ->
                                                     FilterChip(selected = interval == ms,
                                                         onClick = { interval = ms },
                                                         label = { Text((ms / 1000).toString() + " seconds") })
                                                 }
                                             }
+                                            Text("Safety mode: 2 or 5 second samples. " +
+                                                "Use 5 s for Eden launch testing.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.labelSmall)
                                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                                 Button(onClick = {
                                                     if (!status.running && !status.starting &&
@@ -318,8 +394,11 @@ class MainActivity : ComponentActivity() {
                                                         "STOP AND SAVE" else "START RECORDING")
                                                 }
                                                 OutlinedButton(onClick = { page = "Sessions" }) {
-                                                    Text("View sessions")
+                                                    Text("Sessions")
                                                 }
+                                                OutlinedButton(onClick = {
+                                                    requestQuickSettingsTile { message=it }
+                                                }) { Text("Add QS tile") }
                                             }
                                         }
                                         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -475,20 +554,52 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick = {
                                                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                                             }) { Text("Open Usage Access settings") }
-                                            Text("Experimental FPS: attempts a read-only SurfaceFlinger DUMP. " +
-                                                "Android may deny access. If denied, FPS remains unavailable. " +
-                                                "Does not measure emulated game-engine frame rate.",
-                                                color = muted,style=MaterialTheme.typography.bodySmall)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("Try SurfaceFlinger FPS next session",
-                                                    Modifier.weight(1f),color=white)
-                                                Switch(fpsExperimental, onCheckedChange = {
-                                                    fpsExperimental=it
-                                                    prefs.edit().putBoolean("experimental_fps",it).apply()
+                                            Text("FPS: the Portal denied SurfaceFlinger access on every " +
+                                                "recording. System dumps are disabled in this stability build. " +
+                                                "No fabricated FPS values. We will test a read-only FPS " +
+                                                "provider separately.", color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
+                                            HorizontalDivider(color=coreBorder)
+                                            Text("IN-GAME HUD",color=coreCyan,
+                                                style=MaterialTheme.typography.titleSmall)
+                                            Text("Compact, draggable, updated from the existing session " +
+                                                "sampler. Enabled only while recording.",
+                                                color=muted,style=MaterialTheme.typography.bodySmall)
+                                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                                Text("Show HUD when recording",Modifier.weight(1f),
+                                                    color=white)
+                                                Switch(hudEnabled,onCheckedChange={ enabled ->
+                                                    hudEnabled=enabled
+                                                    prefs.edit().putBoolean("hud_enabled",enabled).apply()
+                                                    if(enabled && !Settings.canDrawOverlays(this@MainActivity)) {
+                                                        message="Grant overlay permission; HUD starts on the NEXT session."
+                                                    }
                                                 })
                                             }
-                                            Text("No overlay, root, PServer, INTERNET permission, or kernel writes in this alpha.",
-                                                style = MaterialTheme.typography.bodySmall, color = muted)
+                                            Text(if(Settings.canDrawOverlays(this@MainActivity))
+                                                    "Overlay permission granted"
+                                                else "Overlay permission required for HUD",
+                                                color=if(Settings.canDrawOverlays(this@MainActivity))
+                                                    coreMint else coreAmber,
+                                                style=MaterialTheme.typography.labelSmall)
+                                            OutlinedButton(onClick={
+                                                startActivity(Intent(
+                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                    Uri.parse("package:" + packageName)))
+                                            }) { Text("Open overlay permission") }
+                                            HorizontalDivider(color=coreBorder)
+                                            Text("HUD status: " + (status.hudStatus ?: "Unknown"),
+                                                color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+                                            Text("QUICK SETTINGS",color=coreCyan,
+                                                style=MaterialTheme.typography.titleSmall)
+                                            Text("The Record tile is separate from the application icon. " +
+                                                "Add it once, then use it to start/stop recording after Eden opens.",
+                                                color=muted,style=MaterialTheme.typography.bodySmall)
+                                            OutlinedButton(onClick={
+                                                requestQuickSettingsTile { message=it }
+                                            }) { Text("Add Record tile to Quick Settings") }
+                                            Text("No root, PServer, INTERNET permission or hardware writes.",
+                                                style=MaterialTheme.typography.bodySmall,color=muted)
                                             Text("Battery power shows battery-terminal flow, not whole-device or wall power. Charging/bypass sessions cannot be compared as power efficiency.",
                                                 style = MaterialTheme.typography.bodySmall,color=muted)
                                             HorizontalDivider(color=coreBorder)
@@ -576,5 +687,36 @@ private fun CompareChart(a: List<SessionStore.Point>, b: List<SessionStore.Point
         }
         pathFor(a)?.let { drawPath(it, cyan, style = Stroke(width=3f)) }
         pathFor(b)?.let { drawPath(it, Color(0xFFFFC077), style = Stroke(width=3f)) }
+    }
+}
+
+private fun railIcon(label: String): ImageVector = when (label) {
+    "Live" -> Icons.Rounded.Dashboard
+    "Sessions" -> Icons.Rounded.History
+    "Compare" -> Icons.Rounded.CompareArrows
+    else -> Icons.Rounded.Settings
+}
+
+@Composable
+private fun CompactRailAction(
+    label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit
+) {
+    val shape=RoundedCornerShape(11.dp)
+    Column(
+        Modifier.fillMaxWidth().height(49.dp)
+            .clip(shape)
+            .background(if(selected) Color(0xE7245367) else Color(0x42192335))
+            .border(1.dp,if(selected) coreCyan.copy(alpha=0.7f)
+                else coreBorder.copy(alpha=0.38f),shape)
+            .clickable(role=Role.Button,onClick=onClick)
+            .padding(vertical=4.dp),
+        horizontalAlignment=Alignment.CenterHorizontally,
+        verticalArrangement=Arrangement.Center
+    ) {
+        Icon(icon,contentDescription=null,modifier=Modifier.size(20.dp),
+            tint=if(selected) coreCyan else coreSecondary)
+        Text(label,color=if(selected) coreText else coreSecondary,
+            fontSize=10.sp,fontWeight=if(selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines=1)
     }
 }

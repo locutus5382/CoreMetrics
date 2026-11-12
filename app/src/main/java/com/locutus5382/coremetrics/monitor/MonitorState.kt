@@ -10,6 +10,7 @@ internal object MonitorState {
     @Volatile var startedAt = 0L
     @Volatile var sampleCount = 0L
     @Volatile var message = "Idle"
+    @Volatile var hudState = "HUD_OFF"
     @Volatile var latest: Snapshot? = null
     fun clear(messageText: String) {
         running = false; starting = false; sessionId = 0L
