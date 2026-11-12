@@ -91,6 +91,20 @@ internal data class HudOptions(
             )) putExtra("hud_"+k,v)
         }
     }
+    fun save(context:Context):Boolean {
+        val p=context.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
+        return p.edit().putFloat(OPACITY,opacity)
+            .putString(SIZE,size).putString(LAYOUT,layout)
+            .putString(INDICATOR,indicatorColor).putBoolean(BLINK,blink)
+            .putBoolean("hud_cpuTemp",showCpuTemp)
+            .putBoolean("hud_gpuTemp",showGpuTemp)
+            .putBoolean("hud_cpuLoad",showCpuLoad)
+            .putBoolean("hud_gpuLoad",showGpuLoad)
+            .putBoolean("hud_ram",showRam)
+            .putBoolean("hud_power",showPower)
+            .putBoolean("hud_fps",showFps)
+            .putBoolean("hud_sparkline",showSparkline).commit()
+    }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
         showGpuLoad,showRam,showPower,showFps).count { it }
 }
