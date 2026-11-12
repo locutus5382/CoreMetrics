@@ -767,6 +767,43 @@ class MainActivity : ComponentActivity() {
                                                         label = { Text("Session " + s.id + " · " + s.configuration) })
                                                 }
                                             }
+                                            if(firstId>0L && secondId>0L && firstId!=secondId) {
+                                                val linked=linkedPairs.any{
+                                                    setOf(it.firstId,it.secondId)==setOf(firstId,secondId)
+                                                }
+                                                OutlinedButton(onClick={
+                                                    scope.launch {
+                                                        val result=withContext(Dispatchers.IO) {
+                                                            runCatching {
+                                                                if(linked) database.unlinkSessions(
+                                                                    firstId,secondId)
+                                                                else database.linkSessions(firstId,secondId)
+                                                            }
+                                                        }
+                                                        result.fold(onSuccess={
+                                                            linkedPairs=withContext(Dispatchers.IO){
+                                                                database.links()
+                                                            }
+                                                            message=if(linked)
+                                                                "Link removed; recordings unchanged"
+                                                            else "Manual link saved; samples remain separate"
+                                                        },onFailure={e->
+                                                            message="Link failed: "+(e.message?:"unknown")
+                                                        })
+                                                    }
+                                                }){Text(if(linked)"Unlink recordings"
+                                                    else "Link these recordings")}
+                                                if(linked && firstPoints.isNotEmpty() &&
+                                                    secondPoints.isNotEmpty()) {
+                                                    val a=sessionList.firstOrNull{it.id==firstId}
+                                                    val b=sessionList.firstOrNull{it.id==secondId}
+                                                    if(a!=null && b!=null)LinkedSessionsTimeline(
+                                                        a,firstPoints,b,secondPoints)
+                                                }else Text("Manual and reversible. "+
+                                                    "No interpolated samples or presumed restart.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
+                                            }
                                             val analysisA=remember(firstPoints,firstId,sessionList) {
                                                 sessionList.firstOrNull{it.id==firstId}
                                                     ?.takeIf{firstPoints.isNotEmpty()}
@@ -778,6 +815,9 @@ class MainActivity : ComponentActivity() {
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints)}
                                             }
                                             analysisA?.let { r ->
+                                                ObservedProfilePanel(r.session.configuration,firstPoints)
+                                                CoreWinnerPanel(firstPoints)
+                                                EnergyRatePanel(r.energy)
                                                 HorizontalDivider(color=coreBorder)
                                                 Text("BENCHMARK RELIABILITY · "+r.quality.score+
                                                     "/100 · "+r.quality.category,
@@ -816,6 +856,34 @@ class MainActivity : ComponentActivity() {
                                                 }){Text("Export evidence report")}
                                             }
                                             if(analysisA!=null && analysisB!=null) {
+                                                Text("SESSION B · NORMALIZED ENERGY",
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                EnergyRatePanel(analysisB.energy)
+                                                val rateA=analysisA.energy.milliWhPerMinute
+                                                val rateB=analysisB.energy.milliWhPerMinute
+                                                Text("B − A normalized rate: "+
+                                                    (if(rateA!=null && rateB!=null)
+                                                        String.format(Locale.US,"%.2f mWh/min",
+                                                            rateB-rateA) else "unavailable"),
+                                                    color=solarGold)
+                                                if(analysisA.elapsedSeconds>0.0 &&
+                                                    analysisB.elapsedSeconds>0.0 &&
+                                                    max(analysisA.elapsedSeconds,
+                                                        analysisB.elapsedSeconds)/
+                                                        kotlin.math.min(analysisA.elapsedSeconds,
+                                                            analysisB.elapsedSeconds)>1.2)
+                                                    Text("CAUTION: durations differ by >20%.",
+                                                        color=solarOrange)
+                                                if(analysisA.meanGpuLoad!=null &&
+                                                    analysisB.meanGpuLoad!=null &&
+                                                    kotlin.math.abs(analysisA.meanGpuLoad-
+                                                        analysisB.meanGpuLoad)>10.0)
+                                                    Text("CAUTION: GPU workload differs by >10 pp.",
+                                                        color=solarOrange)
+                                                if(analysisA.energy.coveragePct<80.0 ||
+                                                    analysisB.energy.coveragePct<80.0)
+                                                    Text("CAUTION: poor valid discharge coverage.",
+                                                        color=solarOrange)
                                                 Text("B quality: "+analysisB.quality.score+"/100 · "+
                                                     "B energy: "+(analysisB.energy.wh?.let{
                                                         String.format(Locale.US,"%.4f Wh",it)
