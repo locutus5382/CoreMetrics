@@ -7,8 +7,9 @@ GitHub Actions builds two v0.6 APKs:
 - **app-debug.apk** (`com.locutus5382.coremetrics`) is an in-place upgrade candidate only when signing matches. CI runners can produce different debug signing keys; do not uninstall v0.5 just to install it.
 
 ## Installation and preservation
-- Finish testing v0.5 first; export all important sessions before upgrading. VersionCode 6 replaces versionCode 5 under the same application ID. They cannot coexist; downgrading usually requires uninstalling (which may delete session history). Ensure APK signing is compatible for in-place upgrade. Test the **latest successful** GitHub Actions APK only.
-- Verify all historical SQLite sessions survive upgrade; also start and stop a new short session.
+- Recommended: retain v0.5 and install **CoreMetrics Preview** in parallel. The Preview app has a new package and private database; it will **not** automatically inherit v0.5 sessions. Export v0.5 CSVs and import them into Preview. Keep only **one CoreMetrics HUD/recorder active at a time** so the two monitors do not compete or block gameplay touches.
+- Alternative: regular v0.6 debug APK replaces v0.5 under the same package if signing keys match; versionCode 6 cannot usually be downgraded to 5 without reinstall/data loss. Export before considering an upgrade or uninstall.
+- For either APK use the **latest successful** GitHub Actions run. Verify normal recording, import/export and saving independently in Preview. If using the regular APK as an upgrade, verify v0.5 SQLite history survives.
 
 ## HUD
 1. Launch standby, verify **no recorder samples** before in-game REC. Open Eden, start REC, let at least 30 samples accumulate.

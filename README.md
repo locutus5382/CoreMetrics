@@ -30,7 +30,7 @@
 - FPS Lab is a separately compiled, **not connected, not running** read-only interface/probe state machine with fake-host tests, handshake attestation requirements, unique SurfaceView selection, chosen presentation column, cooldown and two-failure circuit breaker. It does not include a PServer host launcher or privilege adapter. Activating this requires physical Odin read-only host verification and timestamp provenance before implementation.
 - No additional Android permissions, no root escalation, frequency writes, user-supplied privileged shell commands, extra background recorder, 1 Hz SurfaceFlinger dumps or data transmission.
 
-**Testing two versions:** Both v0.5 and v0.6 use `com.locutus5382.coremetrics` (same application ID), so they cannot be installed side by side. Test v0.5 first, export CSVs, and then upgrade to v0.6. Android normally blocks downgrading v0.6 to v0.5 without reinstalling and possibly deleting local history.
+**Testing two versions:** Install the **v0.6 Preview** APK alongside the original v0.5 APK, which uses a different package name. They each keep their own sessions. Stop/disarm one HUD and its recorder before starting the other to avoid changing measurements and overlay-touch behavior. The regular v0.6 APK retains the original package ID and therefore is an upgrade rather than a parallel installation; debug signing differences may block an in-place upgrade.
 
 ## v0.5 draft — observed regimes, thermal trends, original icon, touch-lock
 
