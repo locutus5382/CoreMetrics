@@ -7,6 +7,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,6 +31,9 @@ internal fun HudSettingsPanel(
     onGrantPermission:()->Unit,
     onTile:()->Unit
 ) {
+    var opacityDraft by remember(options.opacity) {
+        mutableFloatStateOf(options.opacity)
+    }
     Column(Modifier.fillMaxWidth().pureGlass(22).padding(15.dp),
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("FLOATING HUD STUDIO",color=iceBlue,
@@ -65,10 +72,11 @@ internal fun HudSettingsPanel(
         Text("GLASS TRANSPARENCY",color=iceBlue,
             style=MaterialTheme.typography.labelLarge)
         Row(verticalAlignment=Alignment.CenterVertically) {
-            Slider(value=options.opacity,
-                onValueChange={onChange(options.copy(opacity=it))},
+            Slider(value=opacityDraft,
+                onValueChange={opacityDraft=it},
+                onValueChangeFinished={onChange(options.copy(opacity=opacityDraft))},
                 valueRange=.30f..90f/100f,modifier=Modifier.weight(1f))
-            Text((options.opacity*100).toInt().toString()+"%",color=Color.White)
+            Text((opacityDraft*100).toInt().toString()+"%",color=Color.White)
         }
         Text("HUD SIZE",color=iceBlue,style=MaterialTheme.typography.labelLarge)
         Row(Modifier.horizontalScroll(rememberScrollState()),
