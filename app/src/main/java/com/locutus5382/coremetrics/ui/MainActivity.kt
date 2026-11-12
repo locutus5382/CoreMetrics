@@ -65,6 +65,7 @@ import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.RecorderJournal
 import com.locutus5382.coremetrics.quick.SessionTile
+import com.locutus5382.coremetrics.quick.HudTile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -136,7 +137,38 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun query(): ScreenStatus = try {
+        private fun requestHudQuickSettingsTile(onResult:(String)->Unit) {
+        if(Build.VERSION.SDK_INT<33) {
+            onResult("Edit Quick Settings and add CM HUD manually")
+            return
+        }
+        try {
+            val bar=getSystemService(StatusBarManager::class.java)
+            bar?.requestAddTileService(
+                ComponentName(this,HudTile::class.java),
+                if(packageName.endsWith(".v08themes"))"CoreMetrics Themes · HUD"
+                else if(packageName.endsWith(".v08base"))"CoreMetrics Analytics · HUD"
+                else "CoreMetrics · HUD",
+                Icon.createWithResource(this,
+                    com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
+                mainExecutor
+            ){ result->
+                onResult(when(result) {
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED->
+                        "HUD tile added · toggles standby, not REC"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED->
+                        "HUD tile is already installed"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED->
+                        "Edit Android Quick Settings to add HUD manually"
+                    else->"Tile request returned "+result
+                })
+            }?:onResult("Quick Settings manager unavailable")
+        }catch(e:Exception){
+            onResult("HUD tile request failed: "+e.javaClass.simpleName)
+        }
+    }
+
+private fun query(): ScreenStatus = try {
         val uri = Uri.parse("content://" + packageName + ".monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
         if (v == null) ScreenStatus(message = "Recorder status unavailable")
@@ -1128,7 +1160,10 @@ class MainActivity : ComponentActivity() {
                                                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                                     Uri.parse("package:"+packageName)))
                                             },
-                                            onTile={requestQuickSettingsTile {message=it}}
+                                            onTile={requestQuickSettingsTile {message=it}},
+                                             onHudTile={
+                                                 requestHudQuickSettingsTile{message=it}
+                                             }
                                         )
                                     }
                                     else -> {

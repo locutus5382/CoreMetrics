@@ -31,7 +31,8 @@ internal fun HudSettingsPanel(
     onDisarm:()->Unit,
     onUnlock:()->Unit,
     onGrantPermission:()->Unit,
-    onTile:()->Unit
+    onTile:()->Unit,
+    onHudTile:()->Unit
 ) {
     var opacityDraft by remember(options.opacity) {
         mutableFloatStateOf(options.opacity)
@@ -40,7 +41,9 @@ internal fun HudSettingsPanel(
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("FLOATING HUD STUDIO",color=iceBlue,
             style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
-        Text("Launch standby, load Eden, then tap REC. Drag the glass pill to within " +
+        Text("HUD tile toggles standby; REC tile starts/stops the session. "+
+            "Use only one CoreMetrics variant at a time. "+
+            "Launch standby, load Eden, then tap REC. Drag the glass pill to within " +
             "16dp of either edge to dock into a 12dp visual tab with a 44dp tap area. " +
             "Tap tab to expand, or ⚙ for live metric, opacity and REC controls. " +
             "Standby performs no telemetry sampling.",
@@ -53,7 +56,8 @@ internal fun HudSettingsPanel(
             OutlinedButton(onClick=onDisarm,enabled=isArmed || recording) {
                 Text(if(recording) "Stop & close" else "Close HUD")
             }
-            OutlinedButton(onClick=onTile){Text("Add QS tile")}
+            OutlinedButton(onClick=onTile){Text("Add REC tile")}
+            OutlinedButton(onClick=onHudTile){Text("Add HUD tile")}
         }
         if(isArmed) {
             Row(verticalAlignment=Alignment.CenterVertically,
