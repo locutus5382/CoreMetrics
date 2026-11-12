@@ -283,7 +283,7 @@ class RecordingService:Service() {
                         }
                         outcome="COMPLETED"
                     }catch(_:CancellationException){
-                        outcome=if(stopping)"COMPLETED"else"INTERRUPTED"
+                        outcome=if(stopping) "COMPLETED" else "INTERRUPTED"
                     }catch(e:Exception){
                         outcome="FAILED"
                         RecorderJournal.event(this@RecordingService,"SAMPLING_FAILED",
@@ -299,7 +299,7 @@ class RecordingService:Service() {
                                 "SESSION_FINALIZED","id="+id+" status="+outcome+
                                     " samples="+MonitorState.sampleCount)
                             MonitorState.clear(if(outcome=="COMPLETED")
-                                "Recording saved"else"Recording "+outcome.lowercase())
+                                "Recording saved" else "Recording "+outcome.lowercase())
                             withContext(Dispatchers.Main.immediate){
                                 task=null
                                 stopping=false
@@ -333,7 +333,7 @@ class RecordingService:Service() {
             .setCategory(Notification.CATEGORY_SERVICE)
             .addAction(Notification.Action.Builder(
                 android.R.drawable.ic_menu_close_clear_cancel,
-                if(standby)"Close standby"else"Stop and save",exit).build())
+                if(standby) "Close standby" else "Stop and save",exit).build())
             .build()
     }
     override fun onDestroy(){
