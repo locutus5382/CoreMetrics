@@ -13,6 +13,7 @@ android {
         versionName = "0.8.0-analytics-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
+        manifestPlaceholders["coremetricsHudTileLabel"] = "CM · HUD"
     }
     buildTypes {
         create("v08themes") {
@@ -21,6 +22,7 @@ android {
             versionNameSuffix = "-themes"
             manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8 Themes"
             manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8 Themes Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8 Themes · HUD"
         }
         create("v08base") {
             initWith(getByName("debug"))
@@ -28,6 +30,7 @@ android {
             versionNameSuffix = "-analytics"
             manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8 Analytics"
             manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8 Analytics Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8 Analytics · HUD"
         }
         create("v07test") {
             initWith(getByName("debug"))

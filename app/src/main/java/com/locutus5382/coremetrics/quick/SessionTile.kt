@@ -67,10 +67,10 @@ class SessionTile : TileService() {
         val state = status()
         qsTile?.apply {
             label = when {
-                state.running -> "● REC · Stop"
+                state.running -> "● CM REC · STOP"
                 state.starting -> "Starting…"
-                state.standby -> "HUD ready · REC"
-                else -> "CoreMetrics · Start"
+                state.standby -> "CM REC · Ready"
+                else -> "CM REC · Start"
             }
             this.state = if (state.running || state.starting)
                 Tile.STATE_ACTIVE else Tile.STATE_INACTIVE

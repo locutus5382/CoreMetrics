@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +52,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
@@ -65,6 +68,7 @@ import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.RecorderJournal
 import com.locutus5382.coremetrics.quick.SessionTile
+import com.locutus5382.coremetrics.quick.HudTile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -102,6 +106,26 @@ private data class ScreenStatus(
 )
 
 class MainActivity : ComponentActivity() {
+    /** Hardware shoulder navigation even after touch focus is lost. */
+    private var controllerTabAction:((Int)->Unit)?=null
+    override fun dispatchKeyEvent(event:KeyEvent):Boolean {
+        if(event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) {
+            val delta=when(event.keyCode) {
+                KeyEvent.KEYCODE_BUTTON_L1 -> -1
+                KeyEvent.KEYCODE_BUTTON_R1 -> 1
+                else -> 0
+            }
+            if(delta!=0) {
+                val handler=controllerTabAction
+                if(handler!=null) {
+                    handler(delta)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     private fun requestQuickSettingsTile(onResult: (String) -> Unit) {
         if (Build.VERSION.SDK_INT < 33) {
             onResult("Edit Quick Settings and add CoreMetrics Record manually")
@@ -133,6 +157,37 @@ class MainActivity : ComponentActivity() {
             } ?: onResult("Quick Settings manager unavailable")
         } catch (e: Exception) {
             onResult("Quick Settings request failed: " + e.javaClass.simpleName)
+        }
+    }
+
+    private fun requestHudQuickSettingsTile(onResult:(String)->Unit) {
+        if(Build.VERSION.SDK_INT<33) {
+            onResult("Edit Quick Settings and add CM HUD manually")
+            return
+        }
+        try {
+            val bar=getSystemService(StatusBarManager::class.java)
+            bar?.requestAddTileService(
+                ComponentName(this,HudTile::class.java),
+                if(packageName.endsWith(".v08themes"))"CoreMetrics Themes · HUD"
+                else if(packageName.endsWith(".v08base"))"CoreMetrics Analytics · HUD"
+                else "CoreMetrics · HUD",
+                Icon.createWithResource(this,
+                    com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
+                mainExecutor
+            ){ result->
+                onResult(when(result) {
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED->
+                        "HUD tile added · toggles standby, not REC"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED->
+                        "HUD tile is already installed"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED->
+                        "Edit Android Quick Settings to add HUD manually"
+                    else->"Tile request returned "+result
+                })
+            }?:onResult("Quick Settings manager unavailable")
+        }catch(e:Exception){
+            onResult("HUD tile request failed: "+e.javaClass.simpleName)
         }
     }
 
@@ -191,6 +246,17 @@ class MainActivity : ComponentActivity() {
             }
             val appliedFinish=if(supportsThemeChoice)finish else SurfaceFinish.FROSTED
             var page by rememberSaveable { mutableStateOf("Live") }
+            val rootFocus=remember {FocusRequester()}
+            SideEffect {
+                controllerTabAction={ delta ->
+                    page=pages[Math.floorMod(pages.indexOf(page)+delta,pages.size)]
+                }
+            }
+            DisposableEffect(Unit) {
+                onDispose {controllerTabAction=null}
+            }
+            LaunchedEffect(Unit) {rootFocus.requestFocus()}
+
             var status by remember { mutableStateOf(ScreenStatus()) }
             var overlayAllowed by remember {
                 mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
@@ -236,12 +302,16 @@ class MainActivity : ComponentActivity() {
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
+            var skipWarmUp by rememberSaveable { mutableStateOf(false) }
+            var hideShortRuns by rememberSaveable { mutableStateOf(false) }
+            var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
             var scrubFraction by rememberSaveable { mutableFloatStateOf(0.5f) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var exportId by remember { mutableLongStateOf(0L) }
             var reportAId by remember { mutableLongStateOf(0L) }
             var reportBId by remember { mutableLongStateOf(0L) }
+            var reportSkipWarmup by remember { mutableStateOf(false) }
             val scope = rememberCoroutineScope()
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
@@ -273,12 +343,12 @@ class MainActivity : ComponentActivity() {
                             val list=database.list(200)
                             val a=list.firstOrNull{it.id==reportAId}
                                 ?:error("Report session A is missing")
-                            val analyzedA=BenchmarkAnalyzer.analyze(a,database.points(a.id))
+                            val analyzedA=BenchmarkAnalyzer.analyze(a,database.points(a.id),if(reportSkipWarmup)30 else 0)
                             val content=if(reportBId!=0L && reportBId!=a.id) {
                                 val b=list.firstOrNull{it.id==reportBId}
                                     ?:error("Report session B is missing")
                                 BenchmarkAnalyzer.comparison(analyzedA,
-                                    BenchmarkAnalyzer.analyze(b,database.points(b.id)))
+                                    BenchmarkAnalyzer.analyze(b,database.points(b.id),if(reportSkipWarmup)30 else 0))
                             } else BenchmarkAnalyzer.text(analyzedA)
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
                                 it.write(content)
@@ -355,12 +425,12 @@ class MainActivity : ComponentActivity() {
                         linkedPairs=withContext(Dispatchers.IO){database.links()}
                 }
             }
-            LaunchedEffect(page,detailedId) {
+            LaunchedEffect(page,detailedId,skipWarmUp,sessionList) {
                 if(page=="Sessions" && detailedId>0L) {
                     val response=withContext(Dispatchers.IO) {
                         val session=database.list(200).firstOrNull{it.id==detailedId}
                         val points=database.points(detailedId)
-                        val report=session?.let{BenchmarkAnalyzer.analyze(it,points)}
+                        val report=session?.let{BenchmarkAnalyzer.analyze(it,points,if(skipWarmUp)30 else 0)}
                         report to points
                     }
                     detailReport=response.first
@@ -447,7 +517,9 @@ class MainActivity : ComponentActivity() {
                     Color(0xFF04060C) else cobaltNavy,
                 onSurface=coreText)) {
                 Box(
-                    Modifier.fillMaxSize().background(rootBackground).onPreviewKeyEvent { event ->
+                    Modifier.fillMaxSize().background(rootBackground)
+                        .focusRequester(rootFocus)
+                        .onPreviewKeyEvent { event ->
                         val key = event.nativeKeyEvent
                         if (key.action != KeyEvent.ACTION_DOWN || key.repeatCount != 0) false
                         else when(key.keyCode) {
@@ -459,7 +531,7 @@ class MainActivity : ComponentActivity() {
                             }
                             else -> false
                         }
-                    }
+                    }.focusable()
                 ) {
                     PureGlassBackdrop()
                     Row(Modifier.fillMaxSize().padding(9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -600,7 +672,7 @@ class MainActivity : ComponentActivity() {
                                             Text("Optional game / track note", color = muted)
                                             OutlinedTextField(label, { label = it.take(64) },
                                                 modifier = Modifier.fillMaxWidth(), singleLine = true,
-                                                label = { Text("Optional note: game, track or driver") })
+                                                label = { Text("Optional game / track note") })
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 listOf("Stock", "Underclocking", "Custom").forEach { item ->
                                                     FilterChip(selected = configuration == item,
@@ -714,7 +786,16 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick = {
                                                 scope.launch { sessionList = withContext(Dispatchers.IO) { database.list() } }
                                             }) { Text("Refresh history") }
-                                            if (sessionList.isEmpty()) Text("No sessions yet.", color = muted)
+                                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                                 Text("Hide runs < 15 s",
+                                                     Modifier.weight(1f),color=coreText)
+                                                 Switch(hideShortRuns,
+                                                     onCheckedChange={hideShortRuns=it})
+                                             }
+                                             Text("Only filters this list; no recordings are deleted.",
+                                                 color=coreSecondary,
+                                                 style=MaterialTheme.typography.labelSmall)
+                                             if (sessionList.isEmpty()) Text("No sessions yet.", color = muted)
                                             detailReport?.takeIf{detailedId>0L}?.let{r ->
                                                 Text("Session "+detailedId+" · "+
                                                     r.quality.category+" · "+
@@ -728,17 +809,29 @@ class MainActivity : ComponentActivity() {
                                                     detailReport=null;detailPoints=emptyList()
                                                 }){Text("Close session analysis")}
                                             }
-                                            sessionList.forEach { s ->
+                                            sessionList.filter { s ->
+                                                 !hideShortRuns || s.endedAt==null ||
+                                                     s.endedAt-s.startedAt>=15_000L
+                                             }.forEach { s ->
                                                 HorizontalDivider(color = Color(0x335F91A7))
-                                                Row(verticalAlignment = Alignment.CenterVertically,
+                                                Row(Modifier.horizontalScroll(rememberScrollState()),
+                                                    verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Column(Modifier.weight(1f)) {
+                                                    Column(Modifier.widthIn(min=155.dp)) {
                                                         Text("Session " + s.id + " · " + s.configuration, color = white,
                                                             fontWeight = FontWeight.Bold)
                                                         Text(time(s.startedAt) + " · " + s.count + " samples · " + s.status,
                                                             color = muted, style = MaterialTheme.typography.labelSmall)
                                                         s.note?.let{Text("Note: "+it,color=coreSecondary,
                                                             style=MaterialTheme.typography.labelSmall)}
+                                                        if(s.hasExternalPower)Text(
+                                                            if(s.hasDischargePower)"MIXED POWER" else "PLUGGED IN",
+                                                            color=solarOrange,
+                                                            style=MaterialTheme.typography.labelSmall)
+                                                        Text("Driver: "+(s.graphicsDriver?:"—")+
+                                                            " · Scale: "+(s.resolutionScale?:"—"),
+                                                            color=coreSecondary,
+                                                            style=MaterialTheme.typography.labelSmall)
                                                     }
                                                     OutlinedButton(onClick = {
                                                         exportId = s.id
@@ -748,10 +841,56 @@ class MainActivity : ComponentActivity() {
                                                         detailedId=s.id;page="Sessions"
                                                     }){Text("Analyze")}
                                                     OutlinedButton(onClick={
+                                                        metadataEditorId=if(metadataEditorId==s.id)
+                                                            0L else s.id
+                                                    },enabled=!status.running && !status.starting){
+                                                        Text("Tags")
+                                                    }
+                                                    OutlinedButton(onClick={
                                                         reportAId=s.id;reportBId=0L
                                                         reportFile.launch("CoreMetrics_Report_"+
                                                             s.id+".txt")
                                                     }){Text("Report")}
+                                                }
+                                                if(metadataEditorId==s.id) {
+                                                    SessionMetadataEditor(session=s,
+                                                        onDriver={tag->
+                                                            scope.launch {
+                                                                val outcome=withContext(Dispatchers.IO){
+                                                                    runCatching{
+                                                                        database.updateGraphicsDriver(s.id,tag)
+                                                                    }
+                                                                }
+                                                                outcome.fold(onSuccess={
+                                                                    sessionList=withContext(Dispatchers.IO){
+                                                                        database.list()
+                                                                    }
+                                                                    message="Graphics driver tag saved"
+                                                                },onFailure={e->
+                                                                    message="Driver tag failed: "+
+                                                                        (e.message?:e.javaClass.simpleName)
+                                                                })
+                                                            }
+                                                        },
+                                                        onResolution={tag->
+                                                            scope.launch {
+                                                                val outcome=withContext(Dispatchers.IO){
+                                                                    runCatching{
+                                                                        database.updateResolutionScale(s.id,tag)
+                                                                    }
+                                                                }
+                                                                outcome.fold(onSuccess={
+                                                                    sessionList=withContext(Dispatchers.IO){
+                                                                        database.list()
+                                                                    }
+                                                                    message="Resolution tag saved"
+                                                                },onFailure={e->
+                                                                    message="Resolution tag failed: "+
+                                                                        (e.message?:e.javaClass.simpleName)
+                                                                })
+                                                            }
+                                                        },
+                                                        onClose={metadataEditorId=0L})
                                                 }
                                             }
                                         }
@@ -768,12 +907,23 @@ class MainActivity : ComponentActivity() {
                                              Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
+                                                 Text("Skip first 30s (Warm-Up)",
+                                                     Modifier.weight(1f),color=coreText,
+                                                     style=MaterialTheme.typography.bodySmall)
+                                                 Switch(skipWarmUp,
+                                                     onCheckedChange={skipWarmUp=it})
+                                             }
+                                             Text("After REC, not proven game-world start. "+
+                                                 "Original samples and linked timelines remain unchanged.",
+                                                 color=coreSecondary,
+                                                 style=MaterialTheme.typography.labelSmall)
+                                             Row(verticalAlignment=Alignment.CenterVertically) {
                                                 Text("Active 3D gameplay: GPU ≥ 15% (heuristic)",
                                                     Modifier.weight(1f),color=muted,
                                                     style=MaterialTheme.typography.bodySmall)
                                                 Switch(activeOnly,onCheckedChange={activeOnly=it})
                                             }
-                                            Text("Select session A", color = cyan)
+                                            Text("Select session A · D-pad focus + A", color = cyan)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 sessionList.take(14).forEach { s ->
@@ -782,7 +932,7 @@ class MainActivity : ComponentActivity() {
                                                         label = { Text("Session " + s.id + " · " + s.configuration) })
                                                 }
                                             }
-                                            Text("Select session B", color = cyan)
+                                            Text("Select session B · D-pad focus + A", color = cyan)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 sessionList.take(14).forEach { s ->
@@ -828,15 +978,15 @@ class MainActivity : ComponentActivity() {
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                             }
-                                            val analysisA=remember(firstPoints,firstId,sessionList) {
+                                            val analysisA=remember(firstPoints,firstId,sessionList,skipWarmUp) {
                                                 sessionList.firstOrNull{it.id==firstId}
                                                     ?.takeIf{firstPoints.isNotEmpty()}
-                                                    ?.let{BenchmarkAnalyzer.analyze(it,firstPoints)}
+                                                    ?.let{BenchmarkAnalyzer.analyze(it,firstPoints,if(skipWarmUp)30 else 0)}
                                             }
-                                            val analysisB=remember(secondPoints,secondId,sessionList) {
+                                            val analysisB=remember(secondPoints,secondId,sessionList,skipWarmUp) {
                                                 sessionList.firstOrNull{it.id==secondId}
                                                     ?.takeIf{secondPoints.isNotEmpty()}
-                                                    ?.let{BenchmarkAnalyzer.analyze(it,secondPoints)}
+                                                    ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
                                             analysisA?.let { r ->
                                                 ObservedProfilePanel(r.session.configuration,firstPoints)
@@ -875,6 +1025,7 @@ class MainActivity : ComponentActivity() {
                                                     style=MaterialTheme.typography.labelSmall)
                                                 OutlinedButton(onClick={
                                                     reportAId=firstId;reportBId=0L
+                                                     reportSkipWarmup=skipWarmUp
                                                     reportFile.launch("CoreMetrics_Report_A_"+
                                                         firstId+".txt")
                                                 }){Text("Export evidence report")}
@@ -914,16 +1065,25 @@ class MainActivity : ComponentActivity() {
                                                     }?:"—"),color=coreSecondary)
                                                 OutlinedButton(onClick={
                                                     reportAId=firstId;reportBId=secondId
+                                                     reportSkipWarmup=skipWarmUp
                                                     reportFile.launch("CoreMetrics_AB_"+
                                                         firstId+"_"+secondId+".txt")
                                                 }){Text("Export A/B report")}
                                             }
-                                            val viewA = if(activeOnly) firstPoints.filter {
+                                            val eligibleA=if(skipWarmUp && firstPoints.isNotEmpty())
+                                                 firstPoints.filter{
+                                                     it.timeMs-firstPoints.first().timeMs>=30_000L
+                                                 }else firstPoints
+                                             val eligibleB=if(skipWarmUp && secondPoints.isNotEmpty())
+                                                 secondPoints.filter{
+                                                     it.timeMs-secondPoints.first().timeMs>=30_000L
+                                                 }else secondPoints
+                                             val viewA = if(activeOnly) eligibleA.filter {
                                                 (it.gpuLoad ?: 0.0) >= 15.0
-                                            } else firstPoints
-                                            val viewB = if(activeOnly) secondPoints.filter {
+                                            } else eligibleA
+                                            val viewB = if(activeOnly) eligibleB.filter {
                                                 (it.gpuLoad ?: 0.0) >= 15.0
-                                            } else secondPoints
+                                            } else eligibleB
                                             // Segment the ORIGINAL timeline, before gameplay filtering.
                                             val regimes=remember(firstPoints,activeOnly) {
                                                 SessionRegimeAnalyzer.analyze(firstPoints.map { p ->
@@ -1054,12 +1214,20 @@ class MainActivity : ComponentActivity() {
                                                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                                     Uri.parse("package:"+packageName)))
                                             },
-                                            onTile={requestQuickSettingsTile {message=it}}
+                                            onTile={requestQuickSettingsTile {message=it}},
+                                             onHudTile={
+                                                 requestHudQuickSettingsTile{message=it}
+                                             }
                                         )
                                     }
                                     else -> {
                                         GlassPanel {
                                             Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
+                                             Text("CONTROLLER · L1/R1 switches tabs; D-pad navigates "+
+                                                 "session chips and adjusts the focused A/B slider; "+
+                                                 "A selects. Touch and controller can be mixed.",
+                                                 color=coreSecondary,
+                                                 style=MaterialTheme.typography.bodySmall)
                                             if(supportsThemeChoice) {
                                                 Text("APP APPEARANCE · OPTIONAL FINISHES",
                                                     color=iceBlue,
