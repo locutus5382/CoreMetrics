@@ -19,6 +19,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
@@ -49,6 +51,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -184,6 +187,7 @@ class MainActivity : ComponentActivity() {
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
+            var scrubFraction by rememberSaveable { mutableFloatStateOf(0.5f) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var exportId by remember { mutableLongStateOf(0L) }
@@ -207,6 +211,28 @@ class MainActivity : ComponentActivity() {
                     }
                     message = result.fold(onSuccess = { "CSV exported successfully" },
                         onFailure = { "Export failed: " + (it.message ?: it.javaClass.simpleName) })
+                }
+            }
+            val importFile=rememberLauncherForActivityResult(
+                ActivityResultContracts.OpenDocument()
+            ) { uri ->
+                if(uri!=null) scope.launch {
+                    val result=withContext(Dispatchers.IO) {
+                        runCatching {
+                            contentResolver.openInputStream(uri)?.reader(Charsets.UTF_8)?.use {
+                                database.importCsv(it)
+                            } ?: error("Cannot open selected CSV")
+                        }
+                    }
+                    result.fold(onSuccess={ id ->
+                        message="Imported as session #"+id
+                        sessionList=withContext(Dispatchers.IO){database.list()}
+                        firstId=id
+                        page="Compare"
+                    }, onFailure={ e ->
+                        message="Import failed without partial save: "+
+                            (e.message ?: e.javaClass.simpleName)
+                    })
                 }
             }
             LaunchedEffect(Unit) {
@@ -552,7 +578,11 @@ class MainActivity : ComponentActivity() {
                                     "Sessions" -> {
                                         GlassPanel {
                                             Text("Recorded runs", style = MaterialTheme.typography.titleMedium)
-                                            Text("Only explicit sessions are recorded. Labels are not proof of applied limits.",
+                                            OutlinedButton(onClick={importFile.launch(arrayOf("*/*"))},
+                                                 enabled=!status.running && !status.starting) {
+                                                 Text("Import CSV")
+                                             }
+                                             Text("Only explicit sessions are recorded. Labels are not proof of applied limits.",
                                                 color = muted, style = MaterialTheme.typography.bodySmall)
                                             OutlinedButton(onClick = {
                                                 scope.launch { sessionList = withContext(Dispatchers.IO) { database.list() } }
@@ -579,7 +609,13 @@ class MainActivity : ComponentActivity() {
                                     "Compare" -> {
                                         GlassPanel {
                                             Text("Analysis & Session Compare", style = MaterialTheme.typography.titleMedium)
-                                            Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
+                                            OutlinedButton(onClick={importFile.launch(arrayOf("*/*"))},
+                                                 enabled=!status.running && !status.starting) {
+                                                 Text("Import CSV")
+                                             }
+                                             Text("Import creates an offline session; compare elapsed time, not identical game events.",
+                                                 color=muted,style=MaterialTheme.typography.bodySmall)
+                                             Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
                                                 Text("Active 3D gameplay: GPU ≥ 15% (heuristic)",
