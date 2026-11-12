@@ -32,6 +32,7 @@ class StatusProvider : ContentProvider() {
             putString("ram", s?.ramGiB?.let { "%.2f GiB".format(java.util.Locale.US,it) })
             putString("clock", s?.cpuClockSummary)
             putString("observedLimits", s?.observedCpuLimits)
+            putString("coreLoads", s?.perCoreLoads)
             putString("power", s?.signedBatteryWatts?.let {
                 "%.2f W".format(java.util.Locale.US,it)
             })
