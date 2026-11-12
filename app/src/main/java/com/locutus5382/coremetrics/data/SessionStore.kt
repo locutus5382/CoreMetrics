@@ -16,7 +16,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val label: String, val configuration: String, val status: String, val count: Int)
     data class Point(val timeMs: Long, val cpu: Double?, val gpu: Double?,
         val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
-        val batteryWatts: Double?, val sfFps: Double?)
+        val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?)
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
@@ -117,14 +117,15 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
 
     fun points(id: Long, max: Int = 2500): List<Point> = readableDatabase.rawQuery(
         """SELECT time_ms,cpu_temp,gpu_temp,cpu_pct,gpu_pct,ram_gib,
-        battery_net_w,sf_layer_fps
+        battery_net_w,sf_layer_fps,app_package
         FROM samples WHERE session_id=? ORDER BY time_ms ASC LIMIT ?""",
         arrayOf(id.toString(), max.coerceIn(1,5000).toString())
     ).use { c ->
         fun value(i: Int): Double? = if (c.isNull(i)) null else c.getDouble(i)
         buildList {
             while (c.moveToNext()) add(Point(c.getLong(0),value(1),value(2),
-                value(3),value(4),value(5),value(6),value(7)))
+                value(3),value(4),value(5),value(6),value(7),
+                if (c.isNull(8)) null else c.getString(8)))
         }
     }
 
