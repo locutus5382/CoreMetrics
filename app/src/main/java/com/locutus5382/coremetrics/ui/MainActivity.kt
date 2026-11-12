@@ -152,6 +152,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             var page by rememberSaveable { mutableStateOf("Live") }
             var status by remember { mutableStateOf(ScreenStatus()) }
+            var overlayAllowed by remember {
+                mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
+            }
             val liveTrace = remember { mutableStateListOf<LiveTracePoint>() }
             var diagnosticReport by remember { mutableStateOf("") }
             var label by rememberSaveable { mutableStateOf(prefs.getString("label", "NFS benchmark") ?: "NFS benchmark") }
@@ -209,6 +212,7 @@ class MainActivity : ComponentActivity() {
                             while (liveTrace.size > 70) liveTrace.removeAt(0)
                         }
                         status = next
+                        overlayAllowed=Settings.canDrawOverlays(this@MainActivity)
                         delay(1300L)
                     }
                 }
@@ -621,7 +625,7 @@ class MainActivity : ComponentActivity() {
                                             options=hudOptions,
                                             isArmed=status.standby || status.running,
                                             recording=status.running,
-                                            permissionGranted=Settings.canDrawOverlays(this@MainActivity),
+                                            permissionGranted=overlayAllowed,
                                             onChange={ persistHud(it) },
                                             onArm={ armHud() },
                                             onDisarm={ closeHud() },
