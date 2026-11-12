@@ -142,9 +142,6 @@ class MainActivity : ComponentActivity() {
             var page by rememberSaveable { mutableStateOf("Live") }
             var status by remember { mutableStateOf(ScreenStatus()) }
             val liveTrace = remember { mutableStateListOf<LiveTracePoint>() }
-            var fpsExperimental by rememberSaveable {
-                mutableStateOf(prefs.getBoolean("experimental_fps",false))
-            }
             var diagnosticReport by remember { mutableStateOf("") }
             var label by rememberSaveable { mutableStateOf(prefs.getString("label", "NFS benchmark") ?: "NFS benchmark") }
             var configuration by rememberSaveable {
