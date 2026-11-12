@@ -15,26 +15,37 @@ internal object RecorderLease {
     private const val MAX_REC_AGE_MS=90_000L
     private const val MAX_STANDBY_AGE_MS=10*60_000L
     data class Saved(val recording:Boolean,val id:Long,val label:String,
-        val configuration:String,val intervalMs:Long)
+        val configuration:String,val intervalMs:Long,val hudEnabled:Boolean)
 
     private fun prefs(context:Context)=
         context.getSharedPreferences(FILE,Context.MODE_PRIVATE)
     private fun save(context:Context,recording:Boolean,id:Long,label:String,
-        config:String,interval:Long):Boolean {
+        config:String,interval:Long,hud:Boolean,restored:Boolean):Boolean {
         val p=prefs(context)
         return p.edit()
             .putBoolean("active",true).putBoolean("recording",recording)
             .putLong("id",id).putString("label",label.take(64))
             .putString("config",config.take(40))
             .putLong("interval",if(interval==2000L)2000L else 5000L)
+            .putBoolean("hud_enabled",hud)
+            .putInt("recoveries",if(restored)
+                p.getInt("recoveries",0) else 0)
             .putLong("heartbeat_uptime",SystemClock.elapsedRealtime())
             .putLong("heartbeat_wall",System.currentTimeMillis())
             .commit()
     }
-    fun standby(context:Context,label:String,config:String,intervalMs:Long)=
-        save(context,false,0L,label,config,intervalMs)
-    fun start(context:Context,id:Long,label:String,config:String,intervalMs:Long)=
-        if(id>0L) save(context,true,id,label,config,intervalMs) else false
+    fun standby(context:Context,label:String,config:String,intervalMs:Long,
+        restored:Boolean=false)=
+        save(context,false,0L,label,config,intervalMs,true,restored)
+    fun start(context:Context,id:Long,label:String,config:String,
+        intervalMs:Long,hud:Boolean,restored:Boolean=false)=
+        if(id>0L) save(context,true,id,label,config,intervalMs,hud,restored) else false
+    fun markRecovery(context:Context):Boolean {
+        val p=prefs(context)
+        val count=p.getInt("recoveries",0)
+        if(count>=2)return false
+        return p.edit().putInt("recoveries",count+1).commit()
+    }
     fun heartbeat(context:Context) {
         val p=prefs(context)
         if(p.getBoolean("active",false) && p.getBoolean("recording",false)) {
@@ -53,7 +64,7 @@ internal object RecorderLease {
      */
     fun recover(context:Context):Saved? {
         val p=prefs(context)
-        if(!p.getBoolean("active",false))return null
+        if(!p.getBoolean("active",false) || p.getInt("recoveries",0)>=2)return null
         val recording=p.getBoolean("recording",false)
         val savedUptime=p.getLong("heartbeat_uptime",-1L)
         val savedWall=p.getLong("heartbeat_wall",-1L)
@@ -68,6 +79,7 @@ internal object RecorderLease {
         return Saved(recording,id,
             p.getString("label","Gameplay")?:"Gameplay",
             p.getString("config","Unknown")?:"Unknown",
-            p.getLong("interval",5000L))
+            p.getLong("interval",5000L),
+            p.getBoolean("hud_enabled",false))
     }
 }

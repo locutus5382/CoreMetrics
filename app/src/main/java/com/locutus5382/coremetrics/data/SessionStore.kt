@@ -93,6 +93,13 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         }, "id=?", arrayOf(id.toString()))
     }
 
+    /** Verify the old ID is an unfinished user-started recording. */
+    @Synchronized fun canResume(id:Long):Boolean =
+        readableDatabase.rawQuery(
+            "SELECT status FROM sessions WHERE id=?",
+            arrayOf(id.toString())
+        ).use { c -> c.moveToFirst() && c.getString(0)=="RECORDING" }
+
     /** Reconcile a previous process death without deleting its persisted samples. */
     @Synchronized fun recoverInterruptedSessions(time: Long): Int {
         val values = ContentValues().apply {
