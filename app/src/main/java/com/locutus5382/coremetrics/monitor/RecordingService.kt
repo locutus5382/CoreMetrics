@@ -130,7 +130,8 @@ class RecordingService:Service() {
             onLockClick={startService(Intent(this,RecordingService::class.java)
                 .setAction(HUD_LOCK))},
             onDismissClick={startService(Intent(this,RecordingService::class.java)
-                .setAction(DISARM))})
+                .setAction(DISARM))},
+            onOptionsChanged={ settings=it })
         MonitorState.hudState=result
         MonitorState.hudLocked=hud.isLocked()
         RecorderJournal.event(this,"HUD_ATTACH",result)
