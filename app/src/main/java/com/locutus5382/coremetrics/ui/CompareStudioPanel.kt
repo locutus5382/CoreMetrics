@@ -75,14 +75,24 @@ internal fun CompareStudioPanel(
         val end=to.coerceIn(start+minimum,total)
         draftStart=start;draftEnd=end;applied=toWindow(start,end);preset=name
     }
-    val computed by produceState<CompareStudioAnalysis.Result?>(
-        initialValue=null,sessionA,pointsA,sessionB,pointsB,applied
+    val computation by produceState<AnalysisComputation<CompareStudioAnalysis.Result>>(
+        initialValue=AnalysisComputation.Loading,
+        sessionA,pointsA,sessionB,pointsB,applied
     ) {
         value=withContext(Dispatchers.Default) {
-            runCatching {
-                CompareStudioAnalysis.analyze(sessionA,pointsA,sessionB,pointsB,applied)
-            }.getOrNull()
+            try {
+                AnalysisComputation.Ready(CompareStudioAnalysis.analyze(
+                    sessionA,pointsA,sessionB,pointsB,applied))
+            } catch(e:kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch(e:Exception) {
+                AnalysisComputation.Failed(e.message ?: "Unable to compare these windows")
+            }
         }
+    }
+    val computed=when(val status=computation) {
+        is AnalysisComputation.Ready -> status.result
+        else -> null
     }
     val result=computed?.takeIf {
         it.window==applied && it.a.session.id==sessionA.id &&
@@ -96,8 +106,15 @@ internal fun CompareStudioPanel(
             Text("Same elapsed-time interval, not necessarily the same game scene. "+
                 "All Δ values use B − A.",
                 color=coreSecondary,style=MaterialTheme.typography.bodySmall)
-            if(result==null) LinearProgressIndicator(Modifier.fillMaxWidth())
-            else {
+            if(result==null) {
+                when(val status=computation) {
+                    is AnalysisComputation.Failed ->
+                        Text("Cannot compare this selection: "+status.message,
+                            color=solarOrange,
+                            style=MaterialTheme.typography.bodySmall)
+                    else -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            } else {
                 val ready=result.observationsUsable
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                     Text(result.evidenceLabel,

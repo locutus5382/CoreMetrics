@@ -49,7 +49,8 @@ object SessionRegimeAnalyzer {
         val deltaProjectedHours: Double? = null,
         val baseline: Boolean = false
     )
-    private data class Run(val key: String, val samples: MutableList<Sample>)
+    private data class Run(val key: String, val samples: MutableList<Sample>,
+        val continuityBlock:Int)
 
     /**
      * Normalize only policy3 and policy7 ceilings: policy0 may change
@@ -86,10 +87,23 @@ object SessionRegimeAnalyzer {
         if (input.isEmpty()) return emptyList()
         // Build segments from the FULL chronology so filtering menus/loading
         // cannot accidentally bridge disconnected time ranges.
-        val runs = mutableListOf<Run>()
-        for (s in input.sortedBy { it.timeMs }) {
-            val k = key(s.observedCpuLimits)
-            if (runs.lastOrNull()?.key != k) runs.add(Run(k, mutableListOf(s)))
+        val chronological=input.sortedBy { it.timeMs }
+        val intervals=chronological.zipWithNext{ x,y -> y.timeMs-x.timeMs }
+            .filter{it>0L}.sorted()
+        val typical=intervals.getOrNull(intervals.size/2) ?: 5_000L
+        val gapLimit=kotlin.math.max(6_000L,
+            kotlin.math.min(15_000L,typical*3))
+        val runs=mutableListOf<Run>()
+        var continuityBlock=0
+        var priorTime:Long?=null
+        for(s in chronological){
+            if(priorTime!=null && (s.timeMs<=priorTime ||
+                s.timeMs-priorTime>gapLimit))continuityBlock++
+            priorTime=s.timeMs
+            val k=key(s.observedCpuLimits)
+            if(runs.lastOrNull()?.key!=k ||
+                runs.lastOrNull()?.continuityBlock!=continuityBlock)
+                runs.add(Run(k,mutableListOf(s),continuityBlock))
             else runs.last().samples.add(s)
         }
         // Suppress 1-2 sample transition glitches. Prefer matching surrounding
@@ -97,23 +111,26 @@ object SessionRegimeAnalyzer {
         var i = 0
         while (runs.size > 1 && i < runs.size) {
             if (runs[i].samples.size >= MIN_RUN_SAMPLES) { i++; continue }
+            val previous=i>0 &&
+                runs[i-1].continuityBlock==runs[i].continuityBlock
+            val next=i+1<runs.size &&
+                runs[i+1].continuityBlock==runs[i].continuityBlock
             when {
-                i > 0 && i + 1 < runs.size && runs[i-1].key == runs[i+1].key -> {
+                previous && next && runs[i-1].key==runs[i+1].key -> {
                     runs[i-1].samples.addAll(runs[i].samples)
                     runs[i-1].samples.addAll(runs[i+1].samples)
-                    runs.removeAt(i+1)
+                    runs.removeAt(i+1);runs.removeAt(i)
+                    i=(i-1).coerceAtLeast(0)
+                }
+                !previous && next -> {
+                    runs[i+1].samples.addAll(0,runs[i].samples)
                     runs.removeAt(i)
-                    i = (i-1).coerceAtLeast(0)
                 }
-                i == 0 -> {
-                    runs[1].samples.addAll(0, runs[0].samples)
-                    runs.removeAt(0)
-                }
-                else -> {
+                previous -> {
                     runs[i-1].samples.addAll(runs[i].samples)
-                    runs.removeAt(i)
-                    i = (i-1).coerceAtLeast(0)
+                    runs.removeAt(i);i=(i-1).coerceAtLeast(0)
                 }
+                else -> i++ // Isolated short block; never merge across a gap.
             }
         }
 
@@ -128,12 +145,30 @@ object SessionRegimeAnalyzer {
                 run.samples.filter { (it.gpuLoadPct ?: -1.0) >= gpuLoadThreshold }
             else run.samples
             if (stats.isEmpty()) null else {
-                val power = mean(stats.map {
-                    it.batteryNetW?.takeIf { w ->
-                        w.isFinite() && w > 0.1 &&
-                            it.batteryPowerStatus?.startsWith("DISCHARGING") == true
+                // Time-weighted terminal discharge; use original consecutive
+                // intervals, never bridge gaps or filtered-out loading/menu time.
+                var integratedWms=0.0
+                var dischargeMs=0L
+                for(j in 1 until run.samples.size){
+                    val previous=run.samples[j-1]
+                    val current=run.samples[j]
+                    val dt=current.timeMs-previous.timeMs
+                    if(dt<=0 || dt>gapLimit)continue
+                    if(activeGameplayOnly &&
+                        ((previous.gpuLoadPct ?: -1.0)<gpuLoadThreshold ||
+                         (current.gpuLoadPct ?: -1.0)<gpuLoadThreshold))continue
+                    fun eligible(s:Sample)=s.batteryNetW?.takeIf{w->
+                        w.isFinite() && w>0.1 && w<100.0 &&
+                            s.batteryPowerStatus?.startsWith("DISCHARGING")==true
                     }
-                })
+                    val x=eligible(previous);val y=eligible(current)
+                    if(x!=null && y!=null){
+                        integratedWms+=(x+y)*0.5*dt
+                        dischargeMs+=dt
+                    }
+                }
+                val power=if(dischargeMs>0L)
+                    integratedWms/dischargeMs else null
                 RegimeSegment(
                     index=0, key=run.key, label=label(run.key),
                     startMs=run.samples.first().timeMs,

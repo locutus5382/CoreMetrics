@@ -303,7 +303,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 if(row.size!=columns.width) error("CSV row has unexpected column count")
                 if(rowCount>=12_000) error("CSV exceeds 12,000 sample import limit")
                 val now=columns.time(row)
-                if(rowCount>0 && now<lastTime) error("CSV timestamps out of order")
+                TelemetrySanity.requireIncreasing(
+                    if(rowCount==0)null else lastTime,now)
                 if(rowCount==0) {
                     firstTime=now
                     val label=columns.field(row,"game_label")?.take(60) ?: "Imported session"
@@ -326,11 +327,21 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     put("session_id",sessionId)
                     put("time_ms",now)
                     fun decimal(column:String,key:String) {
-                        columns.number(row,key)?.let { put(column,it) }
+                        val source=columns.field(row,key) ?: return
+                        val v=source.toDoubleOrNull()
+                        require(v!=null && TelemetrySanity.valid(key,v)) {
+                            "Invalid $key reading on CSV row ${rowCount+2}"
+                        }
+                        put(column,v)
                     }
                     fun count(column:String,key:String) {
-                        columns.integer(row,key)?.let { if(it in Int.MIN_VALUE..Int.MAX_VALUE)
-                            put(column,it.toInt()) }
+                        val source=columns.field(row,key) ?: return
+                        val v=source.toLongOrNull()
+                        require(v!=null && v in 0L..100L &&
+                            TelemetrySanity.valid(key,v.toDouble())) {
+                            "Invalid $key reading on CSV row ${rowCount+2}"
+                        }
+                        put(column,v.toInt())
                     }
                     fun text(column:String,key:String) {
                         columns.field(row,key)?.let { put(column,it.take(1024)) }

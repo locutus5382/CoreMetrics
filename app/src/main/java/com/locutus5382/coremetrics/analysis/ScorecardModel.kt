@@ -21,7 +21,7 @@ object ScorecardModel {
         val type:Type, val title:String, val subtitle:String, val range:String,
         val badge:String, val badgesAreCaution:Boolean,
         val rows:List<ValueRow>, val series:List<Series>,
-        val graphStartMs:Long, val graphDurationMs:Long,
+        val graphStartMs:Long, val graphEndMs:Long,
         val footnotes:List<String>,
         val sourceDescription:String
     )
@@ -51,11 +51,11 @@ object ScorecardModel {
         val originalFirst=bundle.points.first().timeMs
         val rows=listOf(
             ValueRow("CPU temperature P50 / P95",
-                formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_TEMP).median," C")+
-                " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_TEMP).p95," C")),
+                formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_TEMP).median," °C")+
+                " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_TEMP).p95," °C")),
             ValueRow("GPU temperature P50 / P95",
-                formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP).median," C")+
-                " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP).p95," C")),
+                formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP).median," °C")+
+                " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP).p95," °C")),
             ValueRow("CPU / GPU load P50",
                 formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_LOAD).median,"%")+
                 " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_LOAD).median,"%")),
@@ -67,7 +67,7 @@ object ScorecardModel {
             ValueRow("Telemetry integrity",
                 bundle.benchmark.quality.score.toString()+"/100 · "+
                 bundle.benchmark.quality.gapCount.toString()+" gaps"),
-            ValueRow("CPU thermal stability",
+            ValueRow("CPU within ±2°C of window P50",
                 bundle.stability.firstOrNull{it.title=="CPU temperature"}
                     ?.percentOfValidTime?.let{formatted(it,"%",0)}
                     ?: "Unavailable")
@@ -89,7 +89,7 @@ object ScorecardModel {
                 Series("GPU temperature",points(bundle.points,bundle.sourceOriginMs,
                     SessionDiagnosticsAnalyzer.Metric.GPU_TEMP),result.gapLimitMs)
             ),
-            graphStartMs=start,graphDurationMs=max(start+1L,end),
+            graphStartMs=start,graphEndMs=max(start+1L,end),
             footnotes=listOf(
                 "Source samples: "+bundle.points.size+
                     " | observed first: "+elapsed(originalFirst-bundle.sourceOriginMs)+
@@ -97,9 +97,9 @@ object ScorecardModel {
                     formatted(bundle.benchmark.quality.coveragePct,"%",0),
                 "P95 is an upper-tail sample percentile. It is not a measure of FPS or stutter.",
                 "Battery watts are terminal discharge measurements, not CPU/GPU chip power.",
-                "No values interpolated across absent readings or recording gaps."
+                "Within ±2°C of median is not thermal equilibrium. Gaps are not interpolated."
             ),
-            sourceDescription="CoreMetrics v0.9.0 · Local/offline · Original data unchanged"
+            sourceDescription="CoreMetrics v0.9.1 · Local/offline · Original data unchanged"
         )
     }
 
@@ -119,7 +119,7 @@ object ScorecardModel {
         val rows=metrics.map{(name,metric)->
             val p95=name.endsWith("P95")
             val unit=if(metric==SessionDiagnosticsAnalyzer.Metric.CPU_LOAD||
-                metric==SessionDiagnosticsAnalyzer.Metric.GPU_LOAD)"%" else " C"
+                metric==SessionDiagnosticsAnalyzer.Metric.GPU_LOAD)"%" else " °C"
             val left=if(p95)a.p95(metric) else a.median(metric)
             val right=if(p95)b.p95(metric) else b.median(metric)
             ValueRow(name,formatted(left,unit),formatted(right,unit),
@@ -160,9 +160,9 @@ object ScorecardModel {
                 Series("CPU temp B",points(b.points,b.originMs,
                     SessionDiagnosticsAnalyzer.Metric.CPU_TEMP),b.diagnostics.gapLimitMs)
             ),graphStartMs=result.window.startElapsedMs,
-            graphDurationMs=result.window.endElapsedMs,
+            graphEndMs=result.window.endElapsedMs,
             footnotes=notes,
-            sourceDescription="CoreMetrics v0.9.0 · Observational comparison, not measured FPS"
+            sourceDescription="CoreMetrics v0.9.1 · Observational comparison, not measured FPS"
         )
     }
 }

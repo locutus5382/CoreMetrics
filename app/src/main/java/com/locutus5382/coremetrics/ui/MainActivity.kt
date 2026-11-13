@@ -74,6 +74,7 @@ import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
 import com.locutus5382.coremetrics.analysis.SegmentAnalysis
 import com.locutus5382.coremetrics.analysis.CompareStudioAnalysis
 import com.locutus5382.coremetrics.analysis.ScorecardModel
+import com.locutus5382.coremetrics.analysis.ScorecardExportRequest
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -103,12 +104,6 @@ private val pages = listOf("Live", "Sessions", "Compare", "HUD", "Settings")
 private data class AbWindowExportRequest(
     val sessionAId:Long,val sessionBId:Long,
     val startElapsedMs:Long,val endElapsedMs:Long
-)
-
-private data class ScorecardPngRequest(
-    val firstId:Long,val secondId:Long,
-    val startMs:Long,val endMs:Long,
-    val styleKey:String,val shareAfterSave:Boolean
 )
 
 private data class SegmentExportRequest(
@@ -233,8 +228,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v090themes") -> "CoreMetrics v0.9.0 Themes • Record"
-                    packageName.endsWith(".v090base") -> "CoreMetrics v0.9.0 Frosted • Record"
+                    packageName.endsWith(".v091themes") -> "CoreMetrics v0.9.1 Themes • Record"
+                    packageName.endsWith(".v091base") -> "CoreMetrics v0.9.1 Frosted • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -266,8 +261,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v090themes"))"CoreMetrics v0.9.0 Themes · HUD"
-                else if(packageName.endsWith(".v090base"))"CoreMetrics v0.9.0 Frosted · HUD"
+                if(packageName.endsWith(".v091themes"))"CoreMetrics v0.9.1 Themes · HUD"
+                else if(packageName.endsWith(".v091base"))"CoreMetrics v0.9.1 Frosted · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -361,7 +356,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v090base")
+            val supportsThemeChoice=!packageName.endsWith(".v091base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -501,7 +496,8 @@ class MainActivity : ComponentActivity() {
             var segmentTextRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
             var segmentCsvRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
             var abWindowExport by remember { mutableStateOf(null as AbWindowExportRequest?) }
-            var pngRequest by remember { mutableStateOf(null as ScorecardPngRequest?) }
+            // Persist pending SAF intent across configuration/Activity recreation.
+            var pngRequest by rememberSaveable { mutableStateOf(null as String?) }
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -648,12 +644,13 @@ class MainActivity : ComponentActivity() {
             val pngDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("image/png")
             ) { uri ->
-                val request=pngRequest
+                val request=ScorecardExportRequest.decode(pngRequest)
                 pngRequest=null
                 if(uri!=null && request!=null)scope.launch {
-                    val outcome=withContext(Dispatchers.IO) {
-                        runCatching {
-                            val sessions=database.list(200)
+                    val outcome=try {
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                val sessions=database.list(200)
                             val a=sessions.firstOrNull {it.id==request.firstId}
                                 ?:error("Source session no longer exists")
                             val pointsA=database.points(a.id)
@@ -682,8 +679,23 @@ class MainActivity : ComponentActivity() {
                                 ScorecardPngRenderer.write(
                                     spec,SurfaceFinish.parse(request.styleKey),out)
                             }?:error("Cannot open PNG destination")
+                            }
                         }
+                    } catch(e:kotlin.coroutines.cancellation.CancellationException) {
+                        // Activity rotation or cancellation can happen while the
+                        // document provider already owns a partially written URI.
+                        // Cleanup must run even when the UI coroutine is cancelled.
+                        withContext(kotlinx.coroutines.NonCancellable+Dispatchers.IO) {
+                            runCatching {contentResolver.delete(uri,null,null)}
+                        }
+                        throw e
                     }
+                    // SAF document may already exist even if encode/write fails.
+                    // Best effort: remove only the just-created selected URI.
+                    val removedPartial=if(outcome.isFailure)withContext(Dispatchers.IO) {
+                        runCatching {contentResolver.delete(uri,null,null)>0}
+                            .getOrDefault(false)
+                    }else true
                     outcome.fold(onSuccess={
                         message="PNG scorecard saved (1600 × 1050, original evidence preserved)"
                         if(request.shareAfterSave) {
@@ -704,7 +716,9 @@ class MainActivity : ComponentActivity() {
                         }
                     },onFailure={
                         message="PNG export failed: "+
-                            (it.message?:it.javaClass.simpleName)
+                            (it.message?:it.javaClass.simpleName)+
+                            (if(removedPartial)"" else
+                                " · Cannot remove incomplete file; check chosen folder")
                     })
                 }
             }
@@ -865,7 +879,7 @@ class MainActivity : ComponentActivity() {
                     Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
             val displayColorScheme=if(appliedFinish==SurfaceFinish.FROSTED)
-                // Exact pre-v0.9.0 Frosted Material3 colors and defaults.
+                // Exact pre-v0.9.1 Frosted Material3 colors and defaults.
                 darkColorScheme(primary=iceBlue,onPrimary=cobaltNavy,
                     secondary=coreCyan,surface=cobaltNavy,
                     background=cobaltNavy,onSurface=coreText)
@@ -1243,11 +1257,11 @@ class MainActivity : ComponentActivity() {
                                                             r.session.id+"_"+range.startMs+"_"+range.endMs+".csv")
                                                     },
                                                     onExportPng={ range,share ->
-                                                        pngRequest=ScorecardPngRequest(
+                                                        pngRequest=ScorecardExportRequest(
                                                             firstId=r.session.id,secondId=0L,
                                                             startMs=range.startMs,endMs=range.endMs,
                                                             styleKey=appliedFinish.key,
-                                                            shareAfterSave=share)
+                                                            shareAfterSave=share).encode()
                                                         pngDocument.launch(
                                                             "CoreMetrics_Session_"+r.session.id+
                                                                 "_"+range.startMs+"_"+range.endMs+".png")
@@ -1315,6 +1329,7 @@ class MainActivity : ComponentActivity() {
                                                     }) { Text("CSV") }
                                                     OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         detailedId=s.id;page="Sessions"
+                                                        scope.launch {contentScroll.scrollTo(0)}
                                                     }){Text("Analyze")}
                                                     OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         metadataEditorId=if(metadataEditorId==s.id)
@@ -1500,12 +1515,12 @@ class MainActivity : ComponentActivity() {
                                                                 "_"+window.startElapsedMs+"_"+window.endElapsedMs+".txt")
                                                     },
                                                     onExportPng={ window,share ->
-                                                        pngRequest=ScorecardPngRequest(
+                                                        pngRequest=ScorecardExportRequest(
                                                             firstId=firstId,secondId=secondId,
                                                             startMs=window.startElapsedMs,
                                                             endMs=window.endElapsedMs,
                                                             styleKey=appliedFinish.key,
-                                                            shareAfterSave=share)
+                                                            shareAfterSave=share).encode()
                                                         pngDocument.launch(
                                                             "CoreMetrics_AB_"+firstId+"_"+secondId+
                                                                 "_"+window.startElapsedMs+

@@ -30,6 +30,26 @@ class BenchmarkAnalyzerTest {
         assertEquals(2.0,r.energy.measuredSeconds,0.01)
         assertTrue(r.quality.score<60)
     }
+    @Test fun warmUpExclusionAlsoExcludesPriorChargingFromPowerCondition() {
+        val src=(0..24).map {
+            p(1_000_000L+it*5_000L,4.0,
+                if(it<=4)"CHARGING_OR_EXTERNAL_POWER" else
+                    "DISCHARGING; BATTERY_NET_ONLY")
+        }
+        val report=BenchmarkAnalyzer.analyze(sess(),src,skipFirstSeconds=30)
+        assertEquals(BenchmarkAnalyzer.PowerCondition.DISCHARGING,
+            report.energy.powerCondition)
+        assertEquals(4.0,report.energy.weightedMeanW!!,.00001)
+    }
+    @Test fun importedOutOfRangeTemperaturesNeverAffectMainBenchmark() {
+        val rows=listOf(p(1_000_000L).copy(cpu=300.0,gpu=-100.0,
+            cpuLoad=350.0,gpuLoad=120.0),p(1_005_000L))
+        val report=BenchmarkAnalyzer.analyze(sess(),rows)
+        assertEquals(45.0,report.meanCpuC!!,.001)
+        assertEquals(39.0,report.meanGpuC!!,.001)
+        assertEquals(42.0,report.meanCpuLoad!!,.001)
+        assertEquals(40.0,report.meanGpuLoad!!,.001)
+    }
     @Test fun nearFlatThermalWindowIsNotEquilibriumClaim() {
         val input=(0..45).map{p(1_000_000L+it*2_000L)}
         val r=BenchmarkAnalyzer.analyze(sess(),input)

@@ -66,6 +66,8 @@ class RecordingService:Service() {
     private lateinit var hud:RecorderHud
     private var task:Job?=null
     private var stopping=false
+    private var explicitUserStop=false
+    private var destroying=false
     private var armed=false
     private var disarmAfterStop=false
     private var appInForeground=false
@@ -371,6 +373,7 @@ class RecordingService:Service() {
                 MonitorState.standby=false
                 val current=task
                 if(current?.isActive==true || MonitorState.starting){
+                    explicitUserStop=true
                     stopping=true
                     current?.cancel()
                 } else disarmNow()
@@ -379,6 +382,7 @@ class RecordingService:Service() {
             STOP -> {
                 RecorderJournal.event(this,"STOP_REQUESTED","id="+MonitorState.sessionId)
                 RecorderLease.clear(this)
+                explicitUserStop=true
                 stopping=true
                 MonitorState.message="Stopping and saving…"
                 val current=task
@@ -400,6 +404,7 @@ class RecordingService:Service() {
                     if(!armed)stopSelf(startId)
                     return START_NOT_STICKY
                 }
+                explicitUserStop=false
                 val p=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
                 val request=command.getLongExtra(INTERVAL,p.getLong("interval_ms",5000L))
                 val interval=if(request==2000L)2000L else 5000L
@@ -515,7 +520,7 @@ class RecordingService:Service() {
                         }
                         outcome="COMPLETED"
                     }catch(_:CancellationException){
-                        outcome=if(stopping) "COMPLETED" else "INTERRUPTED"
+                        outcome=RecorderContinuation.cancellationOutcome(explicitUserStop)
                     }catch(e:Exception){
                         outcome="FAILED"
                         RecorderJournal.event(this@RecordingService,"SAMPLING_FAILED",
@@ -536,9 +541,12 @@ class RecordingService:Service() {
                             withContext(Dispatchers.Main.immediate){
                                 task=null
                                 stopping=false
-                                if(armed && userWantsHud && !disarmAfterStop){
+                                if(destroying) {
+                                    armed=false
+                                    MonitorState.standby=false
+                                } else if(armed && userWantsHud && !disarmAfterStop) {
                                     standby()
-                                }else{
+                                } else {
                                     disarmAfterStop=false
                                     disarmNow()
                                 }
@@ -586,6 +594,7 @@ class RecordingService:Service() {
     override fun onDestroy(){
         RecorderJournal.event(this,"SERVICE_DESTROYED","armed="+armed+
             " active="+(task?.isActive==true))
+        destroying=true
         stopping=true
         runCatching{hud.hide()}
         task?.cancel()

@@ -186,7 +186,7 @@ internal object ScorecardPngRenderer {
         val hi=(valid.maxOrNull()?:70.0)+3.0
         val scale=max(5.0,hi-lo)
         val t0=card.graphStartMs
-        val period=max(1L,card.graphDurationMs-t0)
+        val period=max(1L,card.graphEndMs-t0)
         fun xAt(t:Long)=(left+(t-t0).toDouble()/period*
             (right-left)).toFloat()
         fun yAt(t:Double)=(bottom-(t-lo)/scale*(bottom-top)).toFloat()
@@ -198,7 +198,7 @@ internal object ScorecardPngRenderer {
             var lastTime:Long?=null
             for(p in series.samples) {
                 val v=p.value
-                if(v==null || !v.isFinite() || p.elapsedMs !in t0..card.graphDurationMs) {
+                if(v==null || !v.isFinite() || p.elapsedMs !in t0..card.graphEndMs) {
                     lastTime=null
                     continue
                 }
@@ -212,7 +212,7 @@ internal object ScorecardPngRenderer {
         }
         canvas.restore()
         label(formatTime(t0),82f,868f,18f,MUTED,false,220f,true)
-        label(formatTime(card.graphDurationMs),1424f,868f,18f,MUTED,false,120f,true)
+        label(formatTime(card.graphEndMs),1424f,868f,18f,MUTED,false,120f,true)
 
         // Keep limitations legible in every shared PNG; do not strip caveats.
         label("MEASUREMENT NOTES  /  PROVENANCE",60f,926f,22f,GOLD,true,1400f,matte)

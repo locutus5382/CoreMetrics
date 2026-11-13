@@ -17,6 +17,10 @@ object CpuMath {
 
     /** maxByOrNull always prefers the *first* item on an exact tie.
      * A tied or idle interval has no identifiable busiest core. */
+    /** Ties invalidate core identity, not observed peak utilization. */
+    fun maxCoreLoad(loads:List<Pair<String,Int>>):Int? =
+        loads.maxOfOrNull{it.second}?.takeIf{it>0}
+
     fun uniqueBusiest(loads:List<Pair<String,Int>>):Pair<String,Int>? {
         val max=loads.maxOfOrNull{it.second}?:return null
         if(max<=0)return null

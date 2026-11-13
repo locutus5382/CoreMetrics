@@ -775,7 +775,7 @@ internal class RecorderHud(private val context:Context) {
     private fun renderTelemetry() {
         val view=mainText ?:return
         if(!recording) {
-            view.text="COREMETRICS · READY\\nNo sensor sampling until REC"
+            view.text="COREMETRICS · READY\nNo sensor sampling until REC"
             return
         }
         val s=latest

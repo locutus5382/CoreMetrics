@@ -14,6 +14,10 @@ internal object RecorderContinuation {
             action!=RecordingService.STOP &&
             action!=RecordingService.DISARM
 
+    /** A system teardown is not a user-requested STOP. */
+    fun cancellationOutcome(explicitUserStop:Boolean):String =
+        if(explicitUserStop)"COMPLETED" else "INTERRUPTED"
+
     // Pure form for JVM tests: no Android Service must be initialized to use it.
     fun shouldContinue(active:Boolean,stopping:Boolean,terminal:Boolean):Boolean =
         active && !stopping && !terminal
