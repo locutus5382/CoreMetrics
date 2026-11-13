@@ -157,15 +157,7 @@ object BenchmarkAnalyzer {
             .distinct()
         val labels=capGroups.map{SessionRegimeAnalyzer.label(it)}
         val observed=if(labels.isEmpty())"unavailable" else labels.joinToString(" | ")
-        val normalized=session.configuration.lowercase(Locale.US)
-        val conflict=labels.isNotEmpty() && (
-            (normalized.contains("stock") && labels.any {
-                it.startsWith("Medium UC") || it.startsWith("Large UC") }) ||
-            (normalized.contains("medium") && labels.any {it.startsWith("Large UC")}) ||
-            (normalized.contains("large") && labels.any {it.startsWith("Medium UC")}) ||
-            (normalized.contains("underclock") && labels.isNotEmpty() &&
-                labels.all { it.startsWith("Stock (") })
-        )
+        val conflict=V08Analytics.profileConflict(session.configuration,labels)
         val reasons=mutableListOf<String>()
         var score=100
         if(session.status !in setOf("COMPLETED","IMPORTED_COMPLETED")) {

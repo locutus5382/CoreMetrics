@@ -8,6 +8,66 @@ import java.util.Locale
  * The number of times a core is busiest is NOT CPU residency or core time.
  */
 object V08Analytics {
+    private val coreId=Regex("""cpu[0-7]""")
+
+    /** All time filtering is non-destructive; relative to first MEASURED
+     * point, not confirmed game loading or a manually linked recording. */
+    fun afterWarmUp(points:List<SessionStore.Point>,seconds:Int):List<SessionStore.Point> {
+        if(points.isEmpty() || seconds<=0)return points
+        val first=points.minOf{it.timeMs}
+        val threshold=first+seconds.coerceAtMost(3600)*1000L
+        return points.filter{it.timeMs>=threshold}
+    }
+
+    /** Same read-only selected-vs-observed rule across Live, recorded
+     * profiles, and benchmark quality. Generic Underclocking could mean
+     * GPU-only tuning, so mismatches are review prompts, not test failures. */
+    fun profileConflict(selected:String,labels:List<String>):Boolean {
+        if(labels.isEmpty())return false
+        val choice=selected.lowercase(Locale.US)
+        return (choice.contains("stock") && labels.any{
+            it.startsWith("Medium UC") || it.startsWith("Large UC")
+        }) || (choice.contains("medium") && labels.any{
+            it.startsWith("Large UC")
+        }) || (choice.contains("large") && labels.any{
+            it.startsWith("Medium UC")
+        }) || (choice.contains("underclock") && labels.all{
+            it.startsWith("Stock (")
+        })
+    }
+
+    /** A single Live snapshot is valid for an observed-ceiling caution;
+     * no 3-sample debounce or tuner identity is inferred here. */
+    fun liveProfileWarning(selected:String,rawLimits:String?):String? {
+        val label=SessionRegimeAnalyzer.label(SessionRegimeAnalyzer.key(rawLimits))
+        if(!profileConflict(selected,listOf(label)))return null
+        return if(selected.lowercase(Locale.US).contains("underclock"))
+            "CHECK CPU LIMITS: Underclocking selected, but measured P3/P7 " +
+            "ceilings are stock-like. GPU-only tuning may still be active."
+        else "CHECK CPU LIMITS: Selected "+selected+"; observed "+label+
+            ". CPU ceilings do not authenticate the applied tuner."
+    }
+    /** These are sample-based HUD comparisons, NOT time-weighted energy rates.
+     * Never mix charging current into a discharge-power delta. */
+    data class SampleAverages(val cpuC:Double?,val peakCpuC:Double?,
+        val gpuC:Double?,val dischargeW:Double?)
+    fun sampleAverages(points:List<SessionStore.Point>):SampleAverages {
+        fun finiteMean(values:List<Double?>):Double? {
+            val valid=values.filterNotNull().filter{it.isFinite()}
+            return valid.takeIf{it.isNotEmpty()}?.average()
+        }
+        return SampleAverages(
+            finiteMean(points.map{it.cpu}),
+            points.mapNotNull{it.cpu?.takeIf(Double::isFinite)}.maxOrNull(),
+            finiteMean(points.map{it.gpu}),
+            finiteMean(points.map {
+                it.batteryWatts?.takeIf { watts ->
+                    watts.isFinite() && watts>0.1 &&
+                        it.batteryPowerStatus?.startsWith("DISCHARGING")==true
+                }
+            })
+        )
+    }
     data class CoreWinner(val core:Int,val count:Int,val sharePct:Double)
     data class CoreDistribution(val observations:Int,val ignored:Int,
         val winners:List<CoreWinner>)
@@ -15,7 +75,7 @@ object V08Analytics {
         val counts=IntArray(8)
         var valid=0
         for(point in points) {
-            val id=point.busiestCore?.takeIf{it.matches(Regex("cpu[0-7]"))}
+            val id=point.busiestCore?.takeIf{it.matches(coreId)}
                 ?.removePrefix("cpu")?.toIntOrNull()
             if(id!=null) {counts[id]++;valid++}
         }
@@ -45,9 +105,7 @@ object V08Analytics {
         val stockLikeOnly=names.isNotEmpty() && names.all {
             it.startsWith("Stock (")
         }
-        val mismatch=(selectedLower.contains("stock") && names.any {
-            it.startsWith("Large UC") || it.startsWith("Medium UC")
-        }) || (selectedLower.contains("underclock") && stockLikeOnly)
+        val mismatch=profileConflict(selected,names)
         val note=when {
             phases.isEmpty() -> "No readable P3/P7 frequency limits"
             selectedLower.contains("underclock") && stockLikeOnly ->

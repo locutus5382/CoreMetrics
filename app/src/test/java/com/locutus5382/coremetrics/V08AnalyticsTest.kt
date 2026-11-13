@@ -12,6 +12,21 @@ class V08AnalyticsTest {
         SessionStore.Point(t,45.0,40.0,40.0,35.0,5.0,4.0,null,null,
             observedCpuLimits=limits,busiestCore=core)
 
+    @Test fun compareSampleMeansOmitExternalPowerAndInvalidValues() {
+        val a=p(0).copy(cpu=45.0,gpu=40.0,batteryWatts=4.0,
+            batteryPowerStatus="DISCHARGING; BATTERY_NET_ONLY")
+        val b=p(2_000).copy(cpu=50.0,gpu=41.0,batteryWatts=-9.0,
+            batteryPowerStatus="CHARGING_OR_EXTERNAL_POWER; BATTERY_NET_ONLY")
+        val c=p(4_000).copy(cpu=55.0,gpu=42.0,batteryWatts=Double.NaN,
+            batteryPowerStatus="DISCHARGING; BATTERY_NET_ONLY")
+        val m=V08Analytics.sampleAverages(listOf(a,b,c))
+        assertEquals(50.0,m.cpuC!!,1e-5)
+        assertEquals(55.0,m.peakCpuC!!,1e-5)
+        assertEquals(41.0,m.gpuC!!,1e-5)
+        assertEquals(4.0,m.dischargeW!!,1e-5)
+        assertNull(V08Analytics.sampleAverages(listOf(b)).dischargeW)
+    }
+
     @Test fun busiestCoreCountsRecordedWinnersOnly() {
         val d=V08Analytics.busiestCores(listOf(p(10,"cpu0"),p(20,"cpu0"),
             p(30,"cpu7"),p(40,null),p(50,"cpu99")))
@@ -44,6 +59,30 @@ class V08AnalyticsTest {
         val unknown=V08Analytics.profile("Underclocking",
             listOf(p(0L,null,null)))
         assertFalse(unknown.conflict)
+    }
+
+    @Test fun liveProfileWarningsShareRecordedRules() {
+        val stock="policy3 max 2.80 GHz · policy7 max 3.19 GHz"
+        val medium="policy3 max 2.05 GHz · policy7 max 2.09 GHz"
+        val large="policy3 max 1.79 GHz · policy7 max 1.84 GHz"
+        assertNull(V08Analytics.liveProfileWarning("Stock",stock))
+        assertNotNull(V08Analytics.liveProfileWarning("Stock",medium))
+        assertNotNull(V08Analytics.liveProfileWarning("Stock",large))
+        val warning=V08Analytics.liveProfileWarning("Underclocking",stock)
+        assertTrue(warning!!.contains("GPU-only"))
+        assertNull(V08Analytics.liveProfileWarning("Underclocking",medium))
+        assertNull(V08Analytics.liveProfileWarning("Custom",large))
+        assertNull(V08Analytics.liveProfileWarning("Stock",null))
+    }
+
+    @Test fun warmupTrimKeepsAbsoluteTimestampsAndUnfilteredInput() {
+        val rows=listOf(p(30_000),p(0),p(59_999),p(29_999),p(60_000))
+        val trimmed=V08Analytics.afterWarmUp(rows,30)
+        assertEquals(listOf(30_000L,59_999L,60_000L),
+            trimmed.map{it.timeMs})
+        assertEquals(5,rows.size)
+        assertTrue(V08Analytics.afterWarmUp(listOf(p(0),p(29_999)),30).isEmpty())
+        assertEquals(rows,V08Analytics.afterWarmUp(rows,0))
     }
 
     @Test fun unknownAndMultipleCeilingsRetainPhases() {
