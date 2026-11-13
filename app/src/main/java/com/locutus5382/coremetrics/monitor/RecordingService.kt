@@ -429,6 +429,20 @@ class RecordingService:Service() {
                     RecorderJournal.event(this,"START_IGNORED","already active")
                     return continuation(command.action)
                 }
+                // After LMK a stale QS query may say idle while a fresh
+                // user-started session lease remains. Never replace that
+                // session with a second recording. Use validated recovery.
+                if(!command.getBooleanExtra(RESTORED,false)){
+                    val previous=RecorderLease.recover(this)
+                    if(previous!=null && previous.recording &&
+                        db.canResume(previous.id)){
+                        RecorderJournal.event(this,"START_REDIRECTED_TO_RECOVERY",
+                            "existing id="+previous.id)
+                        return onStartCommand(
+                            Intent(this,RecordingService::class.java)
+                                .setAction(RECOVER),flags,startId)
+                    }
+                }
                 if(!notificationsAllowed()){
                     MonitorState.message="Notifications permission required"
                     RecorderJournal.event(this,"START_DENIED","notification permission")
