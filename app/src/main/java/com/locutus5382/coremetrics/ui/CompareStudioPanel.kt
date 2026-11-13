@@ -170,7 +170,8 @@ internal fun CompareStudioPanel(
                     preset="Custom"
                 },onValueChangeFinished={
                     applied=toWindow(draftStart,draftEnd)
-                },valueRange=0f..total,modifier=Modifier.fillMaxWidth())
+                },valueRange=0f..total,colors=cmSliderColors(),
+                modifier=Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                 Text("Start "+stamp((draftStart*1000).roundToLong()),
                     color=coreText,style=MaterialTheme.typography.labelMedium)

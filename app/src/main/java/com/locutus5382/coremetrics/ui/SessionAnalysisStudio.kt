@@ -111,6 +111,7 @@ internal fun SessionAnalysisStudio(
                     applied=asRange(draftStart,draftEnd)
                 },
                 valueRange=0f..total,
+                colors=cmSliderColors(),
                 modifier=Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                 Text("Start "+stamp(draftStart),
