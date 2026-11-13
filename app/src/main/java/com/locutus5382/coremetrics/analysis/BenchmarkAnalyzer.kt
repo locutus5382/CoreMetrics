@@ -65,17 +65,23 @@ object BenchmarkAnalyzer {
         if(points.isEmpty())return Thermal("unavailable",null,null,null,0,0.0)
         val end=points.last().timeMs
         val samples=points.filter { end-it.timeMs<=60_000L &&
-            it.cpu!=null && it.cpu!!.isFinite() }
+            SessionDiagnosticsAnalyzer.value(
+                SessionDiagnosticsAnalyzer.Metric.CPU_TEMP,it)!=null }
         if(samples.isEmpty())return Thermal("unavailable",null,null,null,0,0.0)
         val duration=(samples.last().timeMs-samples.first().timeMs)/1000.0
-        val mean=mean(samples.map { it.cpu })
-        val peak=samples.mapNotNull { it.cpu }.maxOrNull()
+        val mean=mean(samples.map { SessionDiagnosticsAnalyzer.value(
+            SessionDiagnosticsAnalyzer.Metric.CPU_TEMP,it) })
+        val peak=samples.mapNotNull { SessionDiagnosticsAnalyzer.value(
+            SessionDiagnosticsAnalyzer.Metric.CPU_TEMP,it) }.maxOrNull()
         if(samples.size<12 || duration<30.0)
             return Thermal("insufficient thermal history",null,mean,peak,
                 samples.size,duration)
         val t0=samples.first().timeMs
         val ts=samples.map {(it.timeMs-t0)/60_000.0}
-        val temps=samples.map {it.cpu!!}
+        val temps=samples.map {
+            SessionDiagnosticsAnalyzer.value(
+                SessionDiagnosticsAnalyzer.Metric.CPU_TEMP,it)!!
+        }
         val midT=ts.average()
         val midTemp=temps.average()
         val covariance=ts.indices.sumOf {(ts[it]-midT)*(temps[it]-midTemp)}
@@ -107,7 +113,8 @@ object BenchmarkAnalyzer {
         val pts=if(skip==0)sorted else sorted.filter {
             it.timeMs-origin>=skip*1000L
         }
-        val statuses=sorted.mapNotNull{it.batteryPowerStatus}
+        // Warm-up/segment exclusion must also scope charging classification.
+        val statuses=pts.mapNotNull{it.batteryPowerStatus}
         val sawPlugged=statuses.any{
             it.startsWith("CHARGING_OR_EXTERNAL_POWER") ||
                 it.startsWith("FULL") || it.startsWith("PLUGGED")
@@ -125,7 +132,7 @@ object BenchmarkAnalyzer {
         val deltas=pts.zipWithNext().map { (a,b)->b.timeMs-a.timeMs }
             .filter { it>0L }
         val typical=median(deltas)
-        val gapLimit=max(6_000L,typical*3)
+        val gapLimit=max(6_000L,min(15_000L,typical*3))
         var gapCount=0
         var coveredMs=0L
         var dischargeMs=0L
@@ -176,7 +183,8 @@ object BenchmarkAnalyzer {
             score-=20
             reasons+="Sampling gaps reduce time coverage to ${fmt(coverage,0)}%"
         }
-        if(mean(pts.map {it.cpu})==null) {
+        if(mean(pts.map { SessionDiagnosticsAnalyzer.value(
+            SessionDiagnosticsAnalyzer.Metric.CPU_TEMP,it) })==null) {
             score-=10
             reasons+="CPU temperature missing"
         }
@@ -209,9 +217,16 @@ object BenchmarkAnalyzer {
             "Game FPS, FPS/W and joules/frame unavailable: source not independently " +
             "verified; one/two-second telemetry cannot provide 1% lows.")
         return Report(session,pts.size,elapsed,
-            mean(pts.map {it.cpu}),pts.mapNotNull{it.cpu}.maxOrNull(),
-            mean(pts.map {it.gpu}),mean(pts.map {it.cpuLoad}),
-            mean(pts.map {it.gpuLoad}),
+            mean(pts.map { SessionDiagnosticsAnalyzer.value(
+                SessionDiagnosticsAnalyzer.Metric.CPU_TEMP,it) }),
+            pts.mapNotNull{ SessionDiagnosticsAnalyzer.value(
+                SessionDiagnosticsAnalyzer.Metric.CPU_TEMP,it) }.maxOrNull(),
+            mean(pts.map { SessionDiagnosticsAnalyzer.value(
+                SessionDiagnosticsAnalyzer.Metric.GPU_TEMP,it) }),
+            mean(pts.map { SessionDiagnosticsAnalyzer.value(
+                SessionDiagnosticsAnalyzer.Metric.CPU_LOAD,it) }),
+            mean(pts.map { SessionDiagnosticsAnalyzer.value(
+                SessionDiagnosticsAnalyzer.Metric.GPU_LOAD,it) }),
             Quality(score,level,reasons,coverage,typical,gapCount,observed,conflict),
             Energy(if(dischargeMs>0L)wh else null,dischargeMs/1000.0,
                 energyCoverage,weightedW,mWhPerMinute,weightedW,condition),

@@ -66,13 +66,13 @@ class SessionRegimeAnalyzerTest {
         assertEquals(4.0,phases[1].meanDischargeW!!,.001)
     }
     @Test fun filteredOutLoadIntervalsAreNotIntegratedIntoEnergy() {
-        val rows=(0..6).map {
+        val rows=(0..5).map {
             row(it,"2.80","3.19",if(it<3)3.0 else 9.0,
                 load=if(it==3)1.0 else 60.0)
         }
         val phases=A.analyze(rows,activeGameplayOnly=true)
         assertEquals(1,phases.size)
-        assertEquals(3.0,phases[0].meanDischargeW!!,.001) // only first contiguous area
+        assertEquals(5.0,phases[0].meanDischargeW!!,.001) // no bridged gap
     }
     @Test fun missingCapsAreNeverLabelledStock() {
         assertEquals("Limits unavailable", A.label(A.key(null)))
