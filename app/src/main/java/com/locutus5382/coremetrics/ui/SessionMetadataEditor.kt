@@ -14,7 +14,14 @@ import com.locutus5382.coremetrics.data.SessionStore
 @Composable
 internal fun SessionMetadataEditor(session:SessionStore.Session,
     onDriver:(String?)->Unit,onResolution:(String?)->Unit,
-    onClose:()->Unit) {
+    onNote:(String?)->Unit,onConfig:(String)->Unit,
+    onDelete:()->Unit,onClose:()->Unit) {
+    var gameNote by rememberSaveable(session.id) {
+        mutableStateOf(session.note.orEmpty())
+    }
+    var confirmDelete by rememberSaveable(session.id) {
+        mutableStateOf(false)
+    }
     var driverCustom by rememberSaveable(session.id){
         mutableStateOf(session.graphicsDriver?.startsWith("Custom: ")==true)
     }
@@ -31,11 +38,28 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
     }
     Column(Modifier.fillMaxWidth().pureGlass(12).padding(11.dp),
         verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        Text("MANUAL TEST TAGS · OPTIONAL",color=iceBlue,
+        Text("EDIT SESSION · MANUAL METADATA",color=iceBlue,
             style=MaterialTheme.typography.titleSmall)
         Text("One-tap presets. Custom names are saved separately; "+
             "unknown stays unknown, not guessed from GPU activity.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+        Text("Game / track note",color=coreText)
+        OutlinedTextField(value=gameNote,onValueChange={gameNote=it.take(64)},
+            modifier=Modifier.fillMaxWidth(),singleLine=true,
+            label={Text("e.g. Hades · same scene")})
+        OutlinedButton(enabled=gameNote.trim()!=session.note.orEmpty(),
+            onClick={onNote(gameNote.trim().ifEmpty{null})}){Text("Save game note")}
+        Text("Configuration profile",color=coreText)
+        Row(Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+            listOf("Stock","Underclocking","Custom").forEach { profile ->
+                FilterChip(selected=session.configuration==profile,
+                    onClick={onConfig(profile)},label={Text(profile)})
+            }
+        }
+        Text("Profile is user-supplied, not verified from CPU clocks.",
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+        HorizontalDivider()
         Text("Graphics driver",color=coreText)
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(7.dp)) {
@@ -83,6 +107,19 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                 Text("Save resolution")
             }
         }
-        OutlinedButton(onClick=onClose){Text("Close tags")}
+        HorizontalDivider()
+        Text("Deleting permanently removes samples and linked A/B pairs.",
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+        if(confirmDelete) {
+            Text("Permanently delete session #"+session.id+" ("+
+                session.count+" samples)?",color=MaterialTheme.colorScheme.error)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick={confirmDelete=false}){Text("Cancel")}
+                Button(onClick={onDelete()}){Text("Confirm delete #"+session.id)}
+            }
+        }else{
+            OutlinedButton(onClick={confirmDelete=true}){Text("Delete session…")}
+        }
+        OutlinedButton(onClick=onClose){Text("Close editor")}
     }
 }
