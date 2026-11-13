@@ -503,7 +503,9 @@ internal class RecorderHud(private val context:Context) {
             onUnlock=onUnlockClick;onClose=onDismissClick
             this.onOptionsChanged=onOptionsChanged
             return try {
-                setVisible(true)
+                // Do NOT force the previous root visible while rebinding.
+                // The Service applies app-foreground/user-preference visibility
+                // immediately after show(), without flashing over CoreMetrics.
                 applyAppearance()
                 syncBlink()
                 "HUD_ALREADY_ATTACHED"
