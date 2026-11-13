@@ -73,6 +73,7 @@ import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
 import com.locutus5382.coremetrics.analysis.SegmentAnalysis
 import com.locutus5382.coremetrics.analysis.CompareStudioAnalysis
+import com.locutus5382.coremetrics.analysis.ScorecardModel
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -102,6 +103,12 @@ private val pages = listOf("Live", "Sessions", "Compare", "HUD", "Settings")
 private data class AbWindowExportRequest(
     val sessionAId:Long,val sessionBId:Long,
     val startElapsedMs:Long,val endElapsedMs:Long
+)
+
+private data class ScorecardPngRequest(
+    val firstId:Long,val secondId:Long,
+    val startMs:Long,val endMs:Long,
+    val styleKey:String,val shareAfterSave:Boolean
 )
 
 private data class SegmentExportRequest(
@@ -226,8 +233,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v089themes") -> "CoreMetrics v0.8.9 Themes • Record"
-                    packageName.endsWith(".v089base") -> "CoreMetrics v0.8.9 Frosted • Record"
+                    packageName.endsWith(".v090themes") -> "CoreMetrics v0.9.0 Themes • Record"
+                    packageName.endsWith(".v090base") -> "CoreMetrics v0.9.0 Frosted • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -259,8 +266,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v089themes"))"CoreMetrics v0.8.9 Themes · HUD"
-                else if(packageName.endsWith(".v089base"))"CoreMetrics v0.8.9 Frosted · HUD"
+                if(packageName.endsWith(".v090themes"))"CoreMetrics v0.9.0 Themes · HUD"
+                else if(packageName.endsWith(".v090base"))"CoreMetrics v0.9.0 Frosted · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -354,7 +361,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v089base")
+            val supportsThemeChoice=!packageName.endsWith(".v090base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -494,6 +501,7 @@ class MainActivity : ComponentActivity() {
             var segmentTextRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
             var segmentCsvRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
             var abWindowExport by remember { mutableStateOf(null as AbWindowExportRequest?) }
+            var pngRequest by remember { mutableStateOf(null as ScorecardPngRequest?) }
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -631,6 +639,73 @@ class MainActivity : ComponentActivity() {
                         onSuccess={"Selected-window A/B report exported"},
                         onFailure={"A/B export failed: "+
                             (it.message?:it.javaClass.simpleName)})
+                }
+            }
+            // Android Storage Access Framework: user explicitly chooses a PNG
+            // destination. Render offline on IO dispatcher after that choice.
+            // Share ONLY that user-owned document URI, with temporary read grant;
+            // never use private paths, auto-capture the screen or contact network.
+            val pngDocument=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("image/png")
+            ) { uri ->
+                val request=pngRequest
+                pngRequest=null
+                if(uri!=null && request!=null)scope.launch {
+                    val outcome=withContext(Dispatchers.IO) {
+                        runCatching {
+                            val sessions=database.list(200)
+                            val a=sessions.firstOrNull {it.id==request.firstId}
+                                ?:error("Source session no longer exists")
+                            val pointsA=database.points(a.id)
+                            require(pointsA.size>=a.count) {
+                                "Source session exceeds 12,000 loaded samples"
+                            }
+                            val spec=if(request.secondId==0L) {
+                                val bundle=SegmentAnalysis.create(a,pointsA,
+                                    SegmentAnalysis.Range(
+                                        request.startMs,request.endMs))
+                                ScorecardModel.single(bundle)
+                            }else {
+                                val b=sessions.firstOrNull {it.id==request.secondId}
+                                    ?:error("Comparison session B no longer exists")
+                                val pointsB=database.points(b.id)
+                                require(pointsB.size>=b.count) {
+                                    "Comparison session exceeds 12,000 loaded samples"
+                                }
+                                val report=CompareStudioAnalysis.analyze(
+                                    a,pointsA,b,pointsB,
+                                    CompareStudioAnalysis.Window(
+                                        request.startMs,request.endMs))
+                                ScorecardModel.comparison(report)
+                            }
+                            contentResolver.openOutputStream(uri,"w")?.use { out ->
+                                ScorecardPngRenderer.write(
+                                    spec,SurfaceFinish.parse(request.styleKey),out)
+                            }?:error("Cannot open PNG destination")
+                        }
+                    }
+                    outcome.fold(onSuccess={
+                        message="PNG scorecard saved (1600 × 1050, original evidence preserved)"
+                        if(request.shareAfterSave) {
+                            runCatching {
+                                val shareIntent=Intent(Intent.ACTION_SEND).apply {
+                                    type="image/png"
+                                    putExtra(Intent.EXTRA_STREAM,uri)
+                                    clipData=ClipData.newUri(
+                                        contentResolver,"CoreMetrics PNG scorecard",uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                startActivity(Intent.createChooser(
+                                    shareIntent,"Share CoreMetrics scorecard"))
+                            }.onFailure {
+                                message="PNG saved; share sheet could not open: "+
+                                    (it.message?:it.javaClass.simpleName)
+                            }
+                        }
+                    },onFailure={
+                        message="PNG export failed: "+
+                            (it.message?:it.javaClass.simpleName)
+                    })
                 }
             }
             val importFile=rememberLauncherForActivityResult(
@@ -790,7 +865,7 @@ class MainActivity : ComponentActivity() {
                     Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
             val displayColorScheme=if(appliedFinish==SurfaceFinish.FROSTED)
-                // Exact pre-v0.8.9 Frosted Material3 colors and defaults.
+                // Exact pre-v0.9.0 Frosted Material3 colors and defaults.
                 darkColorScheme(primary=iceBlue,onPrimary=cobaltNavy,
                     secondary=coreCyan,surface=cobaltNavy,
                     background=cobaltNavy,onSurface=coreText)
@@ -1166,6 +1241,16 @@ class MainActivity : ComponentActivity() {
                                                             r.session.id,range.startMs,range.endMs)
                                                         segmentCsvFile.launch("CoreMetrics_Segment_"+
                                                             r.session.id+"_"+range.startMs+"_"+range.endMs+".csv")
+                                                    },
+                                                    onExportPng={ range,share ->
+                                                        pngRequest=ScorecardPngRequest(
+                                                            firstId=r.session.id,secondId=0L,
+                                                            startMs=range.startMs,endMs=range.endMs,
+                                                            styleKey=appliedFinish.key,
+                                                            shareAfterSave=share)
+                                                        pngDocument.launch(
+                                                            "CoreMetrics_Session_"+r.session.id+
+                                                                "_"+range.startMs+"_"+range.endMs+".png")
                                                     }
                                                 ) { selected ->
                                                     OutlinedButton(onClick={
@@ -1413,6 +1498,18 @@ class MainActivity : ComponentActivity() {
                                                         abWindowTextFile.launch(
                                                             "CoreMetrics_AB_Window_"+firstId+"_"+secondId+
                                                                 "_"+window.startElapsedMs+"_"+window.endElapsedMs+".txt")
+                                                    },
+                                                    onExportPng={ window,share ->
+                                                        pngRequest=ScorecardPngRequest(
+                                                            firstId=firstId,secondId=secondId,
+                                                            startMs=window.startElapsedMs,
+                                                            endMs=window.endElapsedMs,
+                                                            styleKey=appliedFinish.key,
+                                                            shareAfterSave=share)
+                                                        pngDocument.launch(
+                                                            "CoreMetrics_AB_"+firstId+"_"+secondId+
+                                                                "_"+window.startElapsedMs+
+                                                                "_"+window.endElapsedMs+".png")
                                                     }
                                                 )
                                             }else Text("Choose two distinct recordings to compare.",

@@ -31,7 +31,8 @@ internal fun CompareStudioPanel(
     onToggleFullTimeline:(Boolean)->Unit,
     initialSkipWarmUp:Boolean,
     cursorFraction:Float,onCursorFraction:(Float)->Unit,
-    onExport:(CompareStudioAnalysis.Window)->Unit
+    onExport:(CompareStudioAnalysis.Window)->Unit,
+    onExportPng:(CompareStudioAnalysis.Window,Boolean)->Unit
 ) {
     if(pointsA.size<sessionA.count || pointsB.size<sessionB.count) {
         Text("A/B analysis unavailable: a source exceeds the 12,000-sample "+
@@ -138,10 +139,23 @@ internal fun CompareStudioPanel(
                     fmt(result.a.benchmark.energy.coveragePct)+"% / "+
                     fmt(result.b.benchmark.energy.coveragePct)+"%",
                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
-                OutlinedButton(onClick={onExport(applied)},
-                    enabled=ready &&
-                        pointsA.size>=sessionA.count && pointsB.size>=sessionB.count) {
-                    Text("Export selected A/B report")
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick={onExport(applied)},
+                        enabled=ready &&
+                            pointsA.size>=sessionA.count && pointsB.size>=sessionB.count) {
+                        Text("Export selected A/B report")
+                    }
+                    OutlinedButton(onClick={onExportPng(applied,false)},
+                        enabled=ready &&
+                            pointsA.size>=sessionA.count && pointsB.size>=sessionB.count) {
+                        Text("Save PNG scorecard")
+                    }
+                    OutlinedButton(onClick={onExportPng(applied,true)},
+                        enabled=ready &&
+                            pointsA.size>=sessionA.count && pointsB.size>=sessionB.count) {
+                        Text("Save & share PNG")
+                    }
                 }
                 if(pointsA.size<sessionA.count || pointsB.size<sessionB.count)
                     Text("Original session exceeds 12,000 loaded samples; "+

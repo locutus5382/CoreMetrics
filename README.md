@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.8.9 experimental appearance branch, stacked on v0.8.8.1 reliability fixes. Two isolated v0.8.9 test APKs (Frosted-only baseline or selectable alternative themes). Not yet physically verified on Odin 2 Portal and not merged into main. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.9.0 PNG scorecard test branch, stacked on v0.8.9 themes and v0.8.8.1 recorder fixes. Odin physical validation and release signing remain outstanding. Draft, not merged or approved for Google Play.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -34,6 +34,21 @@ This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier 
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
 
+## v0.9.0 — Offline shareable PNG diagnostic scorecards
+
+**Branch:** feature/coremetrics-v090-png-scorecards, stacked on v0.8.9 draft PR #21.
+
+**Full session / custom segment:** Sessions → Analyze → Full recording or select range → Save PNG scorecard / Save & share PNG. Existing source data and analysis are reused; no new samples, no storage mutation.
+
+**A/B selection:** Compare → choose shared elapsed window → Save PNG scorecard / Save & share PNG. Always B−A, with evidence caution labels. Same original-relative elapsed time for both sessions; no scene or FPS equivalence inference.
+
+**Renderer:** User chooses Android Storage Access Framework document URI; app renders offline PNG on Dispatchers.IO (1600×1050 ARGB bitmap, ~6.7 MB, recycled after use). Standard Android ACTION_SEND share sheet, temporary read grant. No cache, external network, extra permission, screenshot of game or ongoing GPU effect.
+
+**Content:** Source/session IDs, actual selected interval, CPU/GPU P50/P95 temperatures, CPU/GPU load, time-weighted battery net discharge, quality/coverage, time-aligned source sensor traces, and clear provenance and validity cautions. Gaps and unavailable readings never become artificial data. The scorecard makes no unsupported FPS, throttling or performance-winner claims.
+
+**Builds:** CoreMetrics-v0.9.0-frosted (app-v090base.apk, com.locutus5382.coremetrics.v090base) and CoreMetrics-v0.9.0-themes (app-v090themes.apk, com.locutus5382.coremetrics.v090themes). These isolated test/debug APKs are NOT Google Play signed release artifacts.
+
+**Acceptance:** docs/PORTAL_V090_ACCEPTANCE.md and docs/RC1_READINESS_PLAN.md.
 ## v0.8.9 — Four-finish Appearance Studio (experimental)
 
 **Branch:** feature/coremetrics-v089-appearance-studio, stacked on v0.8.8.1 recorder recovery/HUD fixes (draft PR #20). Prior branches and main are unchanged.
