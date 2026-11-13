@@ -151,9 +151,8 @@ internal fun CompareScrubPanel(
                 drawLine(Color(0x255AB4D4),Offset(0f,y),Offset(w,y),1f)
             }
             if(available) {
-                fun drawRun(points:List<SessionStore.Point>,color:Color) {
+                fun drawRun(points:List<SessionStore.Point>,color:Color,origin:Long) {
                     if(points.size<2)return
-                    val origin=if(color==coreCyan)originA else originB
                     val path=Path()
                     var previous:Long?=null
                     var n=0
@@ -174,8 +173,8 @@ internal fun CompareScrubPanel(
                     }
                     if(n>1)drawPath(path,color,style=Stroke(width=2.5.dp.toPx()))
                 }
-                drawRun(a,coreCyan)
-                drawRun(b,solarGold)
+                drawRun(a,coreCyan,originA)
+                drawRun(b,solarGold,originB)
             }
             // Selected analysis bounds are painted independently of the cursor.
             // An unmatched tail may be shown visually, never added to A/B statistics.
