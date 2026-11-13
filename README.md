@@ -34,6 +34,27 @@ This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier 
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
 
+## v0.8.4 — landscape polish and controller navigation (draft)
+
+This iteration follows real Portal v0.8.2 tests, Gemini's visual mockups, and the v0.8.3 UI fixes. Preserves v0.8.3's safe native HUD lock, offline recorder and actual samples. The existing separate v0.8.3 APKs remain available.
+
+**What changed**
+- **Quick native drawer 2×4**: CPU T, GPU T, CPU %, GPU % / RAM, W, Graphs, REC or STOP; plus a smaller glass opacity footer. Warm Solar Orange and Cobalt ON chips have ✓ and bright borders; OFF chips are muted/borderless. The panel remains width-bounded and its WindowManager X coordinate clamps after opening. The compact pill ellipsizes rather than wrapping into two lines; Pro layout can still wrap. Do **not** blindly enlarge text to 460dp because that pushes the 48dp unlock target offscreen. Independent unlock chip keeps its 48dp touch area while its painted glass is shorter. Frames and sensor cadence are unchanged.
+- **Never fake FPS**: no dead FPS toggle in native quick drawer or main HUD Studio; even if a previous saved preference requests FPS, the pill omits it until a real non-null source is measured. Unverified layer FPS remains disabled.
+- **Controller**: D-pad and hat axes use actual focus; right-stick vertical Z/RZ mapping scrolls the visible page; on Compare, horizontal Z adjusts the *same* normalized cursor used by touchscreen and focused Slider. A remains a center/activate key. Uses standard Android hardware axis mapping as a starting point; Odin firmware behavior remains unverified. Stick actions are only processed while the UI activity is visible.
+- **Widescreen app**: two-column Core 0–3 / Core 4–7 busiest-core chart; analysis energy and observed-profile panels already split in v0.8.3. Session History rows fill the width and anchor compact export, analyze, tags, report controls on the right. Live header has an ARM HUD control and Live rings incorporate CPU/GPU load, battery status and Android-reported RAM total as subtitles, allowing redundant metric rows to disappear. Critical measurement cautions stay with reports, while full provenance is in Settings/documentation.
+- **Appearance**: normal `CoreMetrics-v0.8.4-standard-debug` is the **unified** app with Frosted, Liquid and Tactical and persistent top-bar THEME button. The explicit `CoreMetrics-v0.8.4-analytics-only` remains fixed Frosted as a regression reference. The `CoreMetrics-v0.8.4-themes` isolated test build remains themed. All three use the same source code and separate Android application IDs; never run multiple CoreMetrics HUDs simultaneously. The in-game native WindowManager HUD does not inherit Compose app-screen finishes.
+- **Optional immersive view**: Settings can hide status/navigation bars using Android `WindowInsetsController` transient swipe-reveal behavior. **Off by default**, reversible and only for the app's main Activity. Android's system navigation always remains recoverable. It is not a root/overlay change.
+
+**Intentionally not included**
+- No idle Live sampler loop: this version keeps the original user-started session sampler design. Four Live gauges can remain unavailable when idle and standby performs no sensor reads. An optional lifecycle-scoped read-only preview could be evaluated separately after Portal memory tests, without writing SQLite.
+- No unconditional `Activity.finish()` on arming HUD: it doesn't guarantee the process is removed from RAM or prevent LMK kills and can unexpectedly close the configuration screen. Eden-first → Quick Settings HUD/REC remains the tested route.
+- No automatic immersive mode, privileged FPS/PServer, performance/thermal controls, OOM changes, or claims that Mario Kart's FPS is measured by CoreMetrics.
+
+**Evidence limits**: Four sessions `COMPLETED` in the user-supplied v0.8.2 recorder report show that those sessions saved normally, but **not** that no sample was ever dropped or that the whole emulator launch was stable. Five `LOW_MEMORY` exit-history entries occurred near Eden startup. The 5.3–5.5 GB app-RAM overlay and LMK exits are correlated, not evidence of a precisely measured threshold. The `98%` CPU0 winner share is from an older recording and might include tie bias. Older SQLite data are deliberately not reclassified.
+
+**Release gate**: the final commit requires successful GitHub Actions unit tests and all three APK builds, plus physical Portal tests in `docs/PORTAL_V084_UI_TEST.md`. All stacked PRs remain draft; do not publish to Play or merge simply because CI passes.
+
 ## v0.8.3 Portal findings and UI correction
 
 Real-device evidence dated 2026-11-13: Odin 2 Portal reports multiple Android `ApplicationExitInfo.LOW_MEMORY` exits for BOTH the user interface and the `:monitor` process during Eden launch. Selected exits had monitor lastPssMiB 63 and UI 116; their 0 PSS samples mean 'not measured', not zero usage. An independent frame overlay showed Eden process RAM around 5.3–5.5 GB. CoreMetrics cannot override OEM memory pressure. **Recommended workflow:** launch the emulator and load the game, then use Android Quick Settings' **CM HUD** tile and tap REC; or use the independent CM REC tile. No automatic monitoring while standby.
