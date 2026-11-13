@@ -213,8 +213,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v083themes") -> "CoreMetrics v0.8.3 Themes • Record"
-                    packageName.endsWith(".v083base") -> "CoreMetrics v0.8.3 Analytics • Record"
+                    packageName.endsWith(".v084themes") -> "CoreMetrics v0.8.4 Themes • Record"
+                    packageName.endsWith(".v084base") -> "CoreMetrics v0.8.4 Analytics • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -246,8 +246,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v083themes"))"CoreMetrics v0.8.3 Themes · HUD"
-                else if(packageName.endsWith(".v083base"))"CoreMetrics v0.8.3 Analytics · HUD"
+                if(packageName.endsWith(".v084themes"))"CoreMetrics v0.8.4 Themes · HUD"
+                else if(packageName.endsWith(".v084base"))"CoreMetrics v0.8.4 Analytics · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
