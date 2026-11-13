@@ -115,7 +115,8 @@ private data class SegmentExportRequest(
 private data class ScreenStatus(
     val running: Boolean = false, val starting: Boolean = false,
     val standby: Boolean = false, val pendingRecovery:Boolean=false,
-    val known:Boolean=true,
+    // Initial/cold-start UI must not present IDLE before the first IPC read.
+    val known:Boolean=false,
     val sessionId: Long = 0, val count: Long = 0,
     val message: String = "Idle",
     val cpu: String? = null, val gpu: String? = null,
@@ -291,6 +292,7 @@ class MainActivity : ComponentActivity() {
         val v = contentResolver.call(uri, "status", null, null)
         if (v == null) ScreenStatus(known=false,message = "Recorder status unavailable")
         else ScreenStatus(
+            known=true,
             running = v.getBoolean("running", false),
             starting = v.getBoolean("starting", false),
             standby = v.getBoolean("standby", false),
