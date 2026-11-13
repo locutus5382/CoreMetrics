@@ -136,10 +136,9 @@ internal fun SessionMetricTimeline(points:List<SessionStore.Point>,
             val absoluteOrigin=referenceStartMs?:start
             val end=sorted.last().timeMs
             val time=start+((end-start)*cursor).toLong()
-            val tolerance=max(10_000L,
-                ((end-start)/(sorted.size-1))*2)
-            val nearest=sorted.minByOrNull{abs(it.timeMs-time)}
-                ?.takeIf{abs(it.timeMs-time)<=tolerance}
+            // A mean interval spanning a recording interruption is not a
+            // valid tolerance: never show an old value in the middle of a gap.
+            val nearest=CompareTimeCursor.nearest(sorted,time-start,10_000L)
             listOf(first,second).forEach {signal->
                 SignalTrack(sorted,signal,cursor,{cursor=it})
                 Text(signal.caption+": "+num(nearest?.let{signal.value(it)})+
