@@ -138,13 +138,26 @@ internal fun HudSettingsPanel(
         }
         if(options.showFps)Text("FPS source currently unavailable; the HUD displays —.",
             color=solarGold,style=MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment=Alignment.CenterVertically) {
-            Text("Four 30-sample graphs in Pro layout: CPU %, GPU %, CPU temp, " +
-                "and layer FPS if available",color=coreText,
-                modifier=Modifier.weight(1f))
-            Switch(checked=options.showSparkline,
-                onCheckedChange={onChange(options.copy(showSparkline=it))})
+        Text("HUD SHAPE",color=iceBlue,style=MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected=options.shape=="capsule",
+                onClick={onChange(options.copy(shape="capsule"))},
+                label={Text("Capsule")})
+            FilterChip(selected=options.shape=="card",
+                onClick={onChange(options.copy(shape="card"))},
+                label={Text("Rounded card")})
         }
+        Row(verticalAlignment=Alignment.CenterVertically) {
+            Text("Adaptive metric colors · Yellow elevated / Red hot",
+                color=coreText,modifier=Modifier.weight(1f))
+            Switch(checked=options.adaptiveColors,
+                onCheckedChange={onChange(options.copy(adaptiveColors=it))})
+        }
+        Text("CPU/GPU temperature: yellow 65°C, red 80°C. " +
+            "High utilization is yellow, not dangerous by itself. " +
+            "These are display cues, not validated hardware safety limits. " +
+            "No additional sampling.",
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
         Text("RECORDING INDICATOR COLOR",color=iceBlue,
             style=MaterialTheme.typography.labelLarge)
@@ -163,8 +176,8 @@ internal fun HudSettingsPanel(
             Switch(checked=options.blink,
                 onCheckedChange={onChange(options.copy(blink=it))})
         }
-        Text("HUD drawer saves controls immediately. Micrographs reuse the " +
-            "existing recorder data, with no extra polling. " +
+        Text("HUD drawer saves controls immediately. Detailed graphs belong " +
+            "in post-session analysis. No extra HUD sampling. " +
             "When locked, unlock via notification or this Studio.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
     }

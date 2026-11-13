@@ -303,7 +303,9 @@ class MainActivity : ComponentActivity() {
                 showRam=v.getBoolean("hudOptRam",true),
                 showPower=v.getBoolean("hudOptPower",true),
                 showFps=v.getBoolean("hudOptFps",false),
-                showSparkline=v.getBoolean("hudOptSparkline",true)
+                showSparkline=false,
+                adaptiveColors=v.getBoolean("hudOptAdaptiveColors",false),
+                shape=v.getString("hudOptShape")?:"capsule"
             ) else null,
             lastAt = v.getLong("lastSampleAt", 0)
         )

@@ -41,7 +41,9 @@ class StatusProvider : ContentProvider() {
                 putBoolean("hudOptRam",h.showRam)
                 putBoolean("hudOptPower",h.showPower)
                 putBoolean("hudOptFps",h.showFps)
-                putBoolean("hudOptSparkline",h.showSparkline)
+                putBoolean("hudOptSparkline",false)
+                putBoolean("hudOptAdaptiveColors",h.adaptiveColors)
+                putString("hudOptShape",h.shape)
             }
             putString("cpu", s?.cpuTempC?.let { "%.1f°C".format(java.util.Locale.US,it) })
             putString("gpu", s?.gpuTempC?.let { "%.1f°C".format(java.util.Locale.US,it) })

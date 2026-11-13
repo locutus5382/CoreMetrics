@@ -45,7 +45,9 @@ internal data class HudOptions(
     val showRam: Boolean = true,
     val showPower: Boolean = true,
     val showFps: Boolean = false,
-    val showSparkline: Boolean = true
+    val showSparkline: Boolean = false,
+    val adaptiveColors: Boolean = false,
+    val shape: String = "capsule"
 ) {
     companion object {
         const val OPACITY = "hud_opacity"
@@ -77,7 +79,11 @@ internal data class HudOptions(
                 showRam=b("hud_ram",true),
                 showPower=b("hud_power",true),
                 showFps=b("hud_fps",false),
-                showSparkline=b("hud_sparkline",true)
+                showSparkline=false,
+                adaptiveColors=b("hud_adaptive_colors",false),
+                shape=s("hud_shape","capsule").takeIf{
+                    it=="capsule" || it=="card"
+                }?:"capsule"
             )
         }
         fun addExtras(i: Intent, options: HudOptions): Intent = i.apply {
@@ -86,6 +92,8 @@ internal data class HudOptions(
             putExtra(LAYOUT,options.layout)
             putExtra(INDICATOR,options.indicatorColor)
             putExtra(BLINK,options.blink)
+            putExtra("hud_adaptive_colors",options.adaptiveColors)
+            putExtra("hud_shape",options.shape)
             for ((k,v) in listOf(
                 "cpuTemp" to options.showCpuTemp,"gpuTemp" to options.showGpuTemp,
                 "cpuLoad" to options.showCpuLoad,"gpuLoad" to options.showGpuLoad,
@@ -106,7 +114,9 @@ internal data class HudOptions(
             .putBoolean("hud_ram",showRam)
             .putBoolean("hud_power",showPower)
             .putBoolean("hud_fps",showFps)
-            .putBoolean("hud_sparkline",showSparkline).commit()
+            .putBoolean("hud_sparkline",false)
+            .putBoolean("hud_adaptive_colors",adaptiveColors)
+            .putString("hud_shape",shape).commit()
     }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
         showGpuLoad,showRam,showPower,showFps).count { it }
@@ -195,7 +205,7 @@ internal class RecorderHud(private val context:Context) {
         GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(
             Color.argb((255*alpha).roundToInt(),7,17,40),
             Color.argb((220*alpha).roundToInt(),26,56,107))).apply {
-            cornerRadius=dp(23f).toFloat()
+            cornerRadius=dp(if(opts.shape=="card")10f else 23f).toFloat()
             setStroke(dp(1f).coerceAtLeast(1),Color.argb(150,210,234,255))
         }
 
@@ -348,9 +358,6 @@ internal class RecorderHud(private val context:Context) {
         drawerSwitches.forEach { (name,view) ->
             paintDrawerToggle(view,name,selected[name]==true)
         }
-        graphSwitch?.let {
-            paintDrawerToggle(it,"Graphs",opts.showSparkline)
-        }
         opacityLabel?.text=String.format(Locale.US,
             " Glass %d%% ",(opts.opacity*100f).roundToInt())
         drawerRecControl?.let { button ->
@@ -418,9 +425,9 @@ internal class RecorderHud(private val context:Context) {
         drawerSwitches["W"]=addChip(bottom,"W") {
             changeOptions(opts.copy(showPower=!opts.showPower))
         }
-        graphSwitch=addChip(bottom,"Graphs") {
-            changeOptions(opts.copy(showSparkline=!opts.showSparkline))
-        }
+        addChip(bottom,"Dock") {dock(params?.x?.let{
+            it+((root?.width?:0)/2)>windowWidth()/2
+        }?:true)}
         drawerRecControl=addChip(bottom,"REC") {
             onRecord?.invoke()
         }
@@ -438,24 +445,10 @@ internal class RecorderHud(private val context:Context) {
             opts.copy(opacity=(opts.opacity+.1f).coerceAtMost(.90f)))},
             LinearLayout.LayoutParams(dp(45f),dp(33f)))
         opacity.addView(styledLabel(
-            "  ● enabled · ○ hidden · FPS requires validation",9f))
+            "  ✓ on · ○ off · FPS not available",9f))
         column.addView(opacity)
         refreshDrawerControls()
         return column
-    }
-
-    private fun graphCell(name:String,color:Int):View {
-        val container=LinearLayout(context).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
-            setPadding(dp(3f),0,dp(4f),0)
-        }
-        container.addView(styledLabel(name,9f))
-        val graph=GraphView(context,color)
-        graphs[name]=graph
-        container.addView(graph,LinearLayout.LayoutParams(dp(64f),dp(26f)))
-        graphCells[name]=container
-        return container
     }
 
     fun show(options:HudOptions,onRecordClick:()->Unit,onLockClick:()->Unit,
@@ -512,17 +505,6 @@ internal class RecorderHud(private val context:Context) {
         line.addView(closeControl)
         pill=line
 
-        val strip=LinearLayout(context).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
-            setPadding(dp(8f),dp(2f),dp(6f),dp(7f))
-        }
-        strip.addView(graphCell("CPU",Color.rgb(56,189,248)))
-        strip.addView(graphCell("GPU",Color.rgb(96,165,250)))
-        strip.addView(graphCell("TEMP",Color.rgb(255,107,0)))
-        strip.addView(graphCell("FPS",Color.rgb(255,199,0)))
-        graphsRow=strip
-
         val tab=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER
@@ -545,7 +527,6 @@ internal class RecorderHud(private val context:Context) {
         val frame=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
             addView(line)
-            addView(strip)
             addView(newDrawer().also{drawer=it})
             addView(tab)
         }
@@ -686,20 +667,13 @@ internal class RecorderHud(private val context:Context) {
         dockTab?.visibility=if(collapsed)View.VISIBLE else View.GONE
         drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
         refreshDrawerControls()
-        graphsRow?.visibility=if(!collapsed && recording && opts.layout=="pro" &&
-            opts.showSparkline)View.VISIBLE else View.GONE
-        graphCells["CPU"]?.visibility=if(opts.showCpuLoad)View.VISIBLE else View.GONE
-        graphCells["GPU"]?.visibility=if(opts.showGpuLoad)View.VISIBLE else View.GONE
-        graphCells["TEMP"]?.visibility=if(opts.showCpuTemp)View.VISIBLE else View.GONE
-        graphCells["FPS"]?.visibility=if(opts.showFps && latest?.surfaceFps!=null)
-            View.VISIBLE else View.GONE
         val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
         mainText?.textSize=12f*scale
         // Keep the compact pill on ONE line; a 460dp cap alone would hide
         // the lock/settings controls, so the weighted label ellipsizes safely.
         mainText?.maxWidth=dp(460f*scale)
-        mainText?.setSingleLine(opts.layout!="pro")
-        mainText?.ellipsize=if(opts.layout!="pro")
+        mainText?.setSingleLine(opts.layout!="pro" && opts.shape!="card")
+        mainText?.ellipsize=if(opts.layout!="pro" && opts.shape!="card")
             android.text.TextUtils.TruncateAt.END else null
         recText?.textSize=11f*scale
         // The unlocked main control and separate locked recovery chip share the
@@ -748,12 +722,6 @@ internal class RecorderHud(private val context:Context) {
         if(!recording || !attached())return
         latest=s
         thermalValue=thermal.update(s.timeMs,s.cpuTempC)
-        graphs["CPU"]?.add(s.cpuPercent?.toFloat())
-        graphs["GPU"]?.add(s.gpuPercent?.toFloat())
-        graphs["TEMP"]?.add(thermalValue?.smoothedC?.toFloat())
-        graphs["FPS"]?.add(s.surfaceFps?.toFloat())
-        graphCells["FPS"]?.visibility=if(opts.showFps && s.surfaceFps!=null &&
-            opts.showSparkline && opts.layout=="pro")View.VISIBLE else View.GONE
         val thermalColor=when(thermalValue?.direction) {
             ThermalTrendFilter.Direction.RISING -> Color.rgb(255,107,0)
             ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
@@ -796,10 +764,40 @@ internal class RecorderHud(private val context:Context) {
         // A dormant preference must never render the misleading "FPS —" token.
         if(opts.showFps && s?.surfaceFps!=null)
             items+="FPS "+fmt(s.surfaceFps,"",0)
-        view.text=if(items.isEmpty())"REC · telemetry"
-            else if(opts.layout=="pro")items.chunked(3).joinToString("\n"){
-                it.joinToString(" · ")
-            } else items.joinToString(" · ")
+        val line=if(items.isEmpty())"REC · telemetry"
+            else if(opts.layout=="pro" || opts.shape=="card")
+                items.chunked(3).joinToString("\n"){it.joinToString(" · ")}
+            else items.joinToString(" · ")
+        if(!opts.adaptiveColors || s==null) {
+            view.text=line
+        } else {
+            // Color *only* the measured metric span; the REC dot is separate.
+            val styled=android.text.SpannableString(line)
+            fun mark(label:String,level:Int){
+                if(level==0)return
+                var position=line.indexOf(label)
+                if(position<0)return
+                // Stop at a real metric delimiter, preserving trend arrows.
+                val end=listOf(line.indexOf(" · ",position),
+                    line.indexOf("\n",position)).filter{it>=0}
+                    .minOrNull()?:line.length
+                styled.setSpan(android.text.style.ForegroundColorSpan(
+                    if(level==2)Color.rgb(255,93,105)
+                    else Color.rgb(255,206,65)),
+                    position,end,android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            mark("CPU "+fmt(thermalValue?.smoothedC,"°C"),
+                MetricWarning.temperature(thermalValue?.smoothedC,65.0,80.0))
+            mark("GPU "+fmt(s.gpuTempC,"°C"),
+                MetricWarning.temperature(s.gpuTempC,65.0,80.0))
+            // Utilization is not a safety violation: yellow only, sustained
+            // high load must never become a fake red "danger" indicator.
+            if(opts.showCpuLoad && (s.cpuPercent?:0)>=90)
+                mark("CPU "+s.cpuPercent+"%",1)
+            if(opts.showGpuLoad && (s.gpuPercent?:0)>=90)
+                mark("GPU "+s.gpuPercent+"%",1)
+            view.text=styled
+        }
     }
 
     private fun renderAction() {
@@ -834,40 +832,4 @@ internal class RecorderHud(private val context:Context) {
         }
     }
 
-    /** Each graph tracks 30 recorded samples (including null gaps). */
-    private class GraphView(context:Context,color:Int):View(context) {
-        private val history=ArrayDeque<Float?>()
-        private val pen=Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color=color;strokeWidth=resources.displayMetrics.density*1.65f
-            style=Paint.Style.STROKE;strokeCap=Paint.Cap.ROUND
-        }
-        fun clear(){history.clear();invalidate()}
-        fun add(value:Float?) {
-            history.addLast(value?.takeIf{it.isFinite()})
-            while(history.size>30)history.removeFirst()
-            invalidate()
-        }
-        override fun onDraw(canvas:Canvas) {
-            super.onDraw(canvas)
-            if(history.size<2)return
-            val data=history.toList()
-            val valid=data.filterNotNull()
-            if(valid.size<2)return
-            val min=valid.minOrNull()?:return
-            val max=valid.maxOrNull()?:return
-            val range=(max-min).coerceAtLeast(4f)
-            val base=min-range*.15f
-            val heightRange=range*1.3f
-            val path=Path()
-            var wasValid=false
-            data.forEachIndexed { index,item ->
-                if(item==null){wasValid=false;return@forEachIndexed}
-                val x=index*width.toFloat()/(data.size-1)
-                val y=(height*(1f-(item-base)/heightRange)).coerceIn(0f,height.toFloat())
-                if(!wasValid)path.moveTo(x,y) else path.lineTo(x,y)
-                wasValid=true
-            }
-            canvas.drawPath(path,pen)
-        }
-    }
 }
