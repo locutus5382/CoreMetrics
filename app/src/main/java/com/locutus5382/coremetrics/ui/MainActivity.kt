@@ -189,8 +189,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v082themes") -> "CoreMetrics v0.8.2 Themes • Record"
-                    packageName.endsWith(".v082base") -> "CoreMetrics v0.8.2 Analytics • Record"
+                    packageName.endsWith(".v083themes") -> "CoreMetrics v0.8.3 Themes • Record"
+                    packageName.endsWith(".v083base") -> "CoreMetrics v0.8.3 Analytics • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -222,8 +222,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v082themes"))"CoreMetrics v0.8.2 Themes · HUD"
-                else if(packageName.endsWith(".v082base"))"CoreMetrics v0.8.2 Analytics · HUD"
+                if(packageName.endsWith(".v083themes"))"CoreMetrics v0.8.3 Themes · HUD"
+                else if(packageName.endsWith(".v083base"))"CoreMetrics v0.8.3 Analytics · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -290,7 +290,7 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
         val database = SessionStore(applicationContext)
         setContent {
-            val supportsThemeChoice=packageName.endsWith(".v082themes")
+            val supportsThemeChoice=packageName.endsWith(".v083themes")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)

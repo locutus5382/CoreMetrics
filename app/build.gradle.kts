@@ -9,28 +9,28 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.8.2-efficiency-consistency-alpha"
+        versionCode = 11
+        versionName = "0.8.3-portal-ui-controller-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM · HUD"
     }
     buildTypes {
-        create("v082themes") {
+        create("v083themes") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v082themes"
+            applicationIdSuffix = ".v083themes"
             versionNameSuffix = "-themes"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8.2 Themes"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8.2 Themes Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8.2 Themes · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8.3 Themes"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8.3 Themes Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8.3 Themes · HUD"
         }
-        create("v082base") {
+        create("v083base") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v082base"
+            applicationIdSuffix = ".v083base"
             versionNameSuffix = "-analytics"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8.2 Analytics"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8.2 Analytics Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8.2 Analytics · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8.3 Analytics"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8.3 Analytics Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8.3 Analytics · HUD"
         }
         create("v07test") {
             initWith(getByName("debug"))
