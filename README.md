@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.8.5 experimental usability and analytics branch with two separately installable test builds: fixed original Frosted Glass and 4-theme showcase. Built from v0.8.4; the latest v0.8.5 HUD/UI workflows have not yet been physically tested on the Odin 2 Portal. Not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.8.6 draft diagnostic-tool upgrade, stacked on v0.8.5. Two separately installable v0.8.6 test builds retain the fixed original Frosted Glass or the existing optional themes. No physical Odin 2 Portal validation yet; not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,21 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.8.6 — Advanced single-session diagnostics (draft)
+
+**Stacked development:** `feature/coremetrics-v086-session-diagnostics` targets the v0.8.5 branch; draft PR #17. v0.8.5 remains unchanged.
+
+**APK artifacts:** `CoreMetrics-v0.8.6-frosted` (`app-v086base.apk`, package `com.locutus5382.coremetrics.v086base`) and `CoreMetrics-v0.8.6-themes` (`app-v086themes.apk`, package `com.locutus5382.coremetrics.v086themes`). The former is fixed Frosted Glass; the latter keeps the prior optional themes. Both are separately installed with isolated app-private databases and preferences.
+
+**Sessions → Analyze** now includes:
+- Median (P50), 95th-percentile (P95), peak with absolute sample timestamp, and final 60-second rolling median for CPU/GPU/battery temperatures, CPU/GPU load, busiest observed core and discharging battery wattage.
+- Synchronized thermal, CPU-clock/CPU-temperature, core-load, GPU-load/GPU-clock and discharge/battery-level timelines. Curves are drawn only over contiguous valid recorded samples; the 60-second rolling median resets across gaps. Orange P95 thresholds, upper-tail dots and red peak diamonds are indicators, not causal diagnoses.
+- Exposure to sustained >=85% GPU and busiest-core utilization, including longest observed high-load period; changes in **observed CPU frequency ceilings**, distinct from momentary `scaling_cur_freq`; first-three-minute and last-minute CPU temperature regression slopes.
+- Indicative remaining/full-charge runtime only if the session was exclusively discharging with >=120 seconds and >=60% valid discharge coverage. Uses measured time-weighted battery-terminal watts with nominal 30.8 Wh usable energy as an assumption, **not** a battery-health measurement or verified prediction.
+- Source integrity, valid reading counts, gaps, and explicit limitations. The original selectable 2-track view including RAM remains under expanded technical diagnostics. Single-session plain-text report export includes the new analysis; A/B compare is unchanged.
+
+**Implementation:** Existing SQLite data already contains battery temperature/percentage and CPU/GPU clocks, but the points query previously omitted them. No database migration, new permissions, thermal/root writes, new sample loop or additional runtime overhead during gameplay. More context: `docs/PORTAL_V086_ACCEPTANCE.md`.
 
 ## v0.8.5 — HUD visibility, richer analysis, Frosted + optional themes
 

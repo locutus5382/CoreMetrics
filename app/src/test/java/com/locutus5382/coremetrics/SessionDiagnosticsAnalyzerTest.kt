@@ -129,4 +129,15 @@ class SessionDiagnosticsAnalyzerTest {
         val gaps=diagnostics(split)
         assertNull(gaps.initialCpuSlopeCPerMin)
     }
+    @Test fun thermalRegressionDoesNotBridgeMissingSensorSamples() {
+        val points=(0..30).map {
+            point(it,cpu=if(it==12)null else 41.0+it*.1)
+        }
+        val r=diagnostics(points)
+        assertNull(r.initialCpuSlopeCPerMin)
+        assertNotNull(r.distribution(Metric.CPU_TEMP).median)
+        assertNotEquals(
+            r.distribution(Metric.CPU_TEMP).readings[11].segment,
+            r.distribution(Metric.CPU_TEMP).readings[12].segment)
+    }
 }

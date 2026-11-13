@@ -321,7 +321,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v085base")
+            val supportsThemeChoice=!packageName.endsWith(".v086base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -1013,6 +1013,9 @@ class MainActivity : ComponentActivity() {
                                                             detailPoints.firstOrNull()?.timeMs)
                                                 }
                                                 CoreWinnerPanel(eligibleDetail,Modifier.fillMaxWidth())
+                                                SessionMetricTimeline(eligibleDetail,
+                                                    label="CLASSIC SIGNAL EXPLORER · INCLUDES RAM",
+                                                    referenceStartMs=detailPoints.firstOrNull()?.timeMs)
                                                 }
                                                 OutlinedButton(onClick={
                                                     detailedId=0L

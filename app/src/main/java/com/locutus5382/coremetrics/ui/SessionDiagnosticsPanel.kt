@@ -138,7 +138,7 @@ private fun DiagnosticDistributionTable(result:SessionDiagnosticsAnalyzer.Result
         val peaks=rows.map{result.distribution(it)}.filter{it.peakTimeMs!=null}
         if(peaks.isNotEmpty()) Text("Peak timestamps: "+
             peaks.joinToString(" · ") {
-                it.metric.title.substringBefore(" ")+" @"+
+                it.metric.name.lowercase(Locale.US).replace("_"," ")+" @"+
                     ((it.peakTimeMs!!-originMs)/1000L)+"s"
             },color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Text("P95 marks the upper 5% tail of valid readings, not necessarily " +
@@ -289,9 +289,16 @@ private fun DiagnosticTrack(
                 drawLine(solarGold.copy(alpha=.85f),Offset(0f,y(p95)),
                     Offset(size.width,y(p95)),1.2.dp.toPx(),
                     pathEffect=PathEffect.dashPathEffect(floatArrayOf(8f,7f),0f))
-                for(p in readings) if(p.value>=p95)
-                    drawCircle(solarGold,radius=2.5.dp.toPx(),
-                        center=Offset(x(p.timeMs),y(p.value)))
+                // A constant signal has P95 == median: no false "spike".
+                // Bound drawn marker count on long recorded sessions.
+                if(p95 > (stat.median ?: p95)+1e-6) {
+                    val spikes=readings.filter { it.value>=p95 }
+                    val stride=max(1,(spikes.size+119)/120)
+                    spikes.forEachIndexed { index,p ->
+                        if(index%stride==0) drawCircle(solarGold,radius=2.5.dp.toPx(),
+                            center=Offset(x(p.timeMs),y(p.value)))
+                    }
+                }
             }
             val peakT=stat.peakTimeMs
             val peak=stat.peak

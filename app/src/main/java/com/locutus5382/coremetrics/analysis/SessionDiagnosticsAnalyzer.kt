@@ -181,6 +181,10 @@ object SessionDiagnosticsAnalyzer {
     private fun cpuSlope(
         points: List<SessionStore.Point>, start: Long, end: Long, gapLimit: Long
     ): Double? {
+        // Missing sensor readings break the evidence chain; never regress
+        // through them as if an unmeasured temperature were continuous.
+        if (points.any { it.timeMs in start..end &&
+                value(Metric.CPU_TEMP,it) == null }) return null
         val slice = points.filter {
             it.timeMs in start..end && value(Metric.CPU_TEMP,it) != null
         }
