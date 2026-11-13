@@ -84,13 +84,13 @@ object BenchmarkAnalyzer {
         val minTemp=temps.minOrNull()?:midTemp
         val maxTemp=temps.maxOrNull()?:midTemp
         val state=when {
-            duration<55.0 -> "warming or cooling window (too short for steady state)"
+            duration<55.0 -> "last-minute trend window too short to characterize"
             slope==null -> "unavailable"
             abs(slope)<=0.8 && maxTemp-minTemp<=2.5 ->
-                "candidate steady-state (60-second thermal window)"
-            slope>0.8 -> "warming; steady state not demonstrated"
-            slope< -0.8 -> "cooling; steady state not demonstrated"
-            else -> "variable; steady state not demonstrated"
+                "low variation in final 60s (not proof of equilibrium)"
+            slope>0.8 -> "rising in final 60s"
+            slope< -0.8 -> "falling in final 60s"
+            else -> "variable final-minute temperature"
         }
         return Thermal(state,slope,mean,peak,samples.size,duration)
     }
@@ -243,7 +243,7 @@ object BenchmarkAnalyzer {
         appendLine("GPU mean: ${fmt(r.meanGpuC)} °C")
         appendLine("Last-window CPU mean / peak: " +
             "${fmt(r.thermal.lastMinuteMeanC)} / ${fmt(r.thermal.lastMinutePeakC)} °C")
-        appendLine("Thermal state: ${r.thermal.state}; " +
+        appendLine("Observed final-minute temperature trend: ${r.thermal.state}; " +
             "slope ${fmt(r.thermal.slopeCPerMin)} °C/min")
         appendLine("LOAD AND BATTERY NET")
         appendLine("Power conditions: ${r.energy.powerCondition.label}")
@@ -312,8 +312,8 @@ object BenchmarkAnalyzer {
             appendLine("CAUTION: Discharge energy has less than 80% valid coverage.")
         appendLine("A observed limits: ${a.quality.observedCeilings}")
         appendLine("B observed limits: ${b.quality.observedCeilings}")
-        appendLine("A steady-state: ${a.thermal.state}")
-        appendLine("B steady-state: ${b.thermal.state}")
+        appendLine("A final-minute temperature trend: ${a.thermal.state}")
+        appendLine("B final-minute temperature trend: ${b.thermal.state}")
         appendLine("FPS per watt: unavailable until presented frame data is verified.")
         appendLine("A/B is observational. Different gameplay, duration, charging state, " +
             "fan mode or warm-up confound comparisons; do not infer which is faster.")

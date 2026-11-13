@@ -34,6 +34,24 @@ This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier 
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
 
+## v0.8.8.1 — Recorder Recovery and HUD Reliability (Portal test)
+
+**Branch:** fix/coremetrics-v0881-recorder-recovery-hud, stacked on v0.8.8 draft PR #19.
+
+**Reason:** Odin 2 Portal logs on November 13 show Android LOW_MEMORY termination of the :monitor foreground process after HUD_LOCK. The old HUD_LOCK, HUD_UNLOCK, HUD_CONFIG and HUD_SHOW/HIDE handlers returned START_NOT_STICKY even during active recording. Android's service continuation policy could therefore drop the service rather than request its restart.
+
+**Fixes:** Active REC/standby and non-terminal HUD commands preserve START_STICKY. Explicit STOP/DISARM still clear the lease and prevent restarting. The bounded recent-lease + SAME_SESSION_ID + limited retry recovery policy remains; a killed process cannot record during downtime and restart is never guaranteed by OEM Android. The locked-HUD user preference is saved with the lease and restored on eligible recovery, including the separate 48dp touchable unlock chip.
+
+The HUD shows enabled metrics across short, legible rows rather than truncating GPU/RAM. The floating HUD temporarily hides while CoreMetrics' own Activity is foreground and returns to the game unless the user explicitly hid it. This pause does not alter user HUD preferences or restart lease and does not stop REC.
+
+Recorder diagnostics now use the actual installed package version. Thermal trends no longer imply equilibrium or soak time; nominal battery-capacity runtime is behind a low-confidence disclosure, and sample coverage is labeled correctly.
+
+**APK variants:** CoreMetrics-v0.8.8.1-frosted (app-v0881base.apk; package com.locutus5382.coremetrics.v0881base) and CoreMetrics-v0.8.8.1-themes (app-v0881themes.apk; package com.locutus5382.coremetrics.v0881themes). Separate recordings and app state. Import old CSV files as needed.
+
+**No changes:** A/B statistical analysis, HUD sample source, polling cadence, privileges, database schema, recorder stop semantics, event markers or theme visuals.
+
+**Device tests:** See docs/PORTAL_V0881_ACCEPTANCE.md. Next v0.8.9 theme designs are mockup-only until approved.
+
 ## v0.8.8 — A/B Diagnostic Comparison Studio (device-test draft)
 
 **Development:** feature/coremetrics-v088-ab-comparison-studio stacks on v0.8.7 draft PR #18, without changing earlier branches or main.

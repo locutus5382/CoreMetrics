@@ -226,8 +226,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v084themes") -> "CoreMetrics v0.8.4 Themes • Record"
-                    packageName.endsWith(".v084base") -> "CoreMetrics v0.8.4 Analytics • Record"
+                    packageName.endsWith(".v0881themes") -> "CoreMetrics v0.8.8.1 Themes • Record"
+                    packageName.endsWith(".v0881base") -> "CoreMetrics v0.8.8.1 Frosted • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -259,8 +259,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v084themes"))"CoreMetrics v0.8.4 Themes · HUD"
-                else if(packageName.endsWith(".v084base"))"CoreMetrics v0.8.4 Analytics · HUD"
+                if(packageName.endsWith(".v0881themes"))"CoreMetrics v0.8.8.1 Themes · HUD"
+                else if(packageName.endsWith(".v0881base"))"CoreMetrics v0.8.8.1 Frosted · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -324,6 +324,28 @@ class MainActivity : ComponentActivity() {
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
 
+    /** Send activity visibility only to an already-running user-started monitor. */
+    private fun notifyAppVisible(visible:Boolean) {
+        val state=query()
+        if(!state.running && !state.starting && !state.standby)return
+        runCatching{
+            startService(Intent(this,RecordingService::class.java).setAction(
+                if(visible)RecordingService.APP_FOREGROUND
+                else RecordingService.APP_BACKGROUND))
+        }
+    }
+    private var appVisible=false
+    override fun onStart() {
+        super.onStart()
+        appVisible=true
+        notifyAppVisible(true)
+    }
+    override fun onStop() {
+        appVisible=false
+        notifyAppVisible(false)
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
@@ -332,7 +354,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v088base")
+            val supportsThemeChoice=!packageName.endsWith(".v0881base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -408,6 +430,11 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {firstNavFocus.requestFocus()}
 
             var status by remember { mutableStateOf(ScreenStatus()) }
+            // REC may be initiated from this already-visible Activity.
+            LaunchedEffect(status.running,status.starting,status.standby) {
+                if(appVisible && (status.running||status.starting||status.standby))
+                    notifyAppVisible(true)
+            }
             var overlayAllowed by remember {
                 mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
             }
@@ -1588,6 +1615,13 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                     "HUD" -> {
+                                        if(status.running || status.standby || status.starting)
+                                            Text("Floating HUD pauses over CoreMetrics "+
+                                                "so it does not obscure controls. "+
+                                                "It returns in your game if enabled. "+
+                                                "REC continues while this screen is open.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
                                         HudSettingsPanel(
                                             options=hudOptions,
                                             isArmed=status.standby || status.running,

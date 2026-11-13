@@ -30,10 +30,11 @@ class BenchmarkAnalyzerTest {
         assertEquals(2.0,r.energy.measuredSeconds,0.01)
         assertTrue(r.quality.score<60)
     }
-    @Test fun detectsCandidateSteadyStateOnlyWithSufficientDuration() {
+    @Test fun nearFlatThermalWindowIsNotEquilibriumClaim() {
         val input=(0..45).map{p(1_000_000L+it*2_000L)}
         val r=BenchmarkAnalyzer.analyze(sess(),input)
-        assertTrue(r.thermal.state.startsWith("candidate steady-state"))
+        assertTrue(r.thermal.state.startsWith("low variation"))
+        assertFalse(r.thermal.state.contains("steady-state"))
         assertNotNull(r.thermal.slopeCPerMin)
         assertTrue(BenchmarkAnalyzer.text(r).contains("configuration LABEL conflicts"))
     }
