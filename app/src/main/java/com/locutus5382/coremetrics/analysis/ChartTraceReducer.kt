@@ -91,7 +91,14 @@ object DiagnosticTimeCursor {
         // A missing sensor/sample gap is not an inferred continuous reading.
         if(earlier!=null && later!=null &&
             earlier.segment!=later.segment &&
-            targetMs>earlier.timeMs && targetMs<later.timeMs)return null
+            targetMs>earlier.timeMs && targetMs<later.timeMs) {
+            // Near an actual endpoint, display the recorded endpoint value;
+            // deep inside the missing interval, never present a stale point
+            // as though the intervening sensor history were observed.
+            val nearestEdge=minOf(targetMs-earlier.timeMs,
+                later.timeMs-targetMs)
+            if(nearestEdge>minOf(toleranceMs,2_500L))return null
+        }
         val pick=when {
             earlier==null -> later
             later==null -> earlier
