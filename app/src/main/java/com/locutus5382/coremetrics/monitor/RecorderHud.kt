@@ -798,7 +798,7 @@ internal class RecorderHud(private val context:Context) {
             }
             add("CPU T",fmt(thermalValue?.smoothedC,"°C")+direction)
             if(opts.layout=="pro" && thermalValue?.rawPeakC!=null)
-                items+="Peak "+fmt(thermalValue?.rawPeakC,"°C") to
+                items+=("Peak "+fmt(thermalValue?.rawPeakC,"°C")) to
                     HudSeverity.Level.NORMAL
         }
         if(opts.showGpuTemp)add("GPU T",fmt(s?.gpuTempC,"°C"))
@@ -855,34 +855,4 @@ internal class RecorderHud(private val context:Context) {
         }
     }
 
-}
-        fun clear(){history.clear();invalidate()}
-        fun add(value:Float?) {
-            history.addLast(value?.takeIf{it.isFinite()})
-            while(history.size>30)history.removeFirst()
-            invalidate()
-        }
-        override fun onDraw(canvas:Canvas) {
-            super.onDraw(canvas)
-            if(history.size<2)return
-            val data=history.toList()
-            val valid=data.filterNotNull()
-            if(valid.size<2)return
-            val min=valid.minOrNull()?:return
-            val max=valid.maxOrNull()?:return
-            val range=(max-min).coerceAtLeast(4f)
-            val base=min-range*.15f
-            val heightRange=range*1.3f
-            val path=Path()
-            var wasValid=false
-            data.forEachIndexed { index,item ->
-                if(item==null){wasValid=false;return@forEachIndexed}
-                val x=index*width.toFloat()/(data.size-1)
-                val y=(height*(1f-(item-base)/heightRange)).coerceIn(0f,height.toFloat())
-                if(!wasValid)path.moveTo(x,y) else path.lineTo(x,y)
-                wasValid=true
-            }
-            canvas.drawPath(path,pen)
-        }
-    }
 }
