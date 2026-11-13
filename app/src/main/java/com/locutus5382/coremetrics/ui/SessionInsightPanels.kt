@@ -18,6 +18,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
+import com.locutus5382.coremetrics.analysis.DischargeSample
 import com.locutus5382.coremetrics.data.SessionStore
 import java.util.Locale
 import kotlin.math.abs
@@ -39,8 +40,7 @@ internal enum class SessionSignal(val caption:String,val unit:String,val accent:
             CPU_LOAD->p.cpuLoad
             GPU_LOAD->p.gpuLoad
             RAM_GIB->p.ram
-            BATTERY_W->if(p.batteryPowerStatus?.startsWith("DISCHARGING")==true)
-                p.batteryWatts else null
+            BATTERY_W->DischargeSample.watts(p.batteryWatts,p.batteryPowerStatus)
         }
         return v?.takeIf{it.isFinite()}
     }
