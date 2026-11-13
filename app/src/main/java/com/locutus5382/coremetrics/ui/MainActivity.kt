@@ -68,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
@@ -345,7 +346,19 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         appVisible=true
-        notifyAppVisible(true)
+        if(lastObservedMonitorActive)notifyAppVisible(true)
+        else lifecycleScope.launch {
+            // Reconcile on a worker, never synchronously through a Binder
+            // provider in onStart(). Cold Activity recreation must promptly
+            // pause its own HUD rather than cover the app for 4.5 seconds.
+            val state=withContext(Dispatchers.IO){query()}
+            if(appVisible && lifecycle.currentState.isAtLeast(
+                    Lifecycle.State.STARTED) &&
+                (state.running || state.starting || state.standby)){
+                lastObservedMonitorActive=true
+                notifyAppVisible(true)
+            }
+        }
     }
     override fun onStop() {
         appVisible=false
