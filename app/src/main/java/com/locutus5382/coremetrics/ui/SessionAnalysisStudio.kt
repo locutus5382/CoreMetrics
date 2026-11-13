@@ -34,6 +34,7 @@ internal fun SessionAnalysisStudio(
     initialSkipWarmup:Boolean,
     onExportText:(SegmentAnalysis.Range)->Unit,
     onExportCsv:(SegmentAnalysis.Range)->Unit,
+    onExportPng:(SegmentAnalysis.Range,Boolean)->Unit,
     technicalContent:@Composable (SegmentAnalysis.Bundle)->Unit
 ) {
     val full=remember(source) { SegmentAnalysis.fullRange(source) }
@@ -152,7 +153,8 @@ internal fun SessionAnalysisStudio(
                     "Insufficient segment: need at least 6 samples spanning 20s. "+
                         "Widen the range to enable exports.",
                     color=solarOrange,style=MaterialTheme.typography.bodySmall)
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick={onExportText(applied)},
                         enabled=current.validForReport && loadedFully) {
                         Text("Export segment report")
@@ -161,7 +163,18 @@ internal fun SessionAnalysisStudio(
                         enabled=current.validForReport && loadedFully) {
                         Text("Export segment CSV")
                     }
+                    OutlinedButton(onClick={onExportPng(applied,false)},
+                        enabled=current.validForReport && loadedFully) {
+                        Text("Save PNG scorecard")
+                    }
+                    OutlinedButton(onClick={onExportPng(applied,true)},
+                        enabled=current.validForReport && loadedFully) {
+                        Text("Save & share PNG")
+                    }
                 }
+                Text("PNG uses this exact selected window. Choose Full recording "+
+                    "for a full-session scorecard; data is never re-sampled.",
+                    color=coreSecondary,style=MaterialTheme.typography.labelSmall)
             }
             Text("The timeline shows original data and the selected boundaries. "+
                 "Statistics update after releasing the range handles or using preset/5s controls.",
