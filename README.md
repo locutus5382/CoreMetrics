@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.8.6 draft diagnostic-tool upgrade, stacked on v0.8.5. Two separately installable v0.8.6 test builds retain the fixed original Frosted Glass or the existing optional themes. No physical Odin 2 Portal validation yet; not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.8.7 Single-Session Analysis Studio test branch, stacked on v0.8.6. Two separately installable v0.8.6 test builds retain the fixed original Frosted Glass or the existing optional themes. No physical Odin 2 Portal validation yet; not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,22 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.8.7 — Single-Session Analysis Studio (device-test draft)
+
+**Branch:** feature/coremetrics-v087-single-session-studio, stacked on v0.8.6 draft PR #17. v0.8.6 remains unchanged.
+
+**APK variants:** CoreMetrics-v0.8.7-frosted (app-v087base.apk, package com.locutus5382.coremetrics.v087base) and CoreMetrics-v0.8.7-themes (app-v087themes.apk, package com.locutus5382.coremetrics.v087themes). Separate preferences, recording database, provider authorities, tile labels and app IDs. Frosted variant forces the existing original Frosted Glass appearance.
+
+**Single-session UI:** Full recording / Skip first 30s / Custom range, one accessible Material 3 RangeSlider and independent 5s start/end step controls for D-pad/touch usability, plus a source CPU temperature overview with dimmed excluded regions. The in-graph scrub cursor and range-selection thumbs are separate controls. Original timestamp origin does not reset when cropping. Session overview, medians, P95, peaks, 60s medians, charts, energy and technical evidence all use the SAME selected samples; the full source remains unchanged.
+
+**Offline calculations:** Time-weighted percentage of valid contiguous observed duration where both adjacent readings fall within ±2°C for CPU/GPU temperatures, ±15% of the median for discharge-only watts, or ±10 percentage points for CPU/GPU load. Mean absolute adjacent step delta provides volatility in signal units **per recorded sample step**; sampling cadence is shown, so users cannot confuse this with per-second volatility. A stability percentage is withheld with insufficient paired time (<30s) or <4 valid pairs. No thermal soak/equilibrium detector or invented FPS.
+
+**Selected-segment exports:** Two explicit SAF actions: TXT report (source ID, source profile, original timeline bounds, selected observations, BenchmarkAnalyzer + SessionDiagnosticsAnalyzer findings + stability/volatility caveats) and schema-compatible CSV (only real samples inside inclusive selected timestamps; retains all existing columns, times, driver/scale and original source session ID in CSV rows). No unobserved boundary interpolation or database migration. Export disabled if fewer than 6 samples spanning 20s or a session exceeded the first 12,000 loaded points. Neither export alters the original recording. CSV files can be imported as separate sessions.
+
+**Scope exclusions:** A/B UI and report selection deferred to v0.8.8; no automatic executive findings, event markers, HUD changes, theme redesign, or shareable PNG.
+
+**Acceptance checks:** docs/PORTAL_V087_ACCEPTANCE.md. Release to users only after first physical Odin 2 Portal session validation and comparison against raw CSV.
 
 ## v0.8.6 — Advanced single-session diagnostics (draft)
 
