@@ -25,14 +25,14 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Unit tests and assemble debug APK
-        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleV092base :app:assembleV092themes :app:assembleDebugAndroidTest --no-daemon
-      - name: Upload v0.9.2 Frosted APK
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleV093base :app:assembleV093themes :app:assembleDebugAndroidTest --no-daemon
+      - name: Upload v0.9.3 Frosted APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.2-frosted
-          path: app/build/outputs/apk/v092base/app-v092base.apk
-      - name: Upload v0.9.2 Themes APK
+          name: CoreMetrics-v0.9.3-frosted
+          path: app/build/outputs/apk/v093base/app-v093base.apk
+      - name: Upload v0.9.3 Themes APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.2-themes
-          path: app/build/outputs/apk/v092themes/app-v092themes.apk
+          name: CoreMetrics-v0.9.3-themes
+          path: app/build/outputs/apk/v093themes/app-v093themes.apk

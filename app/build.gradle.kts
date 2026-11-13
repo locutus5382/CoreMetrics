@@ -10,28 +10,28 @@ android {
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 21
-        versionName = "0.9.2-performance-lifecycle-alpha"
+        versionCode = 22
+        versionName = "0.9.3-hud-recorder-reliability-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM · HUD"
     }
     buildTypes {
-        create("v092themes") {
+        create("v093themes") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v092themes"
+            applicationIdSuffix = ".v093themes"
             versionNameSuffix = "-themes"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.2 Themes"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.2 Themes Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.2 Themes · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.3 Themes"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.3 Themes Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.3 Themes · HUD"
         }
-        create("v092base") {
+        create("v093base") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v092base"
+            applicationIdSuffix = ".v093base"
             versionNameSuffix = "-analytics"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.2 Frosted"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.2 Frosted Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.2 Frosted · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.3 Frosted"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.3 Frosted Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.3 Frosted · HUD"
         }
         create("v07test") {
             initWith(getByName("debug"))
