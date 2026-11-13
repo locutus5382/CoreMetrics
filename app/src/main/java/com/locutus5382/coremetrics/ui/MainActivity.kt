@@ -256,7 +256,7 @@ class MainActivity : ComponentActivity() {
             ){ result->
                 onResult(when(result) {
                     StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED->
-                        "HUD tile added · toggles standby, not REC"
+                        "HUD tile added · show/hide without stopping REC"
                     StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED->
                         "HUD tile is already installed"
                     StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED->
@@ -782,6 +782,7 @@ class MainActivity : ComponentActivity() {
                                             status.powerStatus==null -> null
                                             else -> "Unknown"
                                         }
+                                        if(status.running || status.starting) {
                                         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
                                             val cpuDisplay=cpuEma?.let {
                                                 String.format(Locale.US,"%.1f°C",it)
@@ -838,6 +839,30 @@ class MainActivity : ComponentActivity() {
                                         }
                                         LiveScope(liveTrace)
                                         PerCoreLoadMatrix(status.coreLoads)
+                                        }else {
+                                            GlassPanel {
+                                                Text("LAST RECORDED SESSION",color=iceBlue,
+                                                    style=MaterialTheme.typography.titleMedium)
+                                                val last=sessionList.firstOrNull()
+                                                if(last!=null) {
+                                                    Text("Session "+last.id+" · "+last.configuration+
+                                                        " · "+last.status,
+                                                        color=coreText,fontWeight=FontWeight.Bold)
+                                                    Text(last.count.toString()+" samples · "+
+                                                        time(last.startedAt)+" · "+
+                                                        (last.note?:"No game note"),color=coreSecondary)
+                                                    OutlinedButton(onClick={
+                                                        detailedId=last.id;page="Sessions"
+                                                    }){Text("Analyze last session")}
+                                                }else Text("No saved sessions yet. "+
+                                                    "Open the HUD and press REC during gameplay.",
+                                                    color=coreSecondary)
+                                                Text("Standby does not poll hardware. "+
+                                                    "Launch Eden first, then use the CM HUD tile.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
                                         GlassPanel {
                                             Text("RECORDING CONTROL  ·  ONE USER-STARTED SESSION",
                                                 color = coreCyan, style = MaterialTheme.typography.titleMedium)
@@ -1461,7 +1486,8 @@ class MainActivity : ComponentActivity() {
                                     }
                                     else -> {
                                         GlassPanel {
-                                            Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
+                                            Text("Settings & privacy",color=coreText,
+                                                 style = MaterialTheme.typography.titleMedium)
                                              Text("CONTROLLER · L1/R1 (or L2/R2) switches tabs; "+
                                                  "D-pad/hat and right joystick move focus; "+
                                                  "A/DPAD CENTER selects focused controls. "+
@@ -1494,7 +1520,7 @@ class MainActivity : ComponentActivity() {
                                                 Text("Only application screens change. "+
                                                     "The in-game native floating HUD, its "+
                                                     "touch-lock and all telemetry remain unchanged. "+
-                                                    "No blur/animated shaders are used.",
+                                                    "Only short press-time glass effects animate; no idle loops.",
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                                 HorizontalDivider(color=coreBorder)
@@ -1503,8 +1529,8 @@ class MainActivity : ComponentActivity() {
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
                                                 Text("This Frosted-only APK has one fixed finish. "+
                                                     "Use the separate CoreMetrics v0.8.5 Themes APK "+
-                                                    "for the visible THEME button, Liquid and "+
-                                                    "Tactical Flat.",
+                                                    "for the THEME button and Crystal Aero, Solar Pulse and "+
+                                                    "Cobalt Matrix.",
                                                     color=coreSecondary)
                                             }
                                             Row(verticalAlignment=Alignment.CenterVertically,
