@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 class RecordingService:Service() {
     companion object {
         const val START="com.locutus5382.coremetrics.START"
+        const val RECOVER="com.locutus5382.coremetrics.RECOVER_LEASE"
         const val STOP="com.locutus5382.coremetrics.STOP"
         const val ARM="com.locutus5382.coremetrics.ARM_HUD"
         const val DISARM="com.locutus5382.coremetrics.DISARM_HUD"
@@ -207,7 +208,14 @@ class RecordingService:Service() {
         // START_STICKY is only a *request* to Android; the OEM can still kill
         // this process. A null restart intent requires a fresh, explicitly
         // user-created lease and (for REC) the SAME active SQLite session ID.
-        val command=if(intent!=null)intent else {
+        // Quick Settings can explicitly request the SAME persisted session
+        // after an LMK kill. It must never allocate a fresh session instead.
+        if(intent?.action==RECOVER &&
+            (task?.isActive==true || MonitorState.starting || armed)) {
+            RecorderJournal.event(this,"RECOVERY_IGNORED","service already active")
+            return continuation(RECOVER)
+        }
+        val command=if(intent!=null && intent.action!=RECOVER)intent else {
             val old=RecorderLease.recover(this)
             if(old==null || (old.recording && !db.canResume(old.id)) ||
                 !RecorderLease.markRecovery(this)) {

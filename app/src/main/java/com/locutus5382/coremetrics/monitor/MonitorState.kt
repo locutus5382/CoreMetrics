@@ -4,6 +4,8 @@ import com.locutus5382.coremetrics.telemetry.Snapshot
 
 /** In the :monitor process only. Cross-process UI state uses StatusProvider. */
 internal object MonitorState {
+    /** False for a provider-only :monitor process started by a tile query. */
+    @Volatile var serviceCreated=false
     @Volatile var running = false
     @Volatile var starting = false
     @Volatile var standby = false
