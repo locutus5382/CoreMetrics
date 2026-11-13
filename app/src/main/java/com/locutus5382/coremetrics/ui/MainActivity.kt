@@ -233,8 +233,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v089themes") -> "CoreMetrics v0.8.9 Themes • Record"
-                    packageName.endsWith(".v089base") -> "CoreMetrics v0.8.9 Frosted • Record"
+                    packageName.endsWith(".v090themes") -> "CoreMetrics v0.9.0 Themes • Record"
+                    packageName.endsWith(".v090base") -> "CoreMetrics v0.9.0 Frosted • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -266,8 +266,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v089themes"))"CoreMetrics v0.8.9 Themes · HUD"
-                else if(packageName.endsWith(".v089base"))"CoreMetrics v0.8.9 Frosted · HUD"
+                if(packageName.endsWith(".v090themes"))"CoreMetrics v0.9.0 Themes · HUD"
+                else if(packageName.endsWith(".v090base"))"CoreMetrics v0.9.0 Frosted · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -361,7 +361,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v089base")
+            val supportsThemeChoice=!packageName.endsWith(".v090base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -865,7 +865,7 @@ class MainActivity : ComponentActivity() {
                     Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
             val displayColorScheme=if(appliedFinish==SurfaceFinish.FROSTED)
-                // Exact pre-v0.8.9 Frosted Material3 colors and defaults.
+                // Exact pre-v0.9.0 Frosted Material3 colors and defaults.
                 darkColorScheme(primary=iceBlue,onPrimary=cobaltNavy,
                     secondary=coreCyan,surface=cobaltNavy,
                     background=cobaltNavy,onSurface=coreText)
