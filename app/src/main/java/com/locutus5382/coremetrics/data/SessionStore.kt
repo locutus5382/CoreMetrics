@@ -2,6 +2,7 @@ package com.locutus5382.coremetrics.data
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.locutus5382.coremetrics.telemetry.Snapshot
@@ -236,28 +237,85 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         return writableDatabase.update("sessions",values,"status='RECORDING'",null)
     }
 
-    fun list(limit: Int = 80): List<Session> = readableDatabase.rawQuery("""
+    // Read exactly one selected session without first constructing 200 full
+    // summaries. Shared projection keeps summary/export metadata consistent.
+    private val sessionProjection="""
         SELECT s.id,s.started_at,s.ended_at,s.label,s.configuration,s.status,
         (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id),
-         s.game_note,s.graphics_driver,s.resolution_scale,
+        s.game_note,s.graphics_driver,s.resolution_scale,
         EXISTS(SELECT 1 FROM samples x WHERE x.session_id=s.id AND
             (x.battery_status LIKE 'CHARGING_OR_EXTERNAL_POWER%'
              OR x.battery_status LIKE 'FULL%' OR x.battery_status LIKE 'PLUGGED%')),
         EXISTS(SELECT 1 FROM samples x WHERE x.session_id=s.id AND
             x.battery_status LIKE 'DISCHARGING%')
-        FROM sessions s ORDER BY s.id DESC LIMIT ?
-    """.trimIndent(), arrayOf(limit.coerceIn(1,200).toString())).use { c ->
-        buildList {
-            while (c.moveToNext()) add(Session(
-                c.getLong(0),c.getLong(1),
-                if (c.isNull(2)) null else c.getLong(2),
-                c.getString(3) ?: "",c.getString(4) ?: "",
-                c.getString(5) ?: "UNKNOWN",c.getInt(6),
-                if(c.isNull(7))null else c.getString(7),
-                if(c.isNull(8))null else c.getString(8),
-                if(c.isNull(9))null else c.getString(9),
-                c.getInt(10)!=0,c.getInt(11)!=0
-            ))
+        FROM sessions s
+    """.trimIndent()
+
+    private fun decodeSession(c:Cursor)=Session(
+        c.getLong(0),c.getLong(1),
+        if(c.isNull(2))null else c.getLong(2),
+        c.getString(3)?:"",c.getString(4)?:"",
+        c.getString(5)?:"UNKNOWN",c.getInt(6),
+        if(c.isNull(7))null else c.getString(7),
+        if(c.isNull(8))null else c.getString(8),
+        if(c.isNull(9))null else c.getString(9),
+        c.getInt(10)!=0,c.getInt(11)!=0
+    )
+
+    @Synchronized fun list(limit:Int=80):List<Session> =
+        readableDatabase.rawQuery(sessionProjection+
+            " ORDER BY s.id DESC LIMIT ?",
+            arrayOf(limit.coerceIn(1,200).toString())).use { c ->
+            buildList { while(c.moveToNext())add(decodeSession(c)) }
+        }
+
+    @Synchronized fun sessionById(id:Long):Session? {
+        if(id<=0L)return null
+        return readableDatabase.rawQuery(sessionProjection+
+            " WHERE s.id=? LIMIT 1",arrayOf(id.toString())).use { c ->
+            if(c.moveToFirst())decodeSession(c) else null
+        }
+    }
+
+    /** Explicit manual context. Updating a label cannot modify source samples. */
+    @Synchronized fun updateGameNote(id:Long,note:String?):Boolean {
+        if(id<=0L)return false
+        return writableDatabase.update("sessions",ContentValues().apply {
+            put("game_note",note?.trim()?.take(64)?.takeIf{it.isNotBlank()})
+        },"id=? AND status!='RECORDING'",arrayOf(id.toString()))==1
+    }
+
+    @Synchronized fun updateConfiguration(id:Long,config:String):Boolean {
+        if(id<=0L || config !in setOf("Stock","Underclocking","Custom"))
+            return false
+        return writableDatabase.update("sessions",ContentValues().apply {
+            put("configuration",config)
+        },"id=? AND status!='RECORDING'",arrayOf(id.toString()))==1
+    }
+
+    /** Atomic removal of one completed/interrupted session and both A/B
+     * associations. Active/unreconciled RECORDING rows are NEVER deleted.
+     * An overlapping monitor write is serialized by SQLite's write transaction.
+     */
+    @Synchronized fun deleteSession(id:Long):Boolean {
+        if(id<=0L)return false
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            val deletable=db.rawQuery(
+                "SELECT status FROM sessions WHERE id=? LIMIT 1",
+                arrayOf(id.toString())).use { c ->
+                c.moveToFirst() && c.getString(0)!="RECORDING"
+            }
+            if(!deletable)return false
+            val arg=arrayOf(id.toString())
+            db.delete("session_links","first_id=? OR second_id=?",arrayOf(id.toString(),id.toString()))
+            db.delete("samples","session_id=?",arg)
+            val deleted=db.delete("sessions","id=? AND status!='RECORDING'",arg)==1
+            if(deleted)db.setTransactionSuccessful()
+            return deleted
+        }finally{
+            db.endTransaction()
         }
     }
 
@@ -398,7 +456,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
 
     private fun exportCsvInternal(id:Long,writer:Writer,
         startMs:Long?,endMs:Long?) {
-        val session = list(200).firstOrNull { it.id == id }
+        val session = sessionById(id)
             ?: error("Session was not found")
         val headers = listOf("session_id","game_label","configuration","status",
             "sample_epoch_ms","cpu_temp_c","gpu_temp_c","battery_temp_c",
