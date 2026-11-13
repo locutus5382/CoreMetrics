@@ -2,7 +2,25 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.9.3 HUD/recorder reliability draft. Unit and APK CI plus controlled single-install Odin acceptance required. Earlier versioned test builds and main are unchanged; there is no production release or RC1.
+**Current development status: v0.9.4 unified alpha — one CoreMetrics application ID, one APK, four optional finishes.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+
+## One-app Quick Start (v0.9.4)
+
+1. Install the **single** `CoreMetrics-v0.9.4-unified-debug` GitHub Actions artifact (`app-debug.apk`, package `com.locutus5382.coremetrics`), with overlay and notification permissions enabled.
+2. Launch Eden/Hades, open Android Quick Settings and tap **CoreMetrics HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
+3. Tap the floating HUD's **REC** button, or the separate **CoreMetrics REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
+4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
+
+**Appearance:** Frosted Glass is the default. True Glass, Modern Colorful and Technical Cockpit are available in Settings or through **STYLE ↻**. Themes do not alter telemetry, the floating HUD or sample cadence. The system, not CoreMetrics, controls the active Quick Settings tile color; there is no perpetual glow animation or live tile-temperature polling.
+
+**RAM and stability changes:** QS tiles read their own `:monitor` process state directly while checking persisted leases for recovery, without unnecessary self-ContentProvider IPC. The UI polls less often outside Live/HUD screens and caches thermal-sensor classification during recorded sampling. Closing the Activity after arming standby remains optional; **no fixed memory saving or LMK immunity is claimed**.
+
+**Migration warning:** Older `.v092themes`, `.v093base`, `.v093themes`, `.preview`, and other side-by-side test variants remain distinct Android packages with **separate SQLite session databases**. Installing the unified APK will NOT import their private sessions. Export any valuable CSVs and diagnostic reports from old builds first, then import CSVs into the unified application. Remove old Quick Settings tiles, revoke older variants' overlay grants and uninstall variants only AFTER preserving data. The canonical package `com.locutus5382.coremetrics` retains its own app-private data when updated with a compatible signing key; a different signing key may require uninstall/reinstall and backup first.
+
+**Validation:** See `docs/PORTAL_V094_UNIFIED_ACCEPTANCE.md`. Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
+
+---
+
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -19,7 +37,7 @@
 - No PServer in initial Play-compatible version. A separate strictly read-only Odin variant may be designed later only if it provides validated value and clear permissions; a read-only observer cannot claim LMK immunity.
 - On-device collected readings and session history stay in app-private storage unless the user chooses to export them.
 
-**Parallel test build (recommended):** GitHub Actions now also generates **CoreMetrics Preview**, package `com.locutus5382.coremetrics.preview`. It has a separate provider authority, tile, preferences and SQLite database, so it can coexist with the v0.5 installation even if CI debug signing keys differ. Export v0.5 CSVs and import them inside Preview to compare the same recorded runs. Do not use the regular v0.6 debug APK if you want to preserve v0.5 installed simultaneously. Preview is not an upgrade/migration and will not automatically see v0.5 private sessions.
+**Historical note:** Previous development stages used separate Preview / Frosted / Themes packages to compare builds. The unified v0.9.4 build replaces this workflow; historical test instructions below are retained only for traceability.
 
 ## Optional v0.8 Themes build (separate side-by-side APK)
 
