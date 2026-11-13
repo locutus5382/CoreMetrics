@@ -80,9 +80,13 @@ class RecordingService:Service() {
     override fun onCreate() {
         super.onCreate()
         db=SessionStore(applicationContext)
-        hud=RecorderHud(applicationContext)
+        hud=MonitorHudOwner.get(applicationContext)
         settings=HudOptions.from(this)
-        RecorderJournal.event(this,"SERVICE_CREATED","pid="+android.os.Process.myPid())
+        MonitorState.serviceCreated=true
+        RecorderJournal.event(this,"SERVICE_CREATED",
+            "pkg="+packageName+" pid="+android.os.Process.myPid()+
+                " instance="+System.identityHashCode(this)+
+                " "+hud.windowIdentity())
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL,"CoreMetrics recording / HUD standby",
                 NotificationManager.IMPORTANCE_LOW))
@@ -146,7 +150,9 @@ class RecordingService:Service() {
     private fun disarmNow(){
         armed=false
         MonitorState.standby=false
-        MonitorState.hudState=hud.hide()
+        val removal=hud.hide()
+        RecorderJournal.event(this,"HUD_REMOVE",removal+" "+hud.windowIdentity())
+        MonitorState.hudState=removal
         MonitorState.hudVisible=false
         MonitorState.hudLocked=false
         MonitorState.clear("Standby closed")
@@ -192,7 +198,8 @@ class RecordingService:Service() {
         MonitorState.hudState=result
         MonitorState.hudLocked=hud.isLocked()
         syncHudVisibility()
-        RecorderJournal.event(this,"HUD_ATTACH",result)
+        RecorderJournal.event(this,"HUD_ATTACH",
+            "pkg="+packageName+" "+result+" "+hud.windowIdentity())
         return result
     }
 
@@ -596,7 +603,13 @@ class RecordingService:Service() {
             " active="+(task?.isActive==true))
         destroying=true
         stopping=true
-        runCatching{hud.hide()}
+        val remove=runCatching{hud.hide()}
+            .getOrElse{"HUD_HIDE_EXCEPTION_"+it.javaClass.simpleName}
+        RecorderJournal.event(this,"HUD_REMOVE_ON_DESTROY",
+            remove+" "+hud.windowIdentity())
+        MonitorState.serviceCreated=false
+        MonitorState.standby=false
+        MonitorState.hudVisible=false
         task?.cancel()
         scope.cancel()
         val active=task
