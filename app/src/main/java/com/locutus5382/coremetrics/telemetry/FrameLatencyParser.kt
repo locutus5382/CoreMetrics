@@ -12,13 +12,14 @@ data class FrameEstimate(
 )
 
 object FrameLatencyParser {
+    private val whitespace=Regex("""\s+""")
     fun parse(text: String, nowNanos: Long?): FrameEstimate {
         val lines = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
         if (text.contains("Permission Denial",true) || text.contains("permission denied",true))
             return FrameEstimate(null,null,0,"PERMISSION_DENIED")
         if (lines.size < 5) return FrameEstimate(null,null,0,"NO_FRAME_DATA")
         val stamps = lines.drop(1).mapNotNull { line ->
-            val c = line.split(Regex("\\s+"))
+            val c = line.split(whitespace)
             if (c.size != 3) return@mapNotNull null
             c[2].toLongOrNull()?.takeIf { it > 0 && it != Long.MAX_VALUE }
         }.distinct().sorted().takeLast(120)

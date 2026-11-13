@@ -4,10 +4,11 @@ import kotlin.math.roundToInt
 
 /** Pure parser and CPU delta logic; no Android APIs or privileged operations. */
 object CpuMath {
+    private val whitespace=Regex("""\s+""")
     data class Times(val idle: Long, val total: Long)
 
     fun parse(line: String?): Times? {
-        val fields = line?.trim()?.split(Regex("\\s+")) ?: return null
+        val fields = line?.trim()?.split(whitespace) ?: return null
         if (fields.size < 5 || !fields[0].startsWith("cpu")) return null
         val ticks = fields.drop(1).map { it.toLongOrNull() ?: return null }
         if (ticks.any { it < 0L }) return null

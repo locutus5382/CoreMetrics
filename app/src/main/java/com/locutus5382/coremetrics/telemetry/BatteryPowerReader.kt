@@ -37,10 +37,17 @@ class BatteryPowerReader(private val context: Context) {
         else null
     } catch (_: Exception) { null }
 
+    /** Standalone clients retain the old read() API. DirectSampler passes the
+     * same battery broadcast to read(state) to avoid a second IPC per tick. */
     fun read(): BatteryPowerReading {
-        val state: Intent? = try {
-            context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val state=try {
+            context.registerReceiver(null,IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         } catch (_: Exception) { null }
+        return read(state)
+    }
+
+    /** A null state means unavailable, NOT permission to fetch a second copy. */
+    fun read(state: Intent?): BatteryPowerReading {
         val batteryStatus = state?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         val charging = when (batteryStatus) {
             BatteryManager.BATTERY_STATUS_CHARGING, BatteryManager.BATTERY_STATUS_FULL -> true

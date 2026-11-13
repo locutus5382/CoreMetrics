@@ -8,6 +8,7 @@ import java.util.Locale
  * The number of times a core is busiest is NOT CPU residency or core time.
  */
 object V08Analytics {
+    private val coreId=Regex("""cpu[0-7]""")
     data class CoreWinner(val core:Int,val count:Int,val sharePct:Double)
     data class CoreDistribution(val observations:Int,val ignored:Int,
         val winners:List<CoreWinner>)
@@ -15,7 +16,7 @@ object V08Analytics {
         val counts=IntArray(8)
         var valid=0
         for(point in points) {
-            val id=point.busiestCore?.takeIf{it.matches(Regex("cpu[0-7]"))}
+            val id=point.busiestCore?.takeIf{it.matches(coreId)}
                 ?.removePrefix("cpu")?.toIntOrNull()
             if(id!=null) {counts[id]++;valid++}
         }

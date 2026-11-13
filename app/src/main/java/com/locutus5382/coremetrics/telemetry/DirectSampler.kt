@@ -13,6 +13,23 @@ import kotlin.math.roundToInt
  */
 class DirectSampler(private val app: Application) {
     private val batteryPower = BatteryPowerReader(app)
+    private val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+    private val policyName = Regex("""policy\d+""")
+    private val coreName = Regex("""cpu\d+""")
+    private val whitespace = Regex("""\s+""")
+    // Cache policy *paths* only, never frequency values. Retry discovery if
+    // no directories were readable at first sampling (e.g. early boot).
+    private var policyDirectories: List<File>? = null
+    private fun cpuPolicies(): List<File> {
+        val cached = policyDirectories
+        if (!cached.isNullOrEmpty()) return cached
+        val found = File("/sys/devices/system/cpu/cpufreq").listFiles()
+            ?.filter { it.name.matches(policyName) }
+            ?.sortedBy { it.name.drop(6).toIntOrNull() ?: Int.MAX_VALUE }
+            ?.take(12).orEmpty()
+        if (found.isNotEmpty()) policyDirectories = found
+        return found
+    }
     private var priorCpu: CpuMath.Times? = null
     private val priorCore = mutableMapOf<String, CpuMath.Times>()
     private data class Sensor(val type: String, val path: String)
@@ -38,8 +55,7 @@ class DirectSampler(private val app: Application) {
         }.maxOrNull()
     }
 
-    private fun battery(): Triple<Double?,Int?,Boolean> {
-        val intent: Intent? = app.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+    private fun battery(intent: Intent?): Triple<Double?,Int?,Boolean> {
         val temp = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
             ?.takeIf { it in -200..1500 }?.div(10.0)
         val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
@@ -50,12 +66,8 @@ class DirectSampler(private val app: Application) {
     }
 
     private fun cpuClockSummary(): String? {
-        val cpufreq = File("/sys/devices/system/cpu/cpufreq")
-        val parts = cpufreq.listFiles()?.asSequence()
-            ?.filter { it.name.matches(Regex("policy\\d+")) }
-            ?.sortedBy { it.name.drop(6).toIntOrNull() ?: 999 }
-            ?.take(12)
-            ?.mapNotNull { policy ->
+        val parts = cpuPolicies().asSequence()
+            .mapNotNull { policy ->
                 val khz = read(policy.path + "/scaling_cur_freq")?.toLongOrNull()
                     ?.takeIf { it in 1..10_000_000 } ?: return@mapNotNull null
                 policy.name + " " + String.format(java.util.Locale.US, "%.2f GHz", khz / 1e6)
@@ -77,7 +89,7 @@ class DirectSampler(private val app: Application) {
         val primary = read(root + "gpu_busy_percentage")
             ?.substringBefore(" ")?.removeSuffix("%")?.trim()?.toIntOrNull()
         if (primary != null && primary in 0..100) return primary
-        val values = read(root + "gpubusy")?.split(Regex("\\s+"))
+        val values = read(root + "gpubusy")?.split(whitespace)
             ?.mapNotNull { it.toLongOrNull() }.orEmpty()
         return if (values.size >= 2 && values[1] > 0 && values[0] in 0..values[1])
             (values[0] * 100.0 / values[1]).roundToInt() else null
@@ -109,7 +121,7 @@ class DirectSampler(private val app: Application) {
         priorCpu = current
         val perCore = lines.asSequence().mapNotNull { line ->
             val label = line.substringBefore(" ")
-            if (!label.matches(Regex("cpu\\d+"))) return@mapNotNull null
+            if (!label.matches(coreName)) return@mapNotNull null
             val ticks = CpuMath.parse(line) ?: return@mapNotNull null
             val load = CpuMath.percent(priorCore[label], ticks)
             priorCore[label] = ticks
@@ -123,8 +135,13 @@ class DirectSampler(private val app: Application) {
         val total = kb("MemTotal"); val available = kb("MemAvailable")
         val ram = if (total != null && available != null && available in 0..total)
             (total - available) / 1048576.0 else null
-        val battery = battery()
-        val power = batteryPower.read()
+        // One sticky broadcast fetch per sample. Both temperature/percentage
+        // and electrical-power status interpret precisely the SAME snapshot.
+        val batteryIntent = try {
+            app.registerReceiver(null,batteryFilter)
+        } catch (_: Exception) { null }
+        val battery = battery(batteryIntent)
+        val power = batteryPower.read(batteryIntent)
         return Snapshot(
             timeMs = now, cpuTempC = thermal(true), gpuTempC = thermal(false),
             batteryTempC = battery.first, batteryPercent = battery.second,
