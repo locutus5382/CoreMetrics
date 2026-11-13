@@ -65,22 +65,33 @@ internal fun CoreWinnerPanel(
             Text("No valid busiest-core samples were recorded.",
                 color=coreSecondary)
         } else {
-            distribution.winners.forEach { item ->
-                Row(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-                    Text("CPU ${item.core}",Modifier.width(43.dp),color=coreText,
-                        style=MaterialTheme.typography.labelSmall)
-                    Box(Modifier.weight(1f).height(12.dp)
-                        .background(Color(0x552A4059),RoundedCornerShape(3.dp))) {
-                        Box(Modifier.fillMaxWidth(
-                            (item.sharePct/100.0).toFloat().coerceIn(0f,1f))
-                            .fillMaxHeight()
-                            .background(if(item.core>=7)solarOrange
-                                else if(item.core>=3)coreCyan else coreMint,
-                                RoundedCornerShape(3.dp)))
+            Row(horizontalArrangement=Arrangement.spacedBy(14.dp)) {
+                for(group in 0..1) {
+                    Column(Modifier.weight(1f),
+                        verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                        distribution.winners.filter{item->
+                            item.core in (group*4)..(group*4+3)
+                        }.forEach { item ->
+                            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                Text("CPU ${item.core}",Modifier.width(42.dp),
+                                    color=coreText,
+                                    style=MaterialTheme.typography.labelSmall)
+                                Box(Modifier.weight(1f).height(12.dp)
+                                    .background(Color(0x552A4059),
+                                        RoundedCornerShape(3.dp))) {
+                                    Box(Modifier.fillMaxWidth(
+                                        (item.sharePct/100.0).toFloat().coerceIn(0f,1f))
+                                        .fillMaxHeight()
+                                        .background(if(item.core>=7)solarOrange
+                                            else if(item.core>=3)coreCyan else coreMint,
+                                            RoundedCornerShape(3.dp)))
+                                }
+                                Text(String.format(Locale.US,"%.0f%%",item.sharePct),
+                                    Modifier.width(36.dp),color=coreText,
+                                    style=MaterialTheme.typography.labelSmall)
+                            }
+                        }
                     }
-                    Text(String.format(Locale.US,"%.0f%%",item.sharePct),
-                        Modifier.width(39.dp),color=coreText,
-                        style=MaterialTheme.typography.labelSmall)
                 }
             }
         }

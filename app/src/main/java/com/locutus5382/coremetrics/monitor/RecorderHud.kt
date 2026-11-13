@@ -316,20 +316,26 @@ internal class RecorderHud(private val context:Context) {
     /** Clear state communication: enabled = cyan frosted, disabled = muted,
      * almost borderless, REC = red. The native drawer does not poll telemetry. */
     private fun paintDrawerToggle(view:TextView,label:String,enabled:Boolean) {
-        view.text=(if(enabled)"● " else "○ ")+label
+        view.text=(if(enabled)"✓ " else "○ ")+label
         view.contentDescription=label+(if(enabled)" enabled" else " disabled")
-        view.setTextColor(if(enabled)Color.rgb(223,250,255)
-            else Color.rgb(172,191,211))
+        view.setTextColor(if(enabled)Color.WHITE
+            else Color.argb(160,188,212,236))
+        view.typeface=Typeface.create("sans-serif-medium",
+            if(enabled)Typeface.BOLD else Typeface.NORMAL)
+        val orange=label=="CPU T" || label=="RAM"
         view.background=GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            if(enabled)intArrayOf(Color.argb(225,16,91,115),
-                Color.argb(205,9,54,93))
-            else intArrayOf(Color.argb(65,6,17,35),
-                Color.argb(55,12,31,56))
+            if(enabled && orange)intArrayOf(
+                Color.argb(219,255,107,0),Color.argb(195,209,65,0))
+            else if(enabled)intArrayOf(
+                Color.argb(216,37,99,235),Color.argb(191,25,72,192))
+            else intArrayOf(
+                Color.argb(39,7,17,40),Color.argb(36,7,17,40))
         ).apply {
             cornerRadius=dp(12f).toFloat()
-            setStroke(if(enabled)dp(1f).coerceAtLeast(1) else 0,
-                if(enabled)Color.rgb(94,224,255) else Color.TRANSPARENT)
+            if(enabled)setStroke(dp(1.5f).coerceAtLeast(1),
+                Color.argb(235,242,247,255))
+            else setStroke(0,Color.TRANSPARENT)
         }
     }
 
@@ -337,7 +343,7 @@ internal class RecorderHud(private val context:Context) {
         val selected=mapOf(
             "CPU T" to opts.showCpuTemp,"GPU T" to opts.showGpuTemp,
             "CPU %" to opts.showCpuLoad,"GPU %" to opts.showGpuLoad,
-            "FPS" to opts.showFps,"W" to opts.showPower,
+            "W" to opts.showPower,
             "RAM" to opts.showRam)
         drawerSwitches.forEach { (name,view) ->
             paintDrawerToggle(view,name,selected[name]==true)
@@ -348,7 +354,7 @@ internal class RecorderHud(private val context:Context) {
         opacityLabel?.text=String.format(Locale.US,
             " Glass %d%% ",(opts.opacity*100f).roundToInt())
         drawerRecControl?.let { button ->
-            button.text=if(recording)"● STOP SESSION" else "● START REC"
+            button.text=if(recording)"● STOP" else "● REC"
             button.setTextColor(Color.WHITE)
             button.background=GradientDrawable().apply {
                 cornerRadius=dp(12f).toFloat()
@@ -371,65 +377,69 @@ internal class RecorderHud(private val context:Context) {
         }
     }
 
+    /** Two compact 4-control rows, plus a separate opacity footer.
+     * A verified SurfaceFlinger provider is mandatory before offering FPS. */
     private fun newDrawer():LinearLayout {
         val column=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
-            setPadding(dp(8f),dp(8f),dp(8f),dp(8f))
+            setPadding(dp(7f),dp(7f),dp(7f),dp(7f))
         }
-        val row1=LinearLayout(context).apply {
+        fun makeRow()=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
         }
-        val toggles=listOf(
-            "CPU T" to { opts.copy(showCpuTemp=!opts.showCpuTemp) },
-            "GPU T" to { opts.copy(showGpuTemp=!opts.showGpuTemp) },
-            "CPU %" to { opts.copy(showCpuLoad=!opts.showCpuLoad) },
-            "GPU %" to { opts.copy(showGpuLoad=!opts.showGpuLoad) },
-            "FPS" to { opts.copy(showFps=!opts.showFps) },
-            "W" to { opts.copy(showPower=!opts.showPower) },
-            "RAM" to { opts.copy(showRam=!opts.showRam) }
-        )
-        toggles.forEach { (label,make) ->
-            val button=action(label){changeOptions(make())}
-            drawerSwitches[label]=button
-            row1.addView(button,LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,dp(42f)).apply {
-                marginEnd=dp(5f)
-            })
+        fun addChip(row:LinearLayout,label:String,handler:()->Unit):TextView {
+            val chip=action(label,handler).apply {
+                textSize=11f
+                setPadding(dp(6f),dp(5f),dp(6f),dp(5f))
+            }
+            row.addView(chip,LinearLayout.LayoutParams(
+                0,dp(39f),1f).apply {marginEnd=dp(4f)})
+            return chip
         }
-        val metricsScroll=HorizontalScrollView(context).apply {
-            isHorizontalScrollBarEnabled=false
-            overScrollMode=View.OVER_SCROLL_NEVER
-            addView(row1)
+        val top=makeRow()
+        drawerSwitches["CPU T"]=addChip(top,"CPU T") {
+            changeOptions(opts.copy(showCpuTemp=!opts.showCpuTemp))
         }
-        column.addView(metricsScroll,LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,dp(45f)))
-        val row2=LinearLayout(context).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
+        drawerSwitches["GPU T"]=addChip(top,"GPU T") {
+            changeOptions(opts.copy(showGpuTemp=!opts.showGpuTemp))
         }
-        row2.addView(action("− Glass"){changeOptions(
-            opts.copy(opacity=(opts.opacity-.1f).coerceAtLeast(.30f)))})
-        opacityLabel=styledLabel("",11f).also{row2.addView(it)}
-        row2.addView(action("+ Glass"){changeOptions(
-            opts.copy(opacity=(opts.opacity+.1f).coerceAtMost(.90f)))})
-        graphSwitch=action("Graphs"){changeOptions(
-            opts.copy(showSparkline=!opts.showSparkline))}.also{
-            row2.addView(it)
+        drawerSwitches["CPU %"]=addChip(top,"CPU %") {
+            changeOptions(opts.copy(showCpuLoad=!opts.showCpuLoad))
         }
-        drawerRecControl=action("REC"){onRecord?.invoke()}.also{
-            row2.addView(it)
+        drawerSwitches["GPU %"]=addChip(top,"GPU %") {
+            changeOptions(opts.copy(showGpuLoad=!opts.showGpuLoad))
         }
-        val controlScroll=HorizontalScrollView(context).apply{
-            isHorizontalScrollBarEnabled=false
-            overScrollMode=View.OVER_SCROLL_NEVER
-            addView(row2)
+        column.addView(top)
+        val bottom=makeRow()
+        drawerSwitches["RAM"]=addChip(bottom,"RAM") {
+            changeOptions(opts.copy(showRam=!opts.showRam))
         }
-        column.addView(controlScroll,LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,dp(45f)))
-        column.addView(styledLabel(
-            "Cyan = enabled · dim = off · red = recording · swipe for more controls",
-            10f))
+        drawerSwitches["W"]=addChip(bottom,"W") {
+            changeOptions(opts.copy(showPower=!opts.showPower))
+        }
+        graphSwitch=addChip(bottom,"Graphs") {
+            changeOptions(opts.copy(showSparkline=!opts.showSparkline))
+        }
+        drawerRecControl=addChip(bottom,"REC") {
+            onRecord?.invoke()
+        }
+        column.addView(bottom,LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,dp(43f)))
+        val opacity=makeRow()
+        opacity.addView(action("−"){changeOptions(
+            opts.copy(opacity=(opts.opacity-.1f).coerceAtLeast(.30f)))},
+            LinearLayout.LayoutParams(dp(45f),dp(33f)))
+        opacityLabel=styledLabel("",11f).also { label ->
+            label.gravity=Gravity.CENTER
+            opacity.addView(label,LinearLayout.LayoutParams(dp(105f),dp(33f)))
+        }
+        opacity.addView(action("+"){changeOptions(
+            opts.copy(opacity=(opts.opacity+.1f).coerceAtMost(.90f)))},
+            LinearLayout.LayoutParams(dp(45f),dp(33f)))
+        opacity.addView(styledLabel(
+            "  ● enabled · ○ hidden · FPS requires validation",9f))
+        column.addView(opacity)
         refreshDrawerControls()
         return column
     }
@@ -685,7 +695,12 @@ internal class RecorderHud(private val context:Context) {
             View.VISIBLE else View.GONE
         val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
         mainText?.textSize=12f*scale
-        mainText?.maxWidth=dp(if(opts.layout=="pro")370f*scale else 300f*scale)
+        // Keep the compact pill on ONE line; a 460dp cap alone would hide
+        // the lock/settings controls, so the weighted label ellipsizes safely.
+        mainText?.maxWidth=dp(460f*scale)
+        mainText?.setSingleLine(opts.layout!="pro")
+        mainText?.ellipsize=if(opts.layout!="pro")
+            android.text.TextUtils.TruncateAt.END else null
         recText?.textSize=11f*scale
         // The unlocked main control and separate locked recovery chip share the
         // same vector linework, without an OS-dependent emoji glyph.
@@ -704,6 +719,17 @@ internal class RecorderHud(private val context:Context) {
         renderTelemetry()
         renderAction()
         if(attached())runCatching{params?.let{wm.updateViewLayout(frame,it)}}
+        if(drawerOpen && !collapsed)frame.post {
+            if(root===frame && attached() && drawerOpen && !collapsed) {
+                val p=params ?:return@post
+                val safeX=(windowWidth()-frame.width-dp(8f)).coerceAtLeast(0)
+                if(p.x>safeX) {
+                    p.x=safeX
+                    runCatching{wm.updateViewLayout(frame,p)}
+                }
+                if(locked)repositionUnlockControl()
+            }
+        }
         if(locked)frame.post{if(root===frame)repositionUnlockControl()}
     }
 
