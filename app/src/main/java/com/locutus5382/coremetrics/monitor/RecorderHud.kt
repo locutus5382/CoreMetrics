@@ -2,10 +2,7 @@ package com.locutus5382.coremetrics.monitor
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -18,8 +15,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import com.locutus5382.coremetrics.telemetry.Snapshot
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
 import java.util.Locale
@@ -130,12 +125,9 @@ internal data class HudOptions(
 internal class RecorderHud(private val context:Context) {
     private val wm=context.getSystemService(WindowManager::class.java)
     private val ui=Handler(Looper.getMainLooper())
-    private val graphs=LinkedHashMap<String,GraphView>()
-    private val graphCells=LinkedHashMap<String,View>()
     private var root:LinearLayout?=null
     private var pill:LinearLayout?=null
     private var drawer:LinearLayout?=null
-    private var graphsRow:LinearLayout?=null
     private var dockTab:LinearLayout?=null
     private var dockVisual:View?=null
     private var mainText:TextView?=null
@@ -149,7 +141,6 @@ internal class RecorderHud(private val context:Context) {
     private var unlockParams:WindowManager.LayoutParams?=null
     private var drawerControl:TextView?=null
     private val drawerSwitches=LinkedHashMap<String,TextView>()
-    private var graphSwitch:TextView?=null
     private var opacityLabel:TextView?=null
     private var drawerRecControl:TextView?=null
     private var closeControl:TextView?=null
@@ -438,7 +429,7 @@ internal class RecorderHud(private val context:Context) {
         drawerSwitches["W"]=addChip(bottom,"W") {
             changeOptions(opts.copy(showPower=!opts.showPower))
         }
-        addChip(bottom,"Dock") {dock(params?.x?.let{
+        addChip(bottom,"Dock") {if(!locked) dock(params?.x?.let{
             it+((root?.width?:0)/2)>windowWidth()/2
         }?:true)}
         drawerRecControl=addChip(bottom,"REC") {
@@ -478,8 +469,8 @@ internal class RecorderHud(private val context:Context) {
         disposed=false
         temporarilyHidden=false
         locked=false;collapsed=false;drawerOpen=false
-        graphs.clear();graphCells.clear();drawerSwitches.clear()
-        graphSwitch=null;opacityLabel=null;drawerRecControl=null
+        drawerSwitches.clear()
+        opacityLabel=null;drawerRecControl=null
         val line=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -507,6 +498,17 @@ internal class RecorderHud(private val context:Context) {
         line.addView(rec)
         drawerControl=action("⚙"){drawerOpen=!drawerOpen;applyAppearance()}
         line.addView(drawerControl)
+        // Explicit single-tap minimize reuses the existing 12dp docking tab;
+        // no new overlay or sampling thread. Tap the edge tab to restore.
+        val minimize=action("⌄") {
+            if(!locked) {
+                val pos=params
+                val right=pos?.let { it.x+((root?.width?:0)/2)>windowWidth()/2 }
+                    ?:true
+                dock(right)
+            }
+        }.apply {contentDescription="Minimize CoreMetrics to the screen edge"}
+        line.addView(minimize)
         lockControl=action(""){onLock?.invoke()}.apply {
             background=FlatLockChipDrawable(locked=false)
             setPadding(0,0,0,0)
@@ -614,7 +616,7 @@ internal class RecorderHud(private val context:Context) {
             }
             "HUD_ATTACHED"
         }catch(e:Exception){
-            root=null;params=null;pill=null;drawer=null;graphsRow=null
+            root=null;params=null;pill=null;drawer=null
             "HUD_ADD_FAILED_"+e.javaClass.simpleName
         }
     }
@@ -831,15 +833,15 @@ internal class RecorderHud(private val context:Context) {
         val frame=root ?:return "HUD_NOT_ATTACHED"
         return try {
             wm.removeViewImmediate(frame)
-            root=null;pill=null;drawer=null;graphsRow=null;dockTab=null
+            root=null;pill=null;drawer=null;dockTab=null
             params=null;mainText=null;recText=null;recDot=null
-            graphs.clear();graphCells.clear();drawerSwitches.clear()
-            graphSwitch=null;opacityLabel=null;drawerRecControl=null
+            drawerSwitches.clear()
+            opacityLabel=null;drawerRecControl=null
             recording=false;locked=false;collapsed=false;temporarilyHidden=false
             "HUD_REMOVED"
         }catch(e:Exception){
             if(!frame.isAttachedToWindow) {
-                root=null;params=null;graphs.clear();graphCells.clear()
+                root=null;params=null
                 "HUD_REMOVED_AFTER_EXCEPTION"
             }else "HUD_REMOVE_FAILED_"+e.javaClass.simpleName
         }
