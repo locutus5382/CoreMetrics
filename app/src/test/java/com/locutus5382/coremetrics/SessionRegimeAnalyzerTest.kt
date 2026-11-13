@@ -53,6 +53,27 @@ class SessionRegimeAnalyzerTest {
         assertNull(phases[2].meanDischargeW)
     }
 
+    @Test fun matchingCpuCapsSeparatedByLongRecordingGapStaySeparate() {
+        val early=(0..4).map{row(it,"2.80","3.19",6.0)}
+        val late=(40..44).map{row(it,"2.80","3.19",4.0)}
+        val phases=A.analyze(early+late)
+        assertEquals(2,phases.size)
+        assertEquals(0L,phases[0].startMs)
+        assertEquals(20_000L,phases[0].endMs)
+        assertEquals(200_000L,phases[1].startMs)
+        assertEquals(220_000L,phases[1].endMs)
+        assertEquals(6.0,phases[0].meanDischargeW!!,.001)
+        assertEquals(4.0,phases[1].meanDischargeW!!,.001)
+    }
+    @Test fun filteredOutLoadIntervalsAreNotIntegratedIntoEnergy() {
+        val rows=(0..6).map {
+            row(it,"2.80","3.19",if(it<3)3.0 else 9.0,
+                load=if(it==3)1.0 else 60.0)
+        }
+        val phases=A.analyze(rows,activeGameplayOnly=true)
+        assertEquals(1,phases.size)
+        assertEquals(3.0,phases[0].meanDischargeW!!,.001) // only first contiguous area
+    }
     @Test fun missingCapsAreNeverLabelledStock() {
         assertEquals("Limits unavailable", A.label(A.key(null)))
         assertTrue(A.label(A.key("policy3 max 2.05 GHz")).startsWith("Observed cap"))
