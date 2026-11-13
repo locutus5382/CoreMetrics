@@ -903,9 +903,12 @@ internal class RecorderHud(private val context:Context) {
         val rootRemoved=frame==null || removeTracked(frame)
         if(rootRemoved){
             root=null;params=null;pill=null;drawer=null;dockTab=null
-            mainText=null;recText=null;recDot=null
+            dockVisual=null;mainText=null;recText=null;recDot=null
+            recControl=null;lockControl=null;drawerControl=null
+            closeControl=null;minimizeControl=null
             drawerSwitches.clear()
-            opacityLabel=null;drawerRecControl=null;minimizeControl=null
+            opacityLabel=null;drawerRecControl=null
+            latest=null;thermal.reset();thermalValue=null
             recording=false;locked=false;collapsed=false
         }
         if(rootRemoved && chipRemoved){
