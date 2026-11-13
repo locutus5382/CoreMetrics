@@ -158,13 +158,24 @@ internal class RecorderHud(private val context:Context) {
     private var onOptionsChanged:((HudOptions)->Unit)?=null
     private var disposed=false
 
+    private fun shouldBlink() =
+        !disposed && recording && opts.blink && !collapsed && attached()
+
     private val blink=object:Runnable {
         override fun run() {
-            if(disposed || !recording || !attached())return
+            if(!shouldBlink())return
             blinkOn=!blinkOn
             renderAction()
             ui.postDelayed(this,650L)
         }
+    }
+    /** Centralize scheduling to avoid duplicate callbacks across dock/expand,
+     * option changes, app-initiated configurations and REC transitions. */
+    private fun syncBlink() {
+        ui.removeCallbacks(blink)
+        blinkOn=true
+        renderAction()
+        if(shouldBlink())ui.postDelayed(blink,650L)
     }
     private fun dp(v:Float)=(v*context.resources.displayMetrics.density).roundToInt()
     private fun windowWidth()=wm.currentWindowMetrics.bounds.width()
@@ -521,6 +532,7 @@ internal class RecorderHud(private val context:Context) {
         collapsed=true
         drawerOpen=false
         applyAppearance()
+        syncBlink()
         p.x=if(toRight) (windowWidth()-dp(44f)).coerceAtLeast(0) else 0
         runCatching{wm.updateViewLayout(frame,p)}
     }
@@ -530,6 +542,7 @@ internal class RecorderHud(private val context:Context) {
         val p=params ?:return
         collapsed=false
         applyAppearance()
+        syncBlink()
         val width=frame.measuredWidth.takeIf{it>0}?:dp(390f)
         p.x=if(dockRight) (windowWidth()-width-dp(12f)).coerceAtLeast(0)
             else dp(12f)
@@ -541,8 +554,13 @@ internal class RecorderHud(private val context:Context) {
         updated.save(context)
         onOptionsChanged?.invoke(updated)
         applyAppearance()
+        syncBlink()
     }
-    fun configure(options:HudOptions) {opts=options;applyAppearance()}
+    fun configure(options:HudOptions) {
+        opts=options
+        applyAppearance()
+        syncBlink()
+    }
     private fun repositionUnlockControl() {
         val chip=unlockWindow ?:return
         val cp=unlockParams ?:return
@@ -588,10 +606,9 @@ internal class RecorderHud(private val context:Context) {
             ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
             else -> Color.rgb(255,199,0)
         }
-        dockVisual?.background=GradientDrawable().apply {
-            cornerRadius=dp(8f).toFloat()
-            setColor(color)
-        }
+        // The dock tab's GradientDrawable is allocated when the view is
+        // constructed; just update its color on appearance changes.
+        (dockVisual?.background as? GradientDrawable)?.setColor(color)
         renderTelemetry()
         renderAction()
         if(attached())runCatching{params?.let{wm.updateViewLayout(frame,it)}}
@@ -605,10 +622,8 @@ internal class RecorderHud(private val context:Context) {
             latest=null;thermal.reset();thermalValue=null
             graphs.values.forEach{it.clear()}
         }
-        ui.removeCallbacks(blink)
-        blinkOn=true
         applyAppearance()
-        if(isRecording && attached())ui.postDelayed(blink,650L)
+        syncBlink()
     }
 
     fun update(s:Snapshot,count:Long) {
