@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.8.2 experimental maintenance branch, with separately installable Frosted Analytics and optional Themes test APKs. Not merged into main, not physically validated on the Odin 2 Portal, and not approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.8.3 Portal UI/controller test branch, with separately installable Frosted Analytics and optional Themes test APKs. Prior v0.8.2 was tested on the Odin 2 Portal; v0.8.3 fixes still require physical verification. Not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,26 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.8.3 Portal findings and UI correction
+
+Real-device evidence dated 2026-11-13: Odin 2 Portal reports multiple Android `ApplicationExitInfo.LOW_MEMORY` exits for BOTH the user interface and the `:monitor` process during Eden launch. Selected exits had monitor lastPssMiB 63 and UI 116; their 0 PSS samples mean 'not measured', not zero usage. An independent frame overlay showed Eden process RAM around 5.3–5.5 GB. CoreMetrics cannot override OEM memory pressure. **Recommended workflow:** launch the emulator and load the game, then use Android Quick Settings' **CM HUD** tile and tap REC; or use the independent CM REC tile. No automatic monitoring while standby.
+
+The supplied recorder journal shows successful lock/unlock and four `COMPLETED` sessions (20, 44, 3, 6 samples). Lock chip behavior is preserved.
+
+**Changes in both v0.8.3 builds**
+- Fix the drawer over-expanding the overlay: cap total HUD width, give the live telemetry label a weight so the settings/REC/lock controls stay on-screen, and make both drawer-control rows horizontally scrollable *within* the HUD.
+- Clear ON/OFF state: cyan frosted switches with a dot when enabled, nearly borderless muted controls when off, red STOP for active recording, live opacity percent, and a raised settings/close-drawer indicator. Native HUD transparency settings remain editable; theme is a separate app-screen finish.
+- D-pad fix: request initial focus on the actual Live button instead of a focus-stealing root container; show gold focus outline and support physical D-pad keys, hat axes, right-stick Z/RZ or RX/RY, L1/R1 and L2/R2 for tabs, gamepad A for activation, and native focused slider handling. The Portal must be in controller/joystick (not mouse mapping) mode. Actual controller support remains an on-device acceptance requirement.
+- Discoverable themes: the **Themes APK** shows a visible `THEME · Frosted Glass ↻` control on the top bar of EVERY page, cycling to Liquid and Tactical. Settings includes direct choices and CURRENT feedback. The **Analytics-only APK** intentionally stays original Frosted and labels itself `FROSTED · FIXED`. These finishes change application screens only, **not** the native floating HUD.
+- Session and Compare panels use a balanced side-by-side landscape layout for Energy and Selected-vs-Observed, rather than a narrow single-column stack leaving the right half blank.
+- Address misleading CPU0 winner artifacts: tied or zero-load per-core samples now produce **no unique busiest-core identifier** rather than automatically picking the first `cpu0`. Existing SQLite samples are never rewritten; the correction applies only to new data. Busiest-core bars are not CPU residency.
+
+**v0.8.3 packages** (separate databases, installable alongside older releases):
+- `CoreMetrics-v0.8.3-analytics-only` / `app-v083base.apk` / `com.locutus5382.coremetrics.v083base`.
+- `CoreMetrics-v0.8.3-themes` / `app-v083themes.apk` / `com.locutus5382.coremetrics.v083themes`.
+
+No root, RAM-killer priority edits, extra sensor polling, fabricated FPS, changes to battery/CPU caps or automatic launch on boot. This is **not** a proven fix for low-memory terminations. See `docs/PORTAL_V083_UI_CONTROLLER_TEST.md`.
 
 ## v0.8.2 efficiency and consistency review
 

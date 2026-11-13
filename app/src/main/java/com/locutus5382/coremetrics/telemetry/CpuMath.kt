@@ -15,6 +15,14 @@ object CpuMath {
         return Times(ticks[3] + ticks.getOrElse(4) { 0L }, ticks.sum())
     }
 
+    /** maxByOrNull always prefers the *first* item on an exact tie.
+     * A tied or idle interval has no identifiable busiest core. */
+    fun uniqueBusiest(loads:List<Pair<String,Int>>):Pair<String,Int>? {
+        val max=loads.maxOfOrNull{it.second}?:return null
+        if(max<=0)return null
+        return loads.singleOrNull{it.second==max}
+    }
+
     fun percent(old: Times?, now: Times?): Int? {
         if (old == null || now == null) return null
         val elapsed = now.total - old.total

@@ -127,7 +127,7 @@ class DirectSampler(private val app: Application) {
             priorCore[label] = ticks
             if (load == null) null else label to load
         }.toList()
-        val peak = perCore.maxByOrNull { it.second }
+        val peak = CpuMath.uniqueBusiest(perCore)
         val mem = read("/proc/meminfo")
         fun kb(key: String): Long? = mem?.lineSequence()?.firstOrNull { it.startsWith(key + ":") }
             ?.substringAfter(':')?.trim()?.substringBefore(' ')

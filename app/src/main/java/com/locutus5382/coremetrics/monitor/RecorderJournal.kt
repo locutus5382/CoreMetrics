@@ -61,7 +61,7 @@ object RecorderJournal {
                 " MiB / total="+(info.totalMem/(1024*1024))+
                 " MiB, lowMemory="+info.lowMemory+"; historical exits may predate this report"
         }catch(e:Exception){"System memory unavailable: "+e.javaClass.simpleName}
-        return "CoreMetrics v0.8.2 recorder diagnostics\n" +
+        return "CoreMetrics v0.8.3 recorder diagnostics\n" +
             "Current UI PID: " + Process.myPid() + "\n\n" +
             "Recent lifecycle events:\n" + read(context) +
             "\n\n"+liveMemory+"\nAndroid process exit history:\n" + exits + "\n"

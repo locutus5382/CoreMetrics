@@ -15,6 +15,9 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.KeyEvent
+import android.view.InputDevice
+import android.view.MotionEvent
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -53,7 +56,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -110,22 +116,67 @@ private data class ScreenStatus(
 class MainActivity : ComponentActivity() {
     /** Hardware shoulder navigation even after touch focus is lost. */
     private var controllerTabAction:((Int)->Unit)?=null
+    private var controllerFocusAction:((Int)->Boolean)?=null
+    private var lastAnalogMoveMs=0L
     override fun dispatchKeyEvent(event:KeyEvent):Boolean {
         if(event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) {
             val delta=when(event.keyCode) {
-                KeyEvent.KEYCODE_BUTTON_L1 -> -1
-                KeyEvent.KEYCODE_BUTTON_R1 -> 1
+                KeyEvent.KEYCODE_BUTTON_L1,KeyEvent.KEYCODE_BUTTON_L2 -> -1
+                KeyEvent.KEYCODE_BUTTON_R1,KeyEvent.KEYCODE_BUTTON_R2 -> 1
                 else -> 0
             }
-            if(delta!=0) {
-                val handler=controllerTabAction
-                if(handler!=null) {
-                    handler(delta)
-                    return true
-                }
+            if(delta!=0)controllerTabAction?.let { it(delta);return true }
+        }
+        // Some controllers do not translate A to DPAD_CENTER automatically.
+        if(event.keyCode==KeyEvent.KEYCODE_BUTTON_A) {
+            val centered=KeyEvent(event.downTime,event.eventTime,
+                event.action,KeyEvent.KEYCODE_DPAD_CENTER,event.repeatCount,
+                event.metaState,event.deviceId,event.scanCode,
+                event.flags,event.source)
+            if(super.dispatchKeyEvent(centered))return true
+        }
+        // Native Compose focus navigation and focused slider receive D-pad
+        // first. Only run fallback focus search if not consumed.
+        if(super.dispatchKeyEvent(event))return true
+        if(event.action==KeyEvent.ACTION_DOWN) {
+            val dir=when(event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> 1
+                KeyEvent.KEYCODE_DPAD_RIGHT -> 2
+                KeyEvent.KEYCODE_DPAD_UP -> 3
+                KeyEvent.KEYCODE_DPAD_DOWN -> 4
+                else -> 0
+            }
+            if(dir!=0)return controllerFocusAction?.invoke(dir)==true
+        }
+        return false
+    }
+
+    override fun onGenericMotionEvent(event:MotionEvent):Boolean {
+        if(event.action==MotionEvent.ACTION_MOVE &&
+            (event.source and InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK) {
+            // Portal: right stick commonly maps to Z/RZ; certain controller
+            // modes use RX/RY. D-pad hats may also arrive as motion axes.
+            val hatX=event.getAxisValue(MotionEvent.AXIS_HAT_X)
+            val hatY=event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            val z=event.getAxisValue(MotionEvent.AXIS_Z)
+            val rz=event.getAxisValue(MotionEvent.AXIS_RZ)
+            val rx=event.getAxisValue(MotionEvent.AXIS_RX)
+            val ry=event.getAxisValue(MotionEvent.AXIS_RY)
+            val x=if(kotlin.math.abs(hatX)>.55f)hatX
+                else if(kotlin.math.abs(z)>.58f)z else rx
+            val y=if(kotlin.math.abs(hatY)>.55f)hatY
+                else if(kotlin.math.abs(rz)>.58f)rz else ry
+            val dir=if(kotlin.math.abs(x)<.60f && kotlin.math.abs(y)<.60f)0
+                else if(kotlin.math.abs(x)>kotlin.math.abs(y))
+                    if(x<0f)1 else 2
+                else if(y<0f)3 else 4
+            val now=SystemClock.uptimeMillis()
+            if(dir!=0 && now-lastAnalogMoveMs>=190L) {
+                lastAnalogMoveMs=now
+                if(controllerFocusAction?.invoke(dir)==true)return true
             }
         }
-        return super.dispatchKeyEvent(event)
+        return super.onGenericMotionEvent(event)
     }
 
     private fun requestQuickSettingsTile(onResult: (String) -> Unit) {
@@ -138,8 +189,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v082themes") -> "CoreMetrics v0.8.2 Themes • Record"
-                    packageName.endsWith(".v082base") -> "CoreMetrics v0.8.2 Analytics • Record"
+                    packageName.endsWith(".v083themes") -> "CoreMetrics v0.8.3 Themes • Record"
+                    packageName.endsWith(".v083base") -> "CoreMetrics v0.8.3 Analytics • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -171,8 +222,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v082themes"))"CoreMetrics v0.8.2 Themes · HUD"
-                else if(packageName.endsWith(".v082base"))"CoreMetrics v0.8.2 Analytics · HUD"
+                if(packageName.endsWith(".v083themes"))"CoreMetrics v0.8.3 Themes · HUD"
+                else if(packageName.endsWith(".v083base"))"CoreMetrics v0.8.3 Analytics · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -239,7 +290,7 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
         val database = SessionStore(applicationContext)
         setContent {
-            val supportsThemeChoice=packageName.endsWith(".v082themes")
+            val supportsThemeChoice=packageName.endsWith(".v083themes")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -257,16 +308,30 @@ class MainActivity : ComponentActivity() {
                     info.totalMem.takeIf{it>0L}?.toDouble()?.div(1_073_741_824.0)
                 }.getOrNull()
             }
-            val rootFocus=remember {FocusRequester()}
+            val firstNavFocus=remember {FocusRequester()}
+            val focusManager=LocalFocusManager.current
             SideEffect {
                 controllerTabAction={ delta ->
                     page=pages[Math.floorMod(pages.indexOf(page)+delta,pages.size)]
                 }
+                controllerFocusAction={ dir ->
+                    focusManager.moveFocus(when(dir) {
+                        1 -> FocusDirection.Left
+                        2 -> FocusDirection.Right
+                        3 -> FocusDirection.Up
+                        else -> FocusDirection.Down
+                    })
+                }
             }
             DisposableEffect(Unit) {
-                onDispose {controllerTabAction=null}
+                onDispose {
+                    controllerTabAction=null
+                    controllerFocusAction=null
+                }
             }
-            LaunchedEffect(Unit) {rootFocus.requestFocus()}
+            // Focus a real clickable control, not the previous non-clickable
+            // focusable Box which could trap D-pad input.
+            LaunchedEffect(Unit) {firstNavFocus.requestFocus()}
 
             var status by remember { mutableStateOf(ScreenStatus()) }
             var overlayAllowed by remember {
@@ -526,23 +591,7 @@ class MainActivity : ComponentActivity() {
                 background=if(appliedFinish==SurfaceFinish.TACTICAL)
                     Color(0xFF04060C) else cobaltNavy,
                 onSurface=coreText)) {
-                Box(
-                    Modifier.fillMaxSize().background(rootBackground)
-                        .focusRequester(rootFocus)
-                        .onPreviewKeyEvent { event ->
-                        val key = event.nativeKeyEvent
-                        if (key.action != KeyEvent.ACTION_DOWN || key.repeatCount != 0) false
-                        else when(key.keyCode) {
-                            KeyEvent.KEYCODE_BUTTON_L1 -> {
-                                page = pages[Math.floorMod(pages.indexOf(page) - 1, pages.size)]; true
-                            }
-                            KeyEvent.KEYCODE_BUTTON_R1 -> {
-                                page = pages[Math.floorMod(pages.indexOf(page) + 1, pages.size)]; true
-                            }
-                            else -> false
-                        }
-                    }.focusable()
-                ) {
+                Box(Modifier.fillMaxSize().background(rootBackground)) {
                     PureGlassBackdrop()
                     Row(Modifier.fillMaxSize().padding(9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         // Compact, icon-led rail fits four destinations even on
@@ -563,7 +612,10 @@ class MainActivity : ComponentActivity() {
                             Text("CORE",color=coreSecondary, fontSize=9.sp,
                                 fontWeight=FontWeight.Bold)
                             pages.forEach { item ->
-                                CompactRailAction(item, railIcon(item), page==item) { page=item }
+                                CompactRailAction(item,railIcon(item),page==item,
+                                    modifier=if(item=="Live")
+                                        Modifier.focusRequester(firstNavFocus)
+                                    else Modifier) { page=item }
                             }
                             HorizontalDivider(color=coreBorder)
                             Text(if(status.running) "● REC"
@@ -592,6 +644,22 @@ class MainActivity : ComponentActivity() {
                                     Text(page.uppercase(Locale.US),color=coreText,
                                         style=MaterialTheme.typography.titleLarge,
                                         fontWeight=FontWeight.Bold)
+                                }
+                                if(supportsThemeChoice) {
+                                    OutlinedButton(onClick={
+                                        val choices=SurfaceFinish.values()
+                                        val next=choices[(finish.ordinal+1)%choices.size]
+                                        finish=next
+                                        prefs.edit().putString("ui_surface_finish",next.key)
+                                            .apply()
+                                    }) {
+                                        Text("THEME · "+appliedFinish.displayName+" ↻",
+                                            color=iceBlue,
+                                            style=MaterialTheme.typography.labelMedium)
+                                    }
+                                }else {
+                                    Text("FROSTED · FIXED",color=coreSecondary,
+                                        style=MaterialTheme.typography.labelSmall)
                                 }
                                 Box(
                                     Modifier.clip(RoundedCornerShape(9.dp))
@@ -631,6 +699,13 @@ class MainActivity : ComponentActivity() {
                                                 requestQuickSettingsTile { message=it }
                                             }) { Text("Add QS tile") }
                                         }
+                                        Text("LOW-MEMORY DEVICE TIP · The Portal can terminate "+
+                                            "CoreMetrics when Eden loads. For a more reliable run, "+
+                                            "start Eden first, open Quick Settings, activate the "+
+                                            "CoreMetrics HUD tile, then press REC. No recorder "+
+                                            "can guarantee survival of Android low-memory kills.",
+                                            color=coreSecondary,
+                                            style=MaterialTheme.typography.labelSmall)
                                         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
                                             val cpuDisplay=cpuEma?.let {
                                                 String.format(Locale.US,"%.1f°C",it)
@@ -828,10 +903,16 @@ class MainActivity : ComponentActivity() {
                                                     r.quality.category+" · "+
                                                     r.quality.score+"/100",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
-                                                EnergyRatePanel(r.energy)
-                                                ObservedProfilePanel(r.session.configuration,eligibleDetail,
-                                                    referenceStartMs=detailPoints.firstOrNull()?.timeMs)
-                                                CoreWinnerPanel(eligibleDetail)
+                                                Row(Modifier.fillMaxWidth(),
+                                                    horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                    EnergyRatePanel(r.energy,Modifier.weight(1f))
+                                                    ObservedProfilePanel(
+                                                        r.session.configuration,eligibleDetail,
+                                                        modifier=Modifier.weight(1f),
+                                                        referenceStartMs=
+                                                            detailPoints.firstOrNull()?.timeMs)
+                                                }
+                                                CoreWinnerPanel(eligibleDetail,Modifier.fillMaxWidth())
                                                 OutlinedButton(onClick={
                                                     detailedId=0L
                                                     detailReport=null;detailPoints=emptyList()
@@ -1027,10 +1108,16 @@ class MainActivity : ComponentActivity() {
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
                                             analysisA?.let { r ->
-                                                ObservedProfilePanel(r.session.configuration,eligibleA,
-                                                    referenceStartMs=firstPoints.firstOrNull()?.timeMs)
-                                                CoreWinnerPanel(eligibleA)
-                                                EnergyRatePanel(r.energy)
+                                                Row(Modifier.fillMaxWidth(),
+                                                    horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                    ObservedProfilePanel(
+                                                        r.session.configuration,eligibleA,
+                                                        modifier=Modifier.weight(1f),
+                                                        referenceStartMs=
+                                                            firstPoints.firstOrNull()?.timeMs)
+                                                    EnergyRatePanel(r.energy,Modifier.weight(1f))
+                                                }
+                                                CoreWinnerPanel(eligibleA,Modifier.fillMaxWidth())
                                                 HorizontalDivider(color=coreBorder)
                                                 Text("BENCHMARK RELIABILITY · "+r.quality.score+
                                                     "/100 · "+r.quality.category,
@@ -1260,13 +1347,15 @@ class MainActivity : ComponentActivity() {
                                     else -> {
                                         GlassPanel {
                                             Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
-                                             Text("CONTROLLER · L1/R1 switches tabs; D-pad navigates "+
-                                                 "session chips and adjusts the focused A/B slider; "+
-                                                 "A selects. Touch and controller can be mixed.",
+                                             Text("CONTROLLER · L1/R1 (or L2/R2) switches tabs; "+
+                                                 "D-pad/hat and right joystick move focus; "+
+                                                 "A/DPAD CENTER selects focused controls. "+
+                                                 "With the A/B slider focused, left/right scrubs. "+
+                                                 "Use controller mode, not mouse emulation.",
                                                  color=coreSecondary,
                                                  style=MaterialTheme.typography.bodySmall)
                                             if(supportsThemeChoice) {
-                                                Text("APP APPEARANCE · OPTIONAL FINISHES",
+                                                Text("APP APPEARANCE · TAP TO APPLY",
                                                     color=iceBlue,
                                                     style=MaterialTheme.typography.titleSmall)
                                                 Row(Modifier.horizontalScroll(rememberScrollState()),
@@ -1282,6 +1371,8 @@ class MainActivity : ComponentActivity() {
                                                             },label={Text(option.displayName)})
                                                     }
                                                 }
+                                                Text("CURRENT: "+appliedFinish.displayName,
+                                                    color=coreMint,fontWeight=FontWeight.Bold)
                                                 Text(appliedFinish.description,
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.bodySmall)
@@ -1292,6 +1383,14 @@ class MainActivity : ComponentActivity() {
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                                 HorizontalDivider(color=coreBorder)
+                                            }else {
+                                                Text("APPEARANCE · FROSTED (FIXED)",
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                Text("This Analytics-only APK has one fixed finish. "+
+                                                    "Use the separate CoreMetrics Themes APK "+
+                                                    "for the visible THEME button, Liquid and "+
+                                                    "Tactical Flat.",
+                                                    color=coreSecondary)
                                             }
                                             Text("Recording is always user-started, offline, and read-only.",
                                                 color = muted)
@@ -1476,18 +1575,22 @@ private fun railIcon(label: String): ImageVector = when (label) {
 
 @Composable
 private fun CompactRailAction(
-    label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit
+    label:String,icon:ImageVector,selected:Boolean,
+    modifier:Modifier=Modifier,onClick:()->Unit
 ) {
     val shape=RoundedCornerShape(11.dp)
     val isTactical=LocalSurfaceFinish.current==SurfaceFinish.TACTICAL
+    var hasFocus by remember {mutableStateOf(false)}
     Column(
-        Modifier.fillMaxWidth().height(49.dp)
+        modifier.fillMaxWidth().height(49.dp)
+            .onFocusChanged {hasFocus=it.isFocused}
             .clip(shape)
             .background(if(isTactical)
-                (if(selected)Color(0xFF1F3A4C) else Color(0xFF171E2A))
-            else (if(selected) Color(0xE7245367) else Color(0x42192335)))
-            .border(1.dp,if(selected) coreCyan.copy(alpha=0.7f)
-                else coreBorder.copy(alpha=0.38f),shape)
+                (if(selected||hasFocus)Color(0xFF1F3A4C) else Color(0xFF171E2A))
+            else (if(selected||hasFocus) Color(0xE7245367) else Color(0x42192335)))
+            .border(if(hasFocus)2.dp else 1.dp,
+                if(hasFocus)solarGold else if(selected)coreCyan.copy(alpha=0.7f)
+                    else coreBorder.copy(alpha=0.38f),shape)
             .clickable(role=Role.Button,onClick=onClick)
             .padding(vertical=4.dp),
         horizontalAlignment=Alignment.CenterHorizontally,
