@@ -1,6 +1,6 @@
 # CoreMetrics — proposed Release Candidate 1 acceptance plan
 
-**Goal:** a feature-frozen, reproducibly built and privately distributed **v1.0.0-rc1** after v0.9.0 device acceptance. A draft GitHub PR or successful debug build is NOT an RC. This document neither creates a tag nor claims Play Console approval.
+**Goal:** a feature-frozen, reproducibly built and privately distributed **v1.0.0-rc1** after v0.9.1 correctness validation and v0.9.2 performance/device hardening. A draft GitHub PR or successful debug build is NOT an RC. This document neither creates a tag nor claims Play Console approval.
 
 ## P0 release gates — all must pass
 1. **Recorder continuity and user control:** Repeat 30–60-minute Odin 2 Portal Eden sessions, including locked HUD, background/foreground, Quick Settings, notifications, stop, hide/show, high RAM pressure and recovery after Android LOW_MEMORY. Test STOP is final, no orphan HUD, preserved SQLite rows, honest interruption/gap accounting. Android's START_STICKY is best effort, not immunity.
@@ -21,7 +21,7 @@
 - Do not add event markers, thermal soak detector, new hardware controls, FPS workarounds, cloud accounts or additional styles before RC1.
 
 ## Suggested order
-1. Finish v0.9.0 actual Odin acceptance; repair serious defects in a v0.9.0.x stabilization branch.
+1. Finish v0.9.1 actual Odin correctness acceptance; repair serious defects in a v0.9.0.x stabilization branch.
 2. Choose/lock supported finishes and establish production package/release signing and AAB CI job.
 3. Verify no P0/P1 outstanding and pass a release-signed install/update test.
 4. Tag a single immutable release source v1.0.0-rc1; run the complete regression matrix; distribute privately.

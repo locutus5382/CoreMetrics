@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.9.0 PNG scorecard test branch, stacked on v0.8.9 themes and v0.8.8.1 recorder fixes. Odin physical validation and release signing remain outstanding. Draft, not merged or approved for Google Play.
+**Status:** v0.9.1 integrity-stabilization test branch (draft). Unit tests/Android builds and physical Odin acceptance required before RC1. Earlier v0.9.0 and v0.8.9 branches remain unchanged; do not treat debug APKs as production signed builds.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,20 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.9.1 — Recorder and measurement integrity stabilization
+
+**Branch:** `fix/coremetrics-v091-integrity-stabilization`, stacked on v0.9.0 PNG draft. This is a focused corrective release **without new features**, retaining two isolated v0.9.1 test APKs: Frosted (`app-v091base.apk`) and Themes (`app-v091themes.apk`).
+
+- System-driven service destruction is no longer mislabeled a user-approved COMPLETED recording; explicit STOP/DISARM remain distinct.
+- Tied core loads preserve a numeric maximum while leaving the ambiguous winning core unnamed. Recordings already missing historical values cannot be repaired without source evidence.
+- CSV import is strict about duplicate/out-of-order timestamps and non-finite/implausible measurements, with atomic rollback rather than silent corruption. The legacy benchmark now validates CPU/GPU/load similarly to advanced diagnostics and scopes charging-status checks to the selected analysis interval.
+- Observed CPU frequency-ceiling regimes split at real recording gaps and compute time-weighted discharge without bridging missing or filtered samples.
+- Analysis errors show descriptive messages instead of unending spinners. Session Analyze scrolls to the top. A/B analysis warns when sampling cadence differs substantially.
+- Standby HUD newline, TXT numerical precision/missing-value formatting, PNG °C labels, descriptive time bounds and thermal-median terminology are corrected.
+- Pending SAF PNG export state is saveable across Activity recreation; failed writes attempt to remove only the just-created document.
+- Existing Quick Settings Record and HUD tiles remain independent; neither is silently disabled. No app storage migration, no root privileges, no extra sampling.
+- See `docs/V091_AUDIT_ROLLOUT.md` for priorities/deferred work, and `docs/PORTAL_V091_ACCEPTANCE.md` for device verification. This is not v1.0.0-rc1.
 
 ## v0.9.0 — Offline shareable PNG diagnostic scorecards
 
