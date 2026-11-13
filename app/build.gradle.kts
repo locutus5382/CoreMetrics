@@ -13,8 +13,8 @@ android {
         versionCode = 27
         versionName = "0.9.6.1-unified-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
-        manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
-        manifestPlaceholders["coremetricsHudTileLabel"] = "CM · HUD"
+        manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics REC"
+        manifestPlaceholders["coremetricsHudTileLabel"] = "CoreMetrics HUD"
     }
     // One canonical app; all four finishes are selected at runtime.
     buildTypes {

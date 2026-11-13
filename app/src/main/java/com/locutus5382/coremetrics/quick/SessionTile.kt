@@ -33,8 +33,9 @@ class SessionTile:TileService(){
             Build.VERSION.SDK_INT>=33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=
                 PackageManager.PERMISSION_GRANTED){
-            Toast.makeText(this,"Open CoreMetrics to allow notifications",
-                Toast.LENGTH_LONG).show()
+            Toast.makeText(this,"Opening CoreMetrics setup for notifications",
+                Toast.LENGTH_SHORT).show()
+            QuickTileSetup.open(this)
             return
         }
         runCatching{

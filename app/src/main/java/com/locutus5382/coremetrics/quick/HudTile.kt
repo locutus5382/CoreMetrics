@@ -33,8 +33,9 @@ class HudTile:TileService(){
         }
         if(action==QuickTileStatePolicy.HudAction.ARM &&
             !Settings.canDrawOverlays(this)){
-            Toast.makeText(this,"Grant overlay permission in CoreMetrics",
-                Toast.LENGTH_LONG).show()
+            Toast.makeText(this,"Opening CoreMetrics setup for overlay permission",
+                Toast.LENGTH_SHORT).show()
+            QuickTileSetup.open(this)
             return
         }
         if((action==QuickTileStatePolicy.HudAction.ARM ||
@@ -42,8 +43,9 @@ class HudTile:TileService(){
             Build.VERSION.SDK_INT>=33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=
                 PackageManager.PERMISSION_GRANTED){
-            Toast.makeText(this,"Allow CoreMetrics notifications first",
-                Toast.LENGTH_LONG).show()
+            Toast.makeText(this,"Opening CoreMetrics setup for notifications",
+                Toast.LENGTH_SHORT).show()
+            QuickTileSetup.open(this)
             return
         }
         runCatching{
