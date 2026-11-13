@@ -21,7 +21,8 @@ object ScorecardModel {
         val type:Type, val title:String, val subtitle:String, val range:String,
         val badge:String, val badgesAreCaution:Boolean,
         val rows:List<ValueRow>, val series:List<Series>,
-        val graphDurationMs:Long, val footnotes:List<String>,
+        val graphStartMs:Long, val graphDurationMs:Long,
+        val footnotes:List<String>,
         val sourceDescription:String
     )
     enum class Type { SINGLE, AB }
@@ -88,7 +89,7 @@ object ScorecardModel {
                 Series("GPU temperature",points(bundle.points,bundle.sourceOriginMs,
                     SessionDiagnosticsAnalyzer.Metric.GPU_TEMP),result.gapLimitMs)
             ),
-            graphDurationMs=max(1L,end),
+            graphStartMs=start,graphDurationMs=max(start+1L,end),
             footnotes=listOf(
                 "Source samples: "+bundle.points.size+
                     " | observed first: "+elapsed(originalFirst-bundle.sourceOriginMs)+
@@ -132,18 +133,19 @@ object ScorecardModel {
                 b.benchmark.energy.weightedMeanW)?.let{
                 (if(it>0)"+" else "")+formatted(it," W",2)
             } ?: "Unavailable")
-        val warnings= result.warnings.take(3).map{ "Caution: "+it }
+        val caution=result.warnings.firstOrNull()?.let{
+            "Caution (1 of "+result.warnings.size+"): "+it
+        } ?: "No measured differences flagged; scene equivalence still unverified."
         val notes=listOf(
             "Same elapsed range does NOT prove equivalent scenes, workload or FPS.",
-            "Deltas are always B minus A. No configuration is declared a winner.",
-            "A / B discharge coverage: "+
+            "Deltas are B minus A. Lower power alone is not proof of higher game efficiency.",
+            caution,
+            "A/B discharge coverage: "+
                 formatted(a.benchmark.energy.coveragePct,"%",0)+" / "+
-                formatted(b.benchmark.energy.coveragePct,"%",0),
-            "Source samples A/B: "+a.points.size+"/"+b.points.size+
-                "; complete: "+a.session.status+" / "+b.session.status
-        )+warnings+if(result.warnings.size>3)
-            listOf("Plus "+(result.warnings.size-3)+" additional cautions in TXT report.")
-        else emptyList()
+                formatted(b.benchmark.energy.coveragePct,"%",0)+
+                (if(result.warnings.size>1)
+                    " · plus "+(result.warnings.size-1)+" cautions in TXT" else "")
+        )
         return Card(
             type=Type.AB,title="A/B DIAGNOSTIC COMPARISON",
             subtitle="A #"+a.session.id+" ("+a.session.configuration+")  /  B #"+
@@ -157,7 +159,8 @@ object ScorecardModel {
                     SessionDiagnosticsAnalyzer.Metric.CPU_TEMP),a.diagnostics.gapLimitMs),
                 Series("CPU temp B",points(b.points,b.originMs,
                     SessionDiagnosticsAnalyzer.Metric.CPU_TEMP),b.diagnostics.gapLimitMs)
-            ),graphDurationMs=result.window.endElapsedMs,
+            ),graphStartMs=result.window.startElapsedMs,
+            graphDurationMs=result.window.endElapsedMs,
             footnotes=notes,
             sourceDescription="CoreMetrics v0.9.0 · Observational comparison, not measured FPS"
         )

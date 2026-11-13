@@ -156,7 +156,7 @@ internal object ScorecardPngRenderer {
         card.rows.take(7).forEachIndexed { i,row ->
             val y=371f+i*41f
             if(i%2==1)rect(60f,y-31f,1540f,y+9f,0x200C6EAC)
-            label(row.label,75f,y,23f,WHITE,false,ab.then(760f,805f),matte)
+            label(row.label,75f,y,23f,WHITE,false,if(ab)760f else 805f,matte)
             if(ab) {
                 label(row.left,868f,y,24f,WHITE,true,220f,true)
                 label(row.right?:"Unavailable",1126f,y,24f,WHITE,true,220f,true)
@@ -217,12 +217,11 @@ internal object ScorecardPngRenderer {
         // Keep limitations legible in every shared PNG; do not strip caveats.
         label("MEASUREMENT NOTES  /  PROVENANCE",60f,926f,22f,GOLD,true,1400f,matte)
         card.footnotes.take(4).forEachIndexed{ i,note ->
-            label("• "+note,64f,955f+i*25f,19f,MUTED,false,1470f,matte)
+            label("• "+note,64f,951f+i*23f,18f,MUTED,false,1470f,matte)
         }
-        label(card.sourceDescription,63f,1041f,17f,
+        label(card.sourceDescription,63f,1044f,16f,
             0xFF9DC3E8.toInt(),false,1400f,matte)
     }
-    private fun Boolean.then(a:Float,b:Float)=if(this)a else b
     private fun formatTime(ms:Long):String {
         val seconds=max(0L,ms/1000L)
         return String.format(Locale.US,"%02d:%02d",seconds/60,seconds%60)
