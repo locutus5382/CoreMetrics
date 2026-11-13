@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onSizeChanged
+import com.locutus5382.coremetrics.analysis.ChartTraceReducer
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.DischargeSample
 import com.locutus5382.coremetrics.data.SessionStore
@@ -66,7 +68,7 @@ internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report) {
                 num(report.elapsedSeconds,0)+" s",Modifier.weight(1f))
         }
         Text("Telemetry integrity: ${report.quality.score}/100 · "+
-            "${num(report.quality.coveragePct)}% cadence coverage · "+
+            "${num(report.quality.coveragePct)}% sample coverage · "+
             "${report.quality.gapCount} detected gaps",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Text("Thermal trend: "+
@@ -169,7 +171,9 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
     cursor:Float,onCursor:(Float)->Unit) {
     val time0=points.first().timeMs
     val duration=(points.last().timeMs-time0).coerceAtLeast(1L).toDouble()
-    val valid=points.mapNotNull{signal.value(it)}
+    val valid=remember(points,signal) {
+        points.mapNotNull{signal.value(it)}
+    }
     val minV=(valid.minOrNull()?:0.0)
     val maxV=(valid.maxOrNull()?:1.0)
     val range=max(maxV-minV,0.1)
@@ -178,11 +182,19 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
     val scale=range+2*margin
     // Use a bounded time gap, never average duration: a 2-point recording
     // with a one-minute interruption must NOT draw a continuous line.
-    val gaps=points.zipWithNext{a,b->(b.timeMs-a.timeMs).toDouble()}
-        .filter{it>0.0}.sorted()
+    val gaps=remember(points) {
+        points.zipWithNext{a,b->(b.timeMs-a.timeMs).toDouble()}
+            .filter{it>0.0}.sorted()
+    }
     val cadence=gaps.getOrNull(gaps.size/2)?:5_000.0
     val gapLimit=if(cadence>10_000.0)15_000.0
         else max(10_000.0,cadence*2.5)
+    var chartWidth by remember{mutableIntStateOf(700)}
+    val reduced=remember(points,signal,chartWidth) {
+        ChartTraceReducer.reduce(
+            points.map{p->ChartTraceReducer.Sample(p.timeMs,signal.value(p))},
+            time0,points.last().timeMs,chartWidth,gapLimit.toLong())
+    }
     Column {
         Row(horizontalArrangement=Arrangement.SpaceBetween,
             modifier=Modifier.fillMaxWidth()) {
@@ -192,6 +204,7 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
                 color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         }
         Canvas(Modifier.fillMaxWidth().height(118.dp)
+            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)}
             .background(Color(0x5A07152C),RoundedCornerShape(10.dp))
             .pointerInput(time0,duration) {
                 detectTapGestures{offset ->
@@ -208,9 +221,9 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
                 Offset(0f,size.height*i/4f),
                 Offset(size.width,size.height*i/4f),1.dp.toPx())
             val path=Path()
-            var last:SessionStore.Point?=null
-            for(p in points){
-                val v=signal.value(p)
+            var last:ChartTraceReducer.Sample?=null
+            for(p in reduced){
+                val v=p.value
                 if(v==null){last=null;continue}
                 val x=((p.timeMs-time0)/duration*size.width).toFloat()
                 val y=((1-(v-bottom)/scale)*size.height).toFloat()

@@ -9,28 +9,29 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 20
-        versionName = "0.9.1-integrity-stabilization-alpha"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 21
+        versionName = "0.9.2-performance-lifecycle-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM · HUD"
     }
     buildTypes {
-        create("v091themes") {
+        create("v092themes") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v091themes"
+            applicationIdSuffix = ".v092themes"
             versionNameSuffix = "-themes"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.1 Themes"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.1 Themes Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.1 Themes · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.2 Themes"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.2 Themes Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.2 Themes · HUD"
         }
-        create("v091base") {
+        create("v092base") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v091base"
+            applicationIdSuffix = ".v092base"
             versionNameSuffix = "-analytics"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.1 Frosted"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.1 Frosted Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.1 Frosted · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.2 Frosted"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.2 Frosted Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.2 Frosted · HUD"
         }
         create("v07test") {
             initWith(getByName("debug"))
@@ -68,4 +69,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

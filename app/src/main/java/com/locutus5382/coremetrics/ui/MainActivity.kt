@@ -228,8 +228,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v091themes") -> "CoreMetrics v0.9.1 Themes • Record"
-                    packageName.endsWith(".v091base") -> "CoreMetrics v0.9.1 Frosted • Record"
+                    packageName.endsWith(".v092themes") -> "CoreMetrics v0.9.2 Themes • Record"
+                    packageName.endsWith(".v092base") -> "CoreMetrics v0.9.2 Frosted • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -261,8 +261,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v091themes"))"CoreMetrics v0.9.1 Themes · HUD"
-                else if(packageName.endsWith(".v091base"))"CoreMetrics v0.9.1 Frosted · HUD"
+                if(packageName.endsWith(".v092themes"))"CoreMetrics v0.9.2 Themes · HUD"
+                else if(packageName.endsWith(".v092base"))"CoreMetrics v0.9.2 Frosted · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -326,11 +326,15 @@ class MainActivity : ComponentActivity() {
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
 
-    /** Send activity visibility only to an already-running user-started monitor. */
+    // The latest status poll already established whether a user-requested
+    // recording/HUD exists. Never synchronously query the :monitor provider from
+    // Activity.onStart/onStop: the binder query could block the UI thread and
+    // can launch an idle monitor process just to send a visibility signal.
+    private var lastObservedMonitorActive=false
+    private var activityStore:SessionStore?=null
     private fun notifyAppVisible(visible:Boolean) {
-        val state=query()
-        if(!state.running && !state.starting && !state.standby)return
-        runCatching{
+        if(!lastObservedMonitorActive)return
+        runCatching {
             startService(Intent(this,RecordingService::class.java).setAction(
                 if(visible)RecordingService.APP_FOREGROUND
                 else RecordingService.APP_BACKGROUND))
@@ -348,15 +352,24 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        // The Activity owns a read-side helper, separate from the recorder's
+        // SQLite WAL connection in :monitor. Do not leak it across rotations.
+        runCatching{activityStore?.close()}
+        activityStore=null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
         val database = SessionStore(applicationContext)
+        activityStore=database
         setContent {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v091base")
+            val supportsThemeChoice=!packageName.endsWith(".v092base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -434,8 +447,9 @@ class MainActivity : ComponentActivity() {
             var status by remember { mutableStateOf(ScreenStatus()) }
             // REC may be initiated from this already-visible Activity.
             LaunchedEffect(status.running,status.starting,status.standby) {
-                if(appVisible && (status.running||status.starting||status.standby))
-                    notifyAppVisible(true)
+                val active=status.running||status.starting||status.standby
+                lastObservedMonitorActive=active
+                if(appVisible && active)notifyAppVisible(true)
             }
             var overlayAllowed by remember {
                 mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
@@ -776,8 +790,11 @@ class MainActivity : ComponentActivity() {
                             hudOptions.save(this@MainActivity)
                         }
                         status = next
+                        lastObservedMonitorActive=
+                            next.running||next.starting||next.standby
                         overlayAllowed=Settings.canDrawOverlays(this@MainActivity)
-                        delay(1300L)
+                        // Idle screens do not need game-rate status polling.
+                        delay(if(lastObservedMonitorActive)1300L else 4500L)
                     }
                 }
             }
@@ -852,7 +869,10 @@ class MainActivity : ComponentActivity() {
                         .putExtra(RecordingService.CONFIG,configuration)
                         .putExtra(RecordingService.INTERVAL,interval),hudOptions)
                 runCatching{startForegroundService(i)}.fold(
-                    onSuccess={message="Standby requested · no recording until REC"},
+                    onSuccess={
+                        lastObservedMonitorActive=true
+                        message="Standby requested · no recording until REC"
+                    },
                     onFailure={message="Standby failed: "+it.javaClass.simpleName})
             }
             fun unlockHud() {
@@ -879,7 +899,7 @@ class MainActivity : ComponentActivity() {
                     Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
             val displayColorScheme=if(appliedFinish==SurfaceFinish.FROSTED)
-                // Exact pre-v0.9.1 Frosted Material3 colors and defaults.
+                // Exact pre-v0.9.2 Frosted Material3 colors and defaults.
                 darkColorScheme(primary=iceBlue,onPrimary=cobaltNavy,
                     secondary=coreCyan,surface=cobaltNavy,
                     background=cobaltNavy,onSurface=coreText)
@@ -1167,6 +1187,7 @@ class MainActivity : ComponentActivity() {
                                                                     .putExtra(RecordingService.LABEL,label.trim())
                                                                     .putExtra(RecordingService.CONFIG,configuration)
                                                                     .putExtra(RecordingService.INTERVAL,interval))
+                                                                lastObservedMonitorActive=true
                                                                 message = "Start requested"
                                                             }
                                                         } catch (e: Exception) {

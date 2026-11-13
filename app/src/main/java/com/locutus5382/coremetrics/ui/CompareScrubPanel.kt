@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onSizeChanged
+import com.locutus5382.coremetrics.analysis.ChartTraceReducer
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.analysis.DischargeSample
 import java.util.Locale
@@ -109,6 +111,19 @@ internal fun CompareScrubPanel(
     val pad=max(1.0,(upper-lower)*0.1)
     val floor=lower-pad
     val ceil=upper+pad
+    var chartWidth by remember{mutableIntStateOf(900)}
+    // Only visual traces are reduced; cursor and A/B statistics keep every
+    // original point, independent of chart-only GPU/FPS filters.
+    val traceA=remember(a,metric,chartWidth,originA,duration) {
+        ChartTraceReducer.reduce(a.map{p->
+            ChartTraceReducer.Sample(p.timeMs,reading(p,metric))},
+            originA,originA+duration,chartWidth,15_000L)
+    }
+    val traceB=remember(b,metric,chartWidth,originB,duration) {
+        ChartTraceReducer.reduce(b.map{p->
+            ChartTraceReducer.Sample(p.timeMs,reading(p,metric))},
+            originB,originB+duration,chartWidth,15_000L)
+    }
 
     Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
         Text("SYNCHRONIZED ELAPSED-TIME COMPARISON",
@@ -128,6 +143,7 @@ internal fun CompareScrubPanel(
             Text("Vertical gold = shared time cursor",color=coreSecondary)
         }
         Canvas(Modifier.fillMaxWidth().height(188.dp)
+            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)}
             .pointerInput(Unit) {
                 detectTapGestures { point ->
                     onFractionChange((point.x/size.width.coerceAtLeast(1)).coerceIn(0f,1f))
@@ -151,30 +167,29 @@ internal fun CompareScrubPanel(
                 drawLine(Color(0x255AB4D4),Offset(0f,y),Offset(w,y),1f)
             }
             if(available) {
-                fun drawRun(points:List<SessionStore.Point>,color:Color,origin:Long) {
+                fun drawRun(points:List<ChartTraceReducer.Sample>,
+                    color:Color,origin:Long) {
                     if(points.size<2)return
                     val path=Path()
-                    var previous:Long?=null
-                    var n=0
-                    points.forEach { sample ->
-                        val v=reading(sample,metric)
-                        if(v==null) {
-                            previous=null
-                            return@forEach
-                        }
-                        val x=((sample.timeMs-origin).toFloat()/duration*w)
-                            .coerceIn(0f,w)
+                    var previous:ChartTraceReducer.Sample?=null
+                    var drawn=0
+                    for(sample in points) {
+                        val v=sample.value
+                        if(v==null) {previous=null;continue}
+                        val x=((sample.timeMs-origin).toDouble()/duration*w)
+                            .toFloat().coerceIn(0f,w)
                         val y=((ceil-v)/(ceil-floor)*h).toFloat().coerceIn(0f,h)
-                        if(previous==null || sample.timeMs-previous!!>15_000L)
+                        if(previous==null || sample.timeMs-previous.timeMs>15_000L)
                             path.moveTo(x,y)
                         else path.lineTo(x,y)
-                        previous=sample.timeMs
-                        n++
+                        previous=sample
+                        drawn++
                     }
-                    if(n>1)drawPath(path,color,style=Stroke(width=2.5.dp.toPx()))
+                    if(drawn>1)
+                        drawPath(path,color,style=Stroke(width=2.5.dp.toPx()))
                 }
-                drawRun(a,coreCyan,originA)
-                drawRun(b,solarGold,originB)
+                drawRun(traceA,coreCyan,originA)
+                drawRun(traceB,solarGold,originB)
             }
             // Selected analysis bounds are painted independently of the cursor.
             // An unmatched tail may be shown visually, never added to A/B statistics.
