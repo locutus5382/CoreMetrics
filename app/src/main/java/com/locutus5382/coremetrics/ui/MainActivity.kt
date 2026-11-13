@@ -17,6 +17,8 @@ import android.provider.Settings
 import android.view.KeyEvent
 import android.view.InputDevice
 import android.view.MotionEvent
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -312,7 +314,10 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
         val database = SessionStore(applicationContext)
         setContent {
-            val supportsThemeChoice=packageName.endsWith(".v083themes")
+            // The normal debug APK and Themes flavor are unified visually.
+            // Only the deliberately fixed Analytics comparison flavor omits
+            // theme changes, preserving side-by-side A/B UI tests.
+            val supportsThemeChoice=!packageName.endsWith(".v084base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -320,6 +325,22 @@ class MainActivity : ComponentActivity() {
                     else "frosted"))
             }
             val appliedFinish=if(supportsThemeChoice)finish else SurfaceFinish.FROSTED
+            var immersive by rememberSaveable {
+                mutableStateOf(prefs.getBoolean("immersive_ui",false))
+            }
+            LaunchedEffect(immersive) {
+                val controller=window.insetsController
+                if(immersive) {
+                    controller?.systemBarsBehavior=
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    controller?.hide(WindowInsets.Type.systemBars())
+                } else controller?.show(WindowInsets.Type.systemBars())
+            }
+            DisposableEffect(Unit) {
+                onDispose {
+                    window.insetsController?.show(WindowInsets.Type.systemBars())
+                }
+            }
             var page by rememberSaveable { mutableStateOf("Live") }
             var compareCursor by rememberSaveable { mutableFloatStateOf(.5f) }
             val contentScroll=rememberScrollState()
@@ -1424,6 +1445,24 @@ class MainActivity : ComponentActivity() {
                                                     "Tactical Flat.",
                                                     color=coreSecondary)
                                             }
+                                            Row(verticalAlignment=Alignment.CenterVertically,
+                                                horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text("OPTIONAL IMMERSIVE LANDSCAPE",
+                                                        color=iceBlue,fontWeight=FontWeight.Bold)
+                                                    Text("Hide system bars on this screen. "+
+                                                        "Swipe from the edge to reveal navigation. "+
+                                                        "Off by default.",
+                                                        color=coreSecondary,
+                                                        style=MaterialTheme.typography.bodySmall)
+                                                }
+                                                Switch(checked=immersive,onCheckedChange={enabled->
+                                                    immersive=enabled
+                                                    prefs.edit().putBoolean("immersive_ui",enabled)
+                                                        .apply()
+                                                })
+                                            }
+                                            HorizontalDivider(color=coreBorder)
                                             Text("Recording is always user-started, offline, and read-only.",
                                                 color = muted)
                                             Text("Optional Android Usage Access", color = white)
