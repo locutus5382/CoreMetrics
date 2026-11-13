@@ -1,4 +1,4 @@
-name: CoreMetrics v0.9.6 unified Android build
+name: CoreMetrics v0.9.6.1 unified Android build
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -29,5 +29,5 @@ jobs:
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.6-unified-debug
+          name: CoreMetrics-v0.9.6.1-unified-debug
           path: app/build/outputs/apk/debug/app-debug.apk

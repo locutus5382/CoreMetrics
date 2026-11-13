@@ -21,7 +21,7 @@ internal fun FirstRunSetupPanel(
             color=iceBlue,style=MaterialTheme.typography.titleSmall)
         Text("CoreMetrics is offline and has no Internet permission. "+
             "Enable only the permissions you need. No screen capture, "+
-            "background game recording or automatic startup.",
+            "automatic startup. REC is always user-started.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         PermissionStep(
             name="1 · Notifications",

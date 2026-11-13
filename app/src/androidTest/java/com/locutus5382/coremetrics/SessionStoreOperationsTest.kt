@@ -18,6 +18,40 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class SessionStoreOperationsTest {
+    @Test fun migratingVersionFourCreatesBatteryStatusIndex() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val dbName="coremetrics_v0961_legacy_test.db"
+        app.deleteDatabase(dbName)
+        app.openOrCreateDatabase(dbName,Context.MODE_PRIVATE,null).use {legacy->
+            legacy.execSQL("CREATE TABLE samples(session_id INTEGER, battery_status TEXT)")
+            legacy.version=4
+        }
+        val sandbox=object:ContextWrapper(app) {
+            override fun getDatabasePath(name:String):java.io.File =
+                app.getDatabasePath(dbName)
+            override fun openOrCreateDatabase(name:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(dbName,mode,factory)
+            override fun openOrCreateDatabase(name:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                errorHandler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(dbName,mode,factory,errorHandler)
+        }
+        val store=SessionStore(sandbox)
+        try {
+            val db=store.readableDatabase
+            assertEquals(5,db.version)
+            val names=mutableSetOf<String>()
+            db.rawQuery("PRAGMA index_list(samples)",null).use { cursor->
+                while(cursor.moveToNext()) names.add(cursor.getString(1))
+            }
+            assertTrue(names.contains("samples_by_session_power"))
+        }finally{
+            store.close()
+            app.deleteDatabase(dbName)
+        }
+    }
+
     @Test fun metadataAndDeletionAreAtomicAndActiveRecordingIsProtected() {
         val app=ApplicationProvider.getApplicationContext<Context>()
         val dbName="coremetrics_v096_instrumentation_test.db"
