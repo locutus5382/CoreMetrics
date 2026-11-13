@@ -441,6 +441,9 @@ class MainActivity : ComponentActivity() {
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
             var skipWarmUp by rememberSaveable { mutableStateOf(false) }
+            var detailTechnical by rememberSaveable { mutableStateOf(false) }
+            var compareTechnical by rememberSaveable { mutableStateOf(false) }
+            var compareFullTimeline by rememberSaveable { mutableStateOf(false) }
             var hideShortRuns by rememberSaveable { mutableStateOf(false) }
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
@@ -950,10 +953,16 @@ class MainActivity : ComponentActivity() {
                                                     V08Analytics.afterWarmUp(
                                                         detailPoints,if(skipWarmUp)30 else 0)
                                                 }
-                                                Text("Session "+detailedId+" · "+
-                                                    r.quality.category+" · "+
-                                                    r.quality.score+"/100",
-                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                SessionQuickOverview(r)
+                                                SessionMetricTimeline(eligibleDetail)
+                                                OutlinedButton(onClick={
+                                                    detailTechnical=!detailTechnical
+                                                }) {
+                                                    Text(if(detailTechnical)
+                                                        "Hide technical diagnostics"
+                                                        else "Show energy provenance, CPU limits and core chart")
+                                                }
+                                                if(detailTechnical) {
                                                 Row(Modifier.fillMaxWidth(),
                                                     horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                                     EnergyRatePanel(r.energy,Modifier.weight(1f))
@@ -964,6 +973,7 @@ class MainActivity : ComponentActivity() {
                                                             detailPoints.firstOrNull()?.timeMs)
                                                 }
                                                 CoreWinnerPanel(eligibleDetail,Modifier.fillMaxWidth())
+                                                }
                                                 OutlinedButton(onClick={
                                                     detailedId=0L
                                                     detailReport=null;detailPoints=emptyList()
@@ -1161,6 +1171,63 @@ class MainActivity : ComponentActivity() {
                                                     ?.takeIf{secondPoints.isNotEmpty()}
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
+                                            if(analysisA!=null && analysisB!=null &&
+                                                eligibleA.isNotEmpty() && eligibleB.isNotEmpty()) {
+                                                CompareQuickOverview(analysisA,analysisB)
+                                                val chartA=remember(eligibleA,activeOnly) {
+                                                    if(activeOnly)eligibleA.filter{
+                                                        (it.gpuLoad?:0.0)>=15.0
+                                                    }else eligibleA
+                                                }
+                                                val chartB=remember(eligibleB,activeOnly) {
+                                                    if(activeOnly)eligibleB.filter{
+                                                        (it.gpuLoad?:0.0)>=15.0
+                                                    }else eligibleB
+                                                }
+                                                if(chartA.size>=2 && chartB.size>=2) {
+                                                    val overlap=minOf(
+                                                        chartA.last().timeMs-chartA.first().timeMs,
+                                                        chartB.last().timeMs-chartB.first().timeMs)
+                                                    Row(verticalAlignment=Alignment.CenterVertically) {
+                                                        Text("Show full timeline rather than shared "+
+                                                            "elapsed-time window",
+                                                            Modifier.weight(1f),color=coreSecondary,
+                                                            style=MaterialTheme.typography.bodySmall)
+                                                        Switch(compareFullTimeline,
+                                                            onCheckedChange={compareFullTimeline=it})
+                                                    }
+                                                    val plotA=remember(chartA,compareFullTimeline,overlap) {
+                                                        if(compareFullTimeline)chartA else chartA.filter{
+                                                            it.timeMs-chartA.first().timeMs<=overlap
+                                                        }
+                                                    }
+                                                    val plotB=remember(chartB,compareFullTimeline,overlap) {
+                                                        if(compareFullTimeline)chartB else chartB.filter{
+                                                            it.timeMs-chartB.first().timeMs<=overlap
+                                                        }
+                                                    }
+                                                    if(plotA.size>=2 && plotB.size>=2) {
+                                                        Text("SYNCHRONIZED COMPARISON · "+
+                                                            if(compareFullTimeline)"full recordings"
+                                                            else "overlapping "+(overlap/1000L)+" s",
+                                                            color=iceBlue,fontWeight=FontWeight.Bold)
+                                                        CompareScrubPanel(plotA,plotB,
+                                                            fraction=compareCursor,
+                                                            onFractionChange={compareCursor=it})
+                                                    }else Text("Not enough overlapping samples to chart.",
+                                                        color=coreSecondary)
+                                                }else Text("Gameplay filter excluded a run. "+
+                                                    "Disable it to inspect complete chronology.",
+                                                    color=solarOrange)
+                                            }else Text("Choose two recordings to compare.",
+                                                color=coreSecondary)
+                                            OutlinedButton(onClick={
+                                                compareTechnical=!compareTechnical
+                                            }) {
+                                                Text(if(compareTechnical)"Hide technical evidence"
+                                                    else "Show full evidence, regimes and diagnostics")
+                                            }
+                                            if(compareTechnical) {
                                             analysisA?.let { r ->
                                                 Row(Modifier.fillMaxWidth(),
                                                     horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -1365,9 +1432,8 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 Text("CPU temperature · elapsed time · A cyan, B amber",
                                                     color=coreSecondary)
-                                                CompareScrubPanel(viewA,viewB,
-                                                    fraction=compareCursor,
-                                                    onFractionChange={compareCursor=it})
+                                                Text("The synchronized cursor and chart are above.",
+                                                    color=coreSecondary)
                                                 Text("Frame rate remains unavailable if SurfaceFlinger layer access fails. " +
                                                     "Time alignment uses first selected sample, not synchronized in-game events.",
                                                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
@@ -1376,6 +1442,7 @@ class MainActivity : ComponentActivity() {
                                                     "turn it off to inspect all samples.",
                                                     color=muted)
                                             }
+                                            } // optional technical details
                                         }
                                     }
                                     "HUD" -> {
