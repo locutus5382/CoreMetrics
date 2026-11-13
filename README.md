@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.9.2 performance/lifecycle device-test branch. GitHub CI assembles tests/APKs; Odin/secondary Android runtime profiling, HUD recovery acceptance, production signing and release review are separate gates. Earlier versions are preserved and no RC tag has been created.
+**Status:** v0.9.3 HUD/recorder reliability draft. Unit and APK CI plus controlled single-install Odin acceptance required. Earlier versioned test builds and main are unchanged; there is no production release or RC1.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,20 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.9.3 — HUD ownership, restart and export reliability (Portal test build)
+
+**Development branch:** `fix/coremetrics-v093-hud-recorder-reliability`, stacked on v0.9.2 PR #24. No merge to `main`, no RC tag.
+
+**Reason:** Odin 2 Portal Hades test (13 November 2026) showed two independently interactive HUDs (one READY, one STOP), failed Quick Settings recovery and many historical Android LOW_MEMORY exits. The source does not prove whether duplication was a same-build orphan window or concurrent v0.8/v0.9 test packages. Both cases require precautions.
+
+**Changes:** A single `RecorderHud` owner is shared across Android Service objects inside the same `:monitor` process; WindowManager detach errors retain view handles rather than silently abandoning them; the HUD refuses a second attachment if a previous handle cannot be removed. RecordingService journals package/PID/HUD view identities, removal results and restart events. Quick Settings reports UNKNOWN or RECOVERABLE instead of assuming IDLE on provider failure; RECOVER validates the existing session lease and never starts an unrelated recording. Fresh START requests are also redirected to a resumable existing session. The app foreground handshake is rechecked asynchronously on Activity restart to hide its own HUD promptly. Both tiles retain separate jobs (REC vs HUD visibility).
+
+**Integrity/UX:** Session report CSV/TXT, segment TXT/CSV and A/B text export intents are saved over Activity recreation, just like PNG; very short sessions are labeled INSUFFICIENT FOR COMPARISON. The A/B PNG uses A cyan/B orange like the UI; report footers and headers say v0.9.3. Compare selection displays graphics-driver metadata and warns that `Stock` denotes CPU tuning, not the Vulkan graphics driver.
+
+**Test artifacts:** `CoreMetrics-v0.9.3-themes` (`app-v093themes.apk`, package suffix `.v093themes`) and `CoreMetrics-v0.9.3-frosted` (`app-v093base.apk`, package suffix `.v093base`). Test builds are intentionally separate local databases and Android packages. **Do not enable overlays or QS tiles for multiple variants together**; each installed package may legally display its own HUD, and a process-local registry cannot stop another app's overlays.
+
+**Release:** JVM tests and GitHub Actions build are a compile/unit gate only, not proof of Odin LMK recovery or single-window behavior. See `docs/PORTAL_V093_ACCEPTANCE.md`. Keep main stable until controlled Portal testing and production signing gates pass.
 
 ## v0.9.2 — Analysis chart performance & lifecycle hardening (device-test draft)
 
