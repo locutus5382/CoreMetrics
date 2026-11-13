@@ -106,12 +106,15 @@ internal fun CompareScrubPanel(
         (a+b).mapNotNull { reading(it,metric) }
     }
     val available=vals.isNotEmpty()
-    val lower=(vals.minOrNull()?:0.0)
-    val upper=(vals.maxOrNull()?:1.0)
-    val pad=max(1.0,(upper-lower)*0.1)
-    val floor=lower-pad
-    val ceil=upper+pad
+    val bounds=remember(vals) {
+        val lower=vals.minOrNull()?:0.0
+        val upper=vals.maxOrNull()?:1.0
+        val pad=max(1.0,(upper-lower)*0.1)
+        (lower-pad) to (upper+pad)
+    }
+    val floor=bounds.first;val ceil=bounds.second
     var chartWidth by remember{mutableIntStateOf(900)}
+    var chartHeight by remember{mutableIntStateOf(300)}
     // Only visual traces are reduced; cursor and A/B statistics keep every
     // original point, independent of chart-only GPU/FPS filters.
     val traceA=remember(a,metric,chartWidth,originA,duration) {
@@ -123,6 +126,16 @@ internal fun CompareScrubPanel(
         ChartTraceReducer.reduce(b.map{p->
             ChartTraceReducer.Sample(p.timeMs,reading(p,metric))},
             originB,originB+duration,chartWidth,15_000L)
+    }
+
+    // Geometry is stable while the shared elapsed-time cursor moves.
+    // In particular, dragging no longer allocates a new Path per frame.
+    val tracePaths=remember(traceA,traceB,originA,originB,duration,
+        chartWidth,chartHeight,bounds) {
+        ChartPathCache.build(traceA,originA,duration.toDouble(),
+            chartWidth.toFloat(),chartHeight.toFloat(),floor,ceil-floor,15_000L) to
+        ChartPathCache.build(traceB,originB,duration.toDouble(),
+            chartWidth.toFloat(),chartHeight.toFloat(),floor,ceil-floor,15_000L)
     }
 
     Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
@@ -143,7 +156,8 @@ internal fun CompareScrubPanel(
             Text("Vertical gold = shared time cursor",color=coreSecondary)
         }
         Canvas(Modifier.fillMaxWidth().height(188.dp)
-            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)}
+            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)
+                chartHeight=it.height.coerceAtLeast(1)}
             .pointerInput(Unit) {
                 detectTapGestures { point ->
                     onFractionChange((point.x/size.width.coerceAtLeast(1)).coerceIn(0f,1f))
@@ -167,29 +181,10 @@ internal fun CompareScrubPanel(
                 drawLine(Color(0x255AB4D4),Offset(0f,y),Offset(w,y),1f)
             }
             if(available) {
-                fun drawRun(points:List<ChartTraceReducer.Sample>,
-                    color:Color,origin:Long) {
-                    if(points.size<2)return
-                    val path=Path()
-                    var previous:ChartTraceReducer.Sample?=null
-                    var drawn=0
-                    for(sample in points) {
-                        val v=sample.value
-                        if(v==null) {previous=null;continue}
-                        val x=((sample.timeMs-origin).toDouble()/duration*w)
-                            .toFloat().coerceIn(0f,w)
-                        val y=((ceil-v)/(ceil-floor)*h).toFloat().coerceIn(0f,h)
-                        if(previous==null || sample.timeMs-previous.timeMs>15_000L)
-                            path.moveTo(x,y)
-                        else path.lineTo(x,y)
-                        previous=sample
-                        drawn++
-                    }
-                    if(drawn>1)
-                        drawPath(path,color,style=Stroke(width=2.5.dp.toPx()))
-                }
-                drawRun(traceA,coreCyan,originA)
-                drawRun(traceB,solarGold,originB)
+                drawPath(tracePaths.first,coreCyan,
+                    style=Stroke(width=2.5.dp.toPx()))
+                drawPath(tracePaths.second,solarGold,
+                    style=Stroke(width=2.5.dp.toPx()))
             }
             // Selected analysis bounds are painted independently of the cursor.
             // An unmatched tail may be shown visually, never added to A/B statistics.

@@ -239,11 +239,13 @@ private fun DiagnosticTrack(
     onCursor:(Float)->Unit,gapLimit:Long
 ) {
     val readings=stat.readings
-    val minimum=readings.minOfOrNull{it.value} ?: 0.0
-    val maximum=readings.maxOfOrNull{it.value} ?: 1.0
-    val spread=max(.08,maximum-minimum)
-    val bottom=minimum-spread*.15
-    val span=spread*1.3
+    val bounds=remember(stat) {
+        val minimum=readings.minOfOrNull{it.value} ?: 0.0
+        val maximum=readings.maxOfOrNull{it.value} ?: 1.0
+        val spread=max(.08,maximum-minimum)
+        minimum-spread*.15 to spread*1.3
+    }
+    val bottom=bounds.first;val span=bounds.second
     val duration=(end-start).coerceAtLeast(1L).toDouble()
     val selectedMs=start+(duration*cursor).toLong()
     // Binary search in the original readings; chart reduction NEVER affects the
@@ -253,12 +255,19 @@ private fun DiagnosticTrack(
             gapLimit.coerceAtMost(8_000L))
     }
     var chartWidth by remember { mutableIntStateOf(700) }
+    var chartHeight by remember { mutableIntStateOf(250) }
     val traces=remember(stat,start,end,chartWidth,gapLimit) {
         fun sampled(rolling:Boolean)=ChartTraceReducer.reduce(
             readings.map { p->ChartTraceReducer.Sample(
                 p.timeMs,if(rolling)p.rolling60 else p.value,p.segment) },
             start,end,chartWidth,gapLimit)
         sampled(false) to sampled(true)
+    }
+    val tracePaths=remember(traces,chartWidth,chartHeight,bounds,start,duration,gapLimit) {
+        ChartPathCache.build(traces.first,start,duration,
+            chartWidth.toFloat(),chartHeight.toFloat(),bottom,span,gapLimit) to
+        ChartPathCache.build(traces.second,start,duration,
+            chartWidth.toFloat(),chartHeight.toFloat(),bottom,span,gapLimit)
     }
     val spikeMarkers=remember(stat) {
         val p95=stat.p95
@@ -282,7 +291,8 @@ private fun DiagnosticTrack(
                 color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         }
         Canvas(Modifier.fillMaxWidth().height(118.dp)
-            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)}
+            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)
+                chartHeight=it.height.coerceAtLeast(1)}
             .background(Color(0x61091A30),RoundedCornerShape(9.dp))
             .pointerInput(start,end) {
                 detectTapGestures{offset ->
@@ -299,24 +309,10 @@ private fun DiagnosticTrack(
             fun y(v:Double)=((1.0-(v-bottom)/span)*size.height).toFloat()
             for(i in 1..3) drawLine(Color.White.copy(alpha=.10f),
                 Offset(0f,size.height*i/4f),Offset(size.width,size.height*i/4f),1.dp.toPx())
-            fun trace(samples:List<ChartTraceReducer.Sample>):Path {
-                val path=Path()
-                var last:ChartTraceReducer.Sample?=null
-                for(p in samples) {
-                    val v=p.value
-                    if(v==null) {last=null;continue}
-                    val px=x(p.timeMs)
-                    if(last==null || p.segment!=last.segment ||
-                        p.timeMs-last.timeMs>gapLimit)
-                        path.moveTo(px,y(v))
-                    else path.lineTo(px,y(v))
-                    last=p
-                }
-                return path
-            }
-            drawPath(trace(traces.first),accent.copy(alpha=.68f),
+            // Only cursor and marker strokes are redrawn while scrubbing.
+            drawPath(tracePaths.first,accent.copy(alpha=.68f),
                 style=Stroke(1.6.dp.toPx()))
-            drawPath(trace(traces.second),coreMint,
+            drawPath(tracePaths.second,coreMint,
                 style=Stroke(2.3.dp.toPx()))
             stat.p95?.let{p95 ->
                 drawLine(solarGold.copy(alpha=.85f),Offset(0f,y(p95)),

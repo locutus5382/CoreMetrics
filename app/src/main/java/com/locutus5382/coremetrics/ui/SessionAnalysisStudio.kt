@@ -6,6 +6,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.onSizeChanged
+import com.locutus5382.coremetrics.analysis.ChartTraceReducer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -220,25 +222,29 @@ private fun format(value:Double):String=String.format(Locale.US,"%.1f",value)
 private fun RangeOverview(points:List<SessionStore.Point>,
     full:SegmentAnalysis.Range,from:Float,to:Float) {
     val duration=(full.endMs-full.startMs).coerceAtLeast(1L).toDouble()
-    val values=remember(points) { points.mapNotNull{it.cpu?.takeIf{v->v.isFinite()}} }
-    val bottom=(values.minOrNull()?:25.0)-2.0
-    val extent=max(4.0,(values.maxOrNull()?:50.0)+2.0-bottom)
+    val bounds=remember(points) {
+        val values=points.mapNotNull{it.cpu?.takeIf{v->v.isFinite()}}
+        val lower=(values.minOrNull()?:25.0)-2.0
+        lower to max(4.0,(values.maxOrNull()?:50.0)+2.0-lower)
+    }
+    val bottom=bounds.first;val extent=bounds.second
+    var chartWidth by remember {mutableIntStateOf(700)}
+    var chartHeight by remember {mutableIntStateOf(200)}
+    val reduced=remember(points,full.startMs,full.endMs,chartWidth){
+        ChartTraceReducer.reduce(points.map{p->
+            ChartTraceReducer.Sample(p.timeMs,p.cpu?.takeIf{it.isFinite()})},
+            full.startMs,full.endMs,chartWidth,15_000L)
+    }
+    val trace=remember(reduced,chartWidth,chartHeight,bounds,full.startMs,duration){
+        ChartPathCache.build(reduced,full.startMs,duration,
+            chartWidth.toFloat(),chartHeight.toFloat(),bottom,extent,15_000L)
+    }
     Canvas(Modifier.fillMaxWidth().height(92.dp)
+        .onSizeChanged{chartWidth=it.width.coerceAtLeast(1);
+            chartHeight=it.height.coerceAtLeast(1)}
         .background(Color(0x71081830),RoundedCornerShape(10.dp))) {
         val w=size.width;val h=size.height
-        fun x(t:Long)=((t-full.startMs)/duration*w).toFloat().coerceIn(0f,w)
-        fun y(v:Double)=((1.0-(v-bottom)/extent)*h).toFloat().coerceIn(0f,h)
-        val path=Path()
-        var prev:Long?=null
-        for(p in points) {
-            val temp=p.cpu?.takeIf{it.isFinite()}
-            if(temp==null){prev=null;continue}
-            val px=x(p.timeMs);val py=y(temp)
-            if(prev==null || p.timeMs-prev!!>15_000L)path.moveTo(px,py)
-            else path.lineTo(px,py)
-            prev=p.timeMs
-        }
-        drawPath(path,coreCyan,style=Stroke(1.8.dp.toPx()))
+        drawPath(trace,coreCyan,style=Stroke(1.8.dp.toPx()))
         val left=(from.toDouble()*1000.0/duration*w).toFloat().coerceIn(0f,w)
         val right=(to.toDouble()*1000.0/duration*w).toFloat().coerceIn(left,w)
         drawRect(Color(0xA0050B1C),Offset(0f,0f),Size(left,h))
