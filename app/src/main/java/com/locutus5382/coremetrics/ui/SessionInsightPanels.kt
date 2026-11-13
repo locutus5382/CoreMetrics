@@ -12,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -174,8 +173,13 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
     val valid=remember(points,signal) {
         points.mapNotNull{signal.value(it)}
     }
-    val minV=(valid.minOrNull()?:0.0)
-    val maxV=(valid.maxOrNull()?:1.0)
+    // Cursor drag recomposes this panel often; do not rescan thousands
+    // of samples to find min/max on every pointer movement.
+    val bounds=remember(valid) {
+        (valid.minOrNull()?:0.0) to (valid.maxOrNull()?:1.0)
+    }
+    val minV=bounds.first
+    val maxV=bounds.second
     val range=max(maxV-minV,0.1)
     val margin=range*.12
     val bottom=minV-margin
