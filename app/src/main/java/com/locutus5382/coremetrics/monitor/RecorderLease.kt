@@ -15,7 +15,8 @@ internal object RecorderLease {
     private const val MAX_REC_AGE_MS=90_000L
     private const val MAX_STANDBY_AGE_MS=10*60_000L
     data class Saved(val recording:Boolean,val id:Long,val label:String,
-        val configuration:String,val intervalMs:Long,val hudEnabled:Boolean)
+        val configuration:String,val intervalMs:Long,
+        val hudEnabled:Boolean,val hudLocked:Boolean)
 
     private fun prefs(context:Context)=
         context.getSharedPreferences(FILE,Context.MODE_PRIVATE)
@@ -28,6 +29,8 @@ internal object RecorderLease {
             .putString("config",config.take(40))
             .putLong("interval",if(interval==2000L)2000L else 5000L)
             .putBoolean("hud_enabled",hud)
+            .putBoolean("hud_locked",if(restored)
+                p.getBoolean("hud_locked",false) else false)
             .putInt("recoveries",if(restored)
                 p.getInt("recoveries",0) else 0)
             .putLong("heartbeat_uptime",SystemClock.elapsedRealtime())
@@ -54,6 +57,13 @@ internal object RecorderLease {
             !p.getBoolean("recording",false))return false
         return p.edit().putBoolean("hud_enabled",visible).commit()
     }
+    /** The unlock handle must survive a best-effort sticky service restart.
+     * Lock state is user-chosen and restored only for a fresh valid lease. */
+    fun setHudLocked(context:Context,locked:Boolean):Boolean {
+        val p=prefs(context)
+        if(!p.getBoolean("active",false))return false
+        return p.edit().putBoolean("hud_locked",locked).commit()
+    }
     fun heartbeat(context:Context) {
         val p=prefs(context)
         if(p.getBoolean("active",false) && p.getBoolean("recording",false)) {
@@ -63,7 +73,7 @@ internal object RecorderLease {
     }
     fun clear(context:Context):Boolean = prefs(context).edit()
         .putBoolean("active",false).putBoolean("recording",false)
-        .remove("id").remove("recoveries").commit()
+        .remove("id").remove("recoveries").remove("hud_locked").commit()
 
     /**
      * A process killed during an explicit recording has a fresh lease;
@@ -88,6 +98,7 @@ internal object RecorderLease {
             p.getString("label","Gameplay")?:"Gameplay",
             p.getString("config","Unknown")?:"Unknown",
             p.getLong("interval",5000L),
-            p.getBoolean("hud_enabled",false))
+            p.getBoolean("hud_enabled",false),
+            p.getBoolean("hud_locked",false))
     }
 }

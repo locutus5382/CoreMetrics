@@ -56,6 +56,7 @@ class RecordingService:Service() {
         const val INTERVAL="interval"
         private const val RECOVERY_ID="recovery_id"
         private const val RECOVERY_HUD="recovery_hud"
+        private const val RECOVERY_LOCK="recovery_lock"
         private const val RESTORED="restarted_by_android"
         private const val CHANNEL="coremetrics_monitor"
         private const val NOTIFICATION_ID=4411
@@ -214,6 +215,7 @@ class RecordingService:Service() {
                 .putExtra(CONFIG,old.configuration)
                 .putExtra(INTERVAL,old.intervalMs)
                 .putExtra(RECOVERY_HUD,old.hudEnabled)
+                .putExtra(RECOVERY_LOCK,old.hudLocked)
                 .putExtra(RECOVERY_ID,if(old.recording)old.id else 0L)
                 .putExtra(RESTORED,true)
         }
@@ -244,6 +246,12 @@ class RecordingService:Service() {
                     return START_NOT_STICKY
                 }
                 val status=attachHud()
+                if(command.getBooleanExtra(RESTORED,false) &&
+                    command.getBooleanExtra(RECOVERY_LOCK,false) && hud.attached()){
+                    val restoredLock=hud.setLocked(true)
+                    MonitorState.hudLocked=hud.isLocked()
+                    RecorderJournal.event(this,"HUD_LOCK_RECOVERY",restoredLock)
+                }
                 if(status.startsWith("HUD_ADD_FAILED") || status=="HUD_PERMISSION_MISSING"){
                     RecorderLease.clear(this)
                     if(task?.isActive!=true)stopServiceNow()
@@ -330,6 +338,7 @@ class RecordingService:Service() {
                 }
                 val result=hud.setLocked(command.action==HUD_LOCK)
                 MonitorState.hudLocked=hud.isLocked()
+                RecorderLease.setHudLocked(this,MonitorState.hudLocked)
                 MonitorState.hudState=result
                 RecorderJournal.event(this,"HUD_TOUCH_LOCK",result)
                 getSystemService(NotificationManager::class.java).notify(
@@ -420,6 +429,11 @@ class RecordingService:Service() {
                     if(result=="HUD_ATTACHED" || result=="HUD_ALREADY_ATTACHED") {
                         armed=true
                         hud.mode(true,System.currentTimeMillis())
+                        if(restored && command.getBooleanExtra(RECOVERY_LOCK,false)){
+                            val lockResult=hud.setLocked(true)
+                            MonitorState.hudLocked=hud.isLocked()
+                            RecorderJournal.event(this,"HUD_LOCK_RECOVERY",lockResult)
+                        }
                     }
                 }
                 refreshTile()
