@@ -46,6 +46,14 @@ internal object RecorderLease {
         if(count>=2)return false
         return p.edit().putInt("recoveries",count+1).commit()
     }
+    /** Persist user-requested HUD visibility independently of recording.
+     * A low-memory restarted REC must not unexpectedly re-show a hidden HUD. */
+    fun setHudEnabled(context:Context,visible:Boolean):Boolean {
+        val p=prefs(context)
+        if(!p.getBoolean("active",false) ||
+            !p.getBoolean("recording",false))return false
+        return p.edit().putBoolean("hud_enabled",visible).commit()
+    }
     fun heartbeat(context:Context) {
         val p=prefs(context)
         if(p.getBoolean("active",false) && p.getBoolean("recording",false)) {

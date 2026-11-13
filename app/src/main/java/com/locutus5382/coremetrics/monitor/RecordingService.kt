@@ -239,14 +239,29 @@ class RecordingService:Service() {
                     return START_NOT_STICKY
                 }
                 val result=if(command.action==HUD_SHOW) {
-                    if(hud.attached()) hud.setVisible(true)
-                    else attachHud()
-                } else hud.setVisible(false)
+                    if(hud.attached())hud.setVisible(true)
+                    else {
+                        val attached=attachHud()
+                        if(hud.attached()) {
+                            armed=true
+                            // A QS REC session may have started *without* a
+                            // HUD. Restore its current session, not standby.
+                            hud.mode(MonitorState.running,MonitorState.startedAt)
+                            MonitorState.latest?.let{
+                                if(MonitorState.running)
+                                    hud.update(it,MonitorState.sampleCount)
+                            }
+                        }
+                        attached
+                    }
+                }else hud.setVisible(false)
                 if(result.startsWith("HUD_ADD_FAILED") ||
                     result=="HUD_PERMISSION_MISSING") {
                     MonitorState.message="HUD cannot be shown: "+result
                 }
                 MonitorState.hudVisible=hud.visible()
+                if(MonitorState.running)
+                    RecorderLease.setHudEnabled(this,MonitorState.hudVisible)
                 MonitorState.hudState=if(MonitorState.hudVisible)
                     "HUD_VISIBLE" else "HUD_HIDDEN"
                 RecorderJournal.event(this,"HUD_VISIBILITY",
