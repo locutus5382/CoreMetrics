@@ -111,6 +111,7 @@ private data class ScreenStatus(
     val observedLimits: String? = null,
     val coreLoads: String? = null,
     val hudStatus: String? = null, val hudLocked: Boolean = false,
+    val hudVisible: Boolean = false,
     val hudOptionRevision: Long = 0L, val hudChanged: HudOptions? = null,
     val lastAt: Long = 0
 )
@@ -289,6 +290,7 @@ class MainActivity : ComponentActivity() {
             coreLoads = v.getString("coreLoads"),
             hudStatus = v.getString("hudStatus"),
             hudLocked = v.getBoolean("hudLocked",false),
+            hudVisible = v.getBoolean("hudVisible",false),
             hudOptionRevision = v.getLong("hudOptionRevision",0L),
             hudChanged = if(v.getLong("hudOptionRevision",0L)>0L) HudOptions(
                 opacity=v.getFloat("hudOptOpacity",0.57f),
@@ -303,7 +305,8 @@ class MainActivity : ComponentActivity() {
                 showRam=v.getBoolean("hudOptRam",true),
                 showPower=v.getBoolean("hudOptPower",true),
                 showFps=v.getBoolean("hudOptFps",false),
-                showSparkline=v.getBoolean("hudOptSparkline",true)
+                showSparkline=false,
+                adaptiveColors=v.getBoolean("hudOptAdaptive",false)
             ) else null,
             lastAt = v.getLong("lastSampleAt", 0)
         )

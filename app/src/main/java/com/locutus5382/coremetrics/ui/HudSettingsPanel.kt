@@ -41,11 +41,11 @@ internal fun HudSettingsPanel(
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("FLOATING HUD STUDIO",color=iceBlue,
             style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
-        Text("HUD tile toggles standby; REC tile starts/stops the session. "+
+        Text("CM HUD tile shows/hides the HUD without stopping active recording. "+
             "Use only one CoreMetrics variant at a time. "+
-            "Launch standby, load Eden, then tap REC. Drag the glass pill to within " +
+            "Start Eden first, open HUD from Quick Settings, then tap REC. Drag the pill to within " +
             "16dp of either edge to dock into a 12dp visual tab with a 44dp tap area. " +
-            "Tap tab to expand, or ⚙ for live metric, opacity and REC controls. " +
+            "Tap the tab to expand, or use ‹ to dock; ⚙ opens controls. " +
             "Standby performs no telemetry sampling.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Row(Modifier.horizontalScroll(rememberScrollState()),
@@ -116,7 +116,7 @@ internal fun HudSettingsPanel(
                 label={Text("Compact pill")})
             FilterChip(selected=options.layout=="pro",
                 onClick={onChange(options.copy(layout="pro"))},
-                label={Text("Two-line Pro")})
+                label={Text("Rounded card · 2 lines")})
         }
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
         Text("VISIBLE TELEMETRY",color=iceBlue,
@@ -136,14 +136,17 @@ internal fun HudSettingsPanel(
                     label={Text(name)})
             }
         }
-        if(options.showFps)Text("FPS source currently unavailable; the HUD displays —.",
-            color=solarGold,style=MaterialTheme.typography.bodySmall)
         Row(verticalAlignment=Alignment.CenterVertically) {
-            Text("Four 30-sample graphs in Pro layout: CPU %, GPU %, CPU temp, " +
-                "and layer FPS if available",color=coreText,
-                modifier=Modifier.weight(1f))
-            Switch(checked=options.showSparkline,
-                onCheckedChange={onChange(options.copy(showSparkline=it))})
+            Column(Modifier.weight(1f)) {
+                Text("ADAPTIVE METRIC COLORS",color=iceBlue,
+                    style=MaterialTheme.typography.labelLarge)
+                Text("CPU/GPU: 65°C yellow · 80°C red. High CPU/GPU load " +
+                    "can turn yellow but never red on utilization alone. " +
+                    "RAM uses Android's low-memory threshold. Display-only.",
+                    color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked=options.adaptiveColors,
+                onCheckedChange={onChange(options.copy(adaptiveColors=it))})
         }
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
         Text("RECORDING INDICATOR COLOR",color=iceBlue,
@@ -163,9 +166,8 @@ internal fun HudSettingsPanel(
             Switch(checked=options.blink,
                 onCheckedChange={onChange(options.copy(blink=it))})
         }
-        Text("HUD drawer saves controls immediately. Micrographs reuse the " +
-            "existing recorder data, with no extra polling. " +
-            "When locked, unlock via notification or this Studio.",
+        Text("HUD draws from existing recorder samples only. Charts are in " +
+            "post-session analysis. Hiding the HUD does not stop REC.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
     }
 }
