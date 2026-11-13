@@ -699,6 +699,13 @@ class MainActivity : ComponentActivity() {
                                                 requestQuickSettingsTile { message=it }
                                             }) { Text("Add QS tile") }
                                         }
+                                        Text("LOW-MEMORY DEVICE TIP · The Portal can terminate "+
+                                            "CoreMetrics when Eden loads. For a more reliable run, "+
+                                            "start Eden first, open Quick Settings, activate the "+
+                                            "CoreMetrics HUD tile, then press REC. No recorder "+
+                                            "can guarantee survival of Android low-memory kills.",
+                                            color=coreSecondary,
+                                            style=MaterialTheme.typography.labelSmall)
                                         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
                                             val cpuDisplay=cpuEma?.let {
                                                 String.format(Locale.US,"%.1f°C",it)
@@ -896,10 +903,16 @@ class MainActivity : ComponentActivity() {
                                                     r.quality.category+" · "+
                                                     r.quality.score+"/100",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
-                                                EnergyRatePanel(r.energy)
-                                                ObservedProfilePanel(r.session.configuration,eligibleDetail,
-                                                    referenceStartMs=detailPoints.firstOrNull()?.timeMs)
-                                                CoreWinnerPanel(eligibleDetail)
+                                                Row(Modifier.fillMaxWidth(),
+                                                    horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                    EnergyRatePanel(r.energy,Modifier.weight(1f))
+                                                    ObservedProfilePanel(
+                                                        r.session.configuration,eligibleDetail,
+                                                        modifier=Modifier.weight(1f),
+                                                        referenceStartMs=
+                                                            detailPoints.firstOrNull()?.timeMs)
+                                                }
+                                                CoreWinnerPanel(eligibleDetail,Modifier.fillMaxWidth())
                                                 OutlinedButton(onClick={
                                                     detailedId=0L
                                                     detailReport=null;detailPoints=emptyList()
@@ -1095,10 +1108,16 @@ class MainActivity : ComponentActivity() {
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
                                             analysisA?.let { r ->
-                                                ObservedProfilePanel(r.session.configuration,eligibleA,
-                                                    referenceStartMs=firstPoints.firstOrNull()?.timeMs)
-                                                CoreWinnerPanel(eligibleA)
-                                                EnergyRatePanel(r.energy)
+                                                Row(Modifier.fillMaxWidth(),
+                                                    horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                    ObservedProfilePanel(
+                                                        r.session.configuration,eligibleA,
+                                                        modifier=Modifier.weight(1f),
+                                                        referenceStartMs=
+                                                            firstPoints.firstOrNull()?.timeMs)
+                                                    EnergyRatePanel(r.energy,Modifier.weight(1f))
+                                                }
+                                                CoreWinnerPanel(eligibleA,Modifier.fillMaxWidth())
                                                 HorizontalDivider(color=coreBorder)
                                                 Text("BENCHMARK RELIABILITY · "+r.quality.score+
                                                     "/100 · "+r.quality.category,
