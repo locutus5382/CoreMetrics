@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.8.8 A/B Diagnostic Comparison Studio test branch, stacked on v0.8.7. Two separately installable v0.8.6 test builds retain the fixed original Frosted Glass or the existing optional themes. No physical Odin 2 Portal validation yet; not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.8.9 experimental appearance branch, stacked on v0.8.8.1 reliability fixes. Two isolated v0.8.9 test APKs (Frosted-only baseline or selectable alternative themes). Not yet physically verified on Odin 2 Portal and not merged into main. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,24 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.8.9 — Four-finish Appearance Studio (experimental)
+
+**Branch:** feature/coremetrics-v089-appearance-studio, stacked on v0.8.8.1 recorder recovery/HUD fixes (draft PR #20). Prior branches and main are unchanged.
+
+**Two isolated APK variants:** CoreMetrics-v0.8.9-frosted (app-v089base.apk, package com.locutus5382.coremetrics.v089base) is locked to the original Frosted Glass. CoreMetrics-v0.8.9-themes (app-v089themes.apk, package com.locutus5382.coremetrics.v089themes) lets users select four appearances; it is a separate app ID with isolated SQLite sessions and preferences. Use CSV import/export to move recordings.
+
+**Four finishes, stable preference keys:**
+- **Frosted Glass:** preserve original Cobalt & Solar translucent background and card styling, native control shapes and telemetry.
+- **True Glass** (existing preference key crystal_aero): layered optically clear panes, bright refractive upper rims and cobalt/cyan/orange backdrop ribbons. This is a **visual approximation**, not live blur/refraction of game content.
+- **Modern Colorful** (existing key solar_pulse): saturated cobalt and orange high-contrast controls, bold cyan/yellow instrument accents, colorful slider tracks and highlighted KPI tiles.
+- **Technical Cockpit** (existing key cobalt_matrix): compact sharp-corner matte navy surfaces, instrument panel rulers, tight outlines, monospace metric/navigation identity and cyan/solar guidance.
+
+**Interaction and navigation:** Settings has a static four-card preview gallery with one-touch apply; THEME/STYLE quick-cycling in the header is still available in the themes variant. Controller-friendly single-click tile surfaces, theme-aware range sliders, and one-shot sweep/glint on existing CoreMetrics action pills and navigation tiles. No continuous animation, no image assets, no GPU shader blur, no web content.
+
+**Scope:** UI-only Compose changes. In-game native floating HUD, recorder service, LMK recovery, permissions, SQLite, telemetry cadence, CPU/GPU sensor collection, FPS caveats, A/B math, CSV/TXT exports and analytics engine are deliberately unchanged. The new finishes are evaluated with the v0.8.9 Frosted baseline; all values across variants must agree when fed the same source CSV.
+
+**Validation:** See docs/PORTAL_V089_ACCEPTANCE.md. This branch is an Android-build + device-test candidate, not a visually approved public release. If any alternative degrades readability or performance, we can remove that alternative without touching the recorder.
 
 ## v0.8.8.1 — Recorder Recovery and HUD Reliability (Portal test)
 

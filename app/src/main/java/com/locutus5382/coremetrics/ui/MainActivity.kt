@@ -226,8 +226,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v0881themes") -> "CoreMetrics v0.8.8.1 Themes • Record"
-                    packageName.endsWith(".v0881base") -> "CoreMetrics v0.8.8.1 Frosted • Record"
+                    packageName.endsWith(".v089themes") -> "CoreMetrics v0.8.9 Themes • Record"
+                    packageName.endsWith(".v089base") -> "CoreMetrics v0.8.9 Frosted • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -259,8 +259,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v0881themes"))"CoreMetrics v0.8.8.1 Themes · HUD"
-                else if(packageName.endsWith(".v0881base"))"CoreMetrics v0.8.8.1 Frosted · HUD"
+                if(packageName.endsWith(".v089themes"))"CoreMetrics v0.8.9 Themes · HUD"
+                else if(packageName.endsWith(".v089base"))"CoreMetrics v0.8.9 Frosted · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -354,7 +354,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v0881base")
+            val supportsThemeChoice=!packageName.endsWith(".v089base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)

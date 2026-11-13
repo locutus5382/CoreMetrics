@@ -90,7 +90,7 @@ internal fun CompareStudioPanel(
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp),
             verticalArrangement=Arrangement.spacedBy(9.dp)) {
-            Text("A/B DIAGNOSTIC SCORECARD · v0.8.8",
+            Text("A/B DIAGNOSTIC SCORECARD",
                 color=iceBlue,fontWeight=FontWeight.Bold)
             Text("Same elapsed-time interval, not necessarily the same game scene. "+
                 "All Δ values use B − A.",

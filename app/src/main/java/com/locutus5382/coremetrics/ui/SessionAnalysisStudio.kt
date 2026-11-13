@@ -82,7 +82,7 @@ internal fun SessionAnalysisStudio(
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp),
             verticalArrangement=Arrangement.spacedBy(9.dp)) {
-            Text("SESSION ANALYSIS STUDIO · v0.8.7",
+            Text("SINGLE-SESSION ANALYSIS STUDIO",
                 color=iceBlue,fontWeight=FontWeight.Bold)
             Text("Select the measured game interval. Original samples and timestamps stay intact.",
                 color=coreSecondary,style=MaterialTheme.typography.bodySmall)
