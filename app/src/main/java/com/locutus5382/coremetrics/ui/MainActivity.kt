@@ -25,6 +25,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
@@ -357,6 +358,8 @@ class MainActivity : ComponentActivity() {
                 }.getOrNull()
             }
             val firstNavFocus=remember {FocusRequester()}
+            val themePressSource=remember {MutableInteractionSource()}
+            val armPressSource=remember {MutableInteractionSource()}
             LaunchedEffect(page) {contentScroll.scrollTo(0)}
             val focusManager=LocalFocusManager.current
             SideEffect {
@@ -708,7 +711,10 @@ class MainActivity : ComponentActivity() {
                                         fontWeight=FontWeight.Bold)
                                 }
                                 if(supportsThemeChoice) {
-                                    OutlinedButton(onClick={
+                                    OutlinedButton(
+                                        interactionSource=themePressSource,
+                                        modifier=Modifier.cmPressFeedback(themePressSource),
+                                        onClick={
                                         val choices=SurfaceFinish.values()
                                         val next=choices[(finish.ordinal+1)%choices.size]
                                         finish=next
@@ -724,7 +730,9 @@ class MainActivity : ComponentActivity() {
                                         style=MaterialTheme.typography.labelSmall)
                                 }
                                 if(page=="Live") {
-                                    Button(onClick={
+                                    Button(interactionSource=armPressSource,
+                                        modifier=Modifier.cmPressFeedback(armPressSource),
+                                        onClick={
                                         if(status.standby||status.running)page="HUD"
                                         else armHud()
                                     },contentPadding=PaddingValues(
@@ -1656,8 +1664,10 @@ private fun CompactRailAction(
     val shape=RoundedCornerShape(11.dp)
     val isTactical=LocalSurfaceFinish.current==SurfaceFinish.COBALT_MATRIX
     var hasFocus by remember {mutableStateOf(false)}
+    val press=remember {MutableInteractionSource()}
     Column(
         modifier.fillMaxWidth().height(49.dp)
+            .cmPressFeedback(press,11)
             .onFocusChanged {hasFocus=it.isFocused}
             .clip(shape)
             .background(if(isTactical)
@@ -1666,7 +1676,8 @@ private fun CompactRailAction(
             .border(if(hasFocus)2.dp else 1.dp,
                 if(hasFocus)solarGold else if(selected)coreCyan.copy(alpha=0.7f)
                     else coreBorder.copy(alpha=0.38f),shape)
-            .clickable(role=Role.Button,onClick=onClick)
+            .clickable(interactionSource=press,indication=null,
+                role=Role.Button,onClick=onClick)
             .padding(vertical=4.dp),
         horizontalAlignment=Alignment.CenterHorizontally,
         verticalArrangement=Arrangement.Center
