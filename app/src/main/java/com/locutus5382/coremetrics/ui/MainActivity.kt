@@ -72,6 +72,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
 import com.locutus5382.coremetrics.analysis.SegmentAnalysis
+import com.locutus5382.coremetrics.analysis.CompareStudioAnalysis
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -97,6 +98,11 @@ private val white = Color(0xFFF0F5FA)
 private val muted = Color(0xFFA8C4D1)
 private val glow = Color(0xFF18445A)
 private val pages = listOf("Live", "Sessions", "Compare", "HUD", "Settings")
+
+private data class AbWindowExportRequest(
+    val sessionAId:Long,val sessionBId:Long,
+    val startElapsedMs:Long,val endElapsedMs:Long
+)
 
 private data class SegmentExportRequest(
     val sessionId:Long,val startMs:Long,val endMs:Long
@@ -326,7 +332,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v087base")
+            val supportsThemeChoice=!packageName.endsWith(".v088base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -460,6 +466,7 @@ class MainActivity : ComponentActivity() {
             var reportSkipWarmup by remember { mutableStateOf(false) }
             var segmentTextRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
             var segmentCsvRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
+            var abWindowExport by remember { mutableStateOf(null as AbWindowExportRequest?) }
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -564,6 +571,38 @@ class MainActivity : ComponentActivity() {
                     message=outcome.fold(
                         onSuccess={"Selected-segment CSV exported"},
                         onFailure={"Segment CSV failed: "+
+                            (it.message?:it.javaClass.simpleName)})
+                }
+            }
+            val abWindowTextFile=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("text/plain")
+            ) { uri ->
+                val request=abWindowExport
+                if(uri!=null && request!=null)scope.launch {
+                    val outcome=withContext(Dispatchers.IO) {
+                        runCatching {
+                            val list=database.list(200)
+                            val sa=list.firstOrNull{it.id==request.sessionAId}
+                                ?:error("Session A has been removed")
+                            val sb=list.firstOrNull{it.id==request.sessionBId}
+                                ?:error("Session B has been removed")
+                            val pa=database.points(sa.id)
+                            val pb=database.points(sb.id)
+                            require(pa.size>=sa.count && pb.size>=sb.count) {
+                                "Cannot export incompletely loaded recordings (>12k samples)"
+                            }
+                            val analysis=CompareStudioAnalysis.analyze(
+                                sa,pa,sb,pb,CompareStudioAnalysis.Window(
+                                    request.startElapsedMs,request.endElapsedMs))
+                            val text=CompareStudioAnalysis.report(analysis)
+                            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
+                                it.write(text)
+                            }?:error("Cannot open selected A/B report destination")
+                        }
+                    }
+                    message=outcome.fold(
+                        onSuccess={"Selected-window A/B report exported"},
+                        onFailure={"A/B export failed: "+
                             (it.message?:it.javaClass.simpleName)})
                 }
             }
@@ -1198,7 +1237,7 @@ class MainActivity : ComponentActivity() {
                                              Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
-                                                 Text("Skip first 30s (Warm-Up)",
+                                                 Text("Default crop: skip first 30s (legacy details too)",
                                                      Modifier.weight(1f),color=coreText,
                                                      style=MaterialTheme.typography.bodySmall)
                                                  Switch(skipWarmUp,
@@ -1209,7 +1248,7 @@ class MainActivity : ComponentActivity() {
                                                  color=coreSecondary,
                                                  style=MaterialTheme.typography.labelSmall)
                                              Row(verticalAlignment=Alignment.CenterVertically) {
-                                                Text("Active 3D gameplay: GPU ≥ 15% (heuristic)",
+                                                Text("Chart display filter: GPU ≥ 15% (not statistics)",
                                                     Modifier.weight(1f),color=muted,
                                                     style=MaterialTheme.typography.bodySmall)
                                                 Switch(activeOnly,onCheckedChange={activeOnly=it})
@@ -1289,63 +1328,48 @@ class MainActivity : ComponentActivity() {
                                                     ?.takeIf{secondPoints.isNotEmpty()}
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
-                                            if(analysisA!=null && analysisB!=null &&
-                                                eligibleA.isNotEmpty() && eligibleB.isNotEmpty()) {
-                                                CompareQuickOverview(analysisA,analysisB)
-                                                val chartA=remember(eligibleA,activeOnly) {
-                                                    if(activeOnly)eligibleA.filter{
-                                                        (it.gpuLoad?:0.0)>=15.0
-                                                    }else eligibleA
-                                                }
-                                                val chartB=remember(eligibleB,activeOnly) {
-                                                    if(activeOnly)eligibleB.filter{
-                                                        (it.gpuLoad?:0.0)>=15.0
-                                                    }else eligibleB
-                                                }
-                                                if(chartA.size>=2 && chartB.size>=2) {
-                                                    val overlap=minOf(
-                                                        chartA.last().timeMs-chartA.first().timeMs,
-                                                        chartB.last().timeMs-chartB.first().timeMs)
-                                                    Row(verticalAlignment=Alignment.CenterVertically) {
-                                                        Text("Show full timeline rather than shared "+
-                                                            "elapsed-time window",
-                                                            Modifier.weight(1f),color=coreSecondary,
-                                                            style=MaterialTheme.typography.bodySmall)
-                                                        Switch(compareFullTimeline,
-                                                            onCheckedChange={compareFullTimeline=it})
+                                            val selectedSessionA=sessionList.firstOrNull{it.id==firstId}
+                                            val selectedSessionB=sessionList.firstOrNull{it.id==secondId}
+                                            if(selectedSessionA!=null && selectedSessionB!=null &&
+                                                selectedSessionA.id!=selectedSessionB.id &&
+                                                firstPoints.isNotEmpty() && secondPoints.isNotEmpty()) {
+                                                CompareStudioPanel(
+                                                    sessionA=selectedSessionA,
+                                                    pointsA=firstPoints,
+                                                    sessionB=selectedSessionB,
+                                                    pointsB=secondPoints,
+                                                    activeGpuFilter=activeOnly,
+                                                    showFullTimelines=compareFullTimeline,
+                                                    onToggleFullTimeline={compareFullTimeline=it},
+                                                    initialSkipWarmUp=skipWarmUp,
+                                                    cursorFraction=compareCursor,
+                                                    onCursorFraction={compareCursor=it},
+                                                    onExport={window ->
+                                                        abWindowExport=AbWindowExportRequest(
+                                                            firstId,secondId,
+                                                            window.startElapsedMs,window.endElapsedMs)
+                                                        abWindowTextFile.launch(
+                                                            "CoreMetrics_AB_Window_"+firstId+"_"+secondId+
+                                                                "_"+window.startElapsedMs+"_"+window.endElapsedMs+".txt")
                                                     }
-                                                    val plotA=remember(chartA,compareFullTimeline,overlap) {
-                                                        if(compareFullTimeline)chartA else chartA.filter{
-                                                            it.timeMs-chartA.first().timeMs<=overlap
-                                                        }
-                                                    }
-                                                    val plotB=remember(chartB,compareFullTimeline,overlap) {
-                                                        if(compareFullTimeline)chartB else chartB.filter{
-                                                            it.timeMs-chartB.first().timeMs<=overlap
-                                                        }
-                                                    }
-                                                    if(plotA.size>=2 && plotB.size>=2) {
-                                                        Text("SYNCHRONIZED COMPARISON · "+
-                                                            if(compareFullTimeline)"full recordings"
-                                                            else "overlapping "+(overlap/1000L)+" s",
-                                                            color=iceBlue,fontWeight=FontWeight.Bold)
-                                                        CompareScrubPanel(plotA,plotB,
-                                                            fraction=compareCursor,
-                                                            onFractionChange={compareCursor=it})
-                                                    }else Text("Not enough overlapping samples to chart.",
-                                                        color=coreSecondary)
-                                                }else Text("Gameplay filter excluded a run. "+
-                                                    "Disable it to inspect complete chronology.",
-                                                    color=solarOrange)
-                                            }else Text("Choose two recordings to compare.",
+                                                )
+                                            }else Text("Choose two distinct recordings to compare.",
                                                 color=coreSecondary)
                                             OutlinedButton(onClick={
                                                 compareTechnical=!compareTechnical
                                             }) {
-                                                Text(if(compareTechnical)"Hide technical evidence"
-                                                    else "Show full evidence, regimes and diagnostics")
+                                                Text(if(compareTechnical)"Hide legacy technical evidence"
+                                                    else "Show legacy full-run diagnostics and regimes")
                                             }
                                             if(compareTechnical) {
+                                            Text("LEGACY TECHNICAL VIEW: These panels and "+
+                                                "their original full-run report use source "+
+                                                "chronology (optionally excluding first 30s), "+
+                                                "not the A/B scorecard's custom crop. Use "+
+                                                "Export selected A/B report above for "+
+                                                "range-matched data.",
+                                                color=solarOrange,
+                                                style=MaterialTheme.typography.bodySmall)
                                             analysisA?.let { r ->
                                                 Row(Modifier.fillMaxWidth(),
                                                     horizontalArrangement=Arrangement.spacedBy(10.dp)) {
