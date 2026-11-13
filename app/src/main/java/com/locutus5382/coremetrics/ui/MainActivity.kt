@@ -777,6 +777,7 @@ class MainActivity : ComponentActivity() {
                     .onFailure{message="Close failed: "+it.javaClass.simpleName}
             }
             CompositionLocalProvider(LocalSurfaceFinish provides appliedFinish) {
+            val themePalette=appliedFinish.palette
             val rootBackground=when(appliedFinish) {
                 SurfaceFinish.FROSTED -> Brush.linearGradient(listOf(
                     cobaltNavy,Color(0xFF09173A),Color(0xFF10265C),cobaltNavy))
@@ -788,21 +789,47 @@ class MainActivity : ComponentActivity() {
                 SurfaceFinish.COBALT_MATRIX -> Brush.linearGradient(listOf(
                     Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
-            MaterialTheme(colorScheme=darkColorScheme(
-                primary=when(appliedFinish){
-                    SurfaceFinish.SOLAR_PULSE->solarOrange
-                    SurfaceFinish.COBALT_MATRIX->coreCyan
-                    else->iceBlue
-                },
-                onPrimary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
-                    Color.White else cobaltNavy,
-                secondary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
-                    cobalt else coreCyan,
-                surface=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
-                    Color(0xFF081226) else cobaltNavy,
-                background=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
-                    Color(0xFF030814) else cobaltNavy,
-                onSurface=coreText)) {
+            MaterialTheme(
+                colorScheme=darkColorScheme(
+                    primary=when(appliedFinish) {
+                        SurfaceFinish.SOLAR_PULSE -> solarOrange
+                        SurfaceFinish.COBALT_MATRIX -> Color(0xFF75DBFF)
+                        SurfaceFinish.CRYSTAL_AERO -> Color(0xFFB9ECFF)
+                        SurfaceFinish.FROSTED -> iceBlue
+                    },
+                    onPrimary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
+                        Color.White else cobaltNavy,
+                    primaryContainer=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
+                        Color(0xFF8A3A0C) else Color(0xFF183E70),
+                    onPrimaryContainer=themePalette.foreground,
+                    secondary=when(appliedFinish) {
+                        SurfaceFinish.SOLAR_PULSE -> Color(0xFF62D7ED)
+                        SurfaceFinish.COBALT_MATRIX -> solarGold
+                        else -> coreCyan
+                    },
+                    onSecondary=Color(0xFF07152B),
+                    surface=when(appliedFinish) {
+                        SurfaceFinish.COBALT_MATRIX -> Color(0xFF101A29)
+                        SurfaceFinish.SOLAR_PULSE -> Color(0xFF132747)
+                        SurfaceFinish.CRYSTAL_AERO -> Color(0xFF112E51)
+                        else -> cobaltNavy
+                    },
+                    surfaceVariant=themePalette.top,
+                    background=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
+                        Color(0xFF030814) else cobaltNavy,
+                    onSurface=themePalette.foreground,
+                    onSurfaceVariant=themePalette.muted,
+                    outline=themePalette.borderSoft
+                ),
+                shapes=androidx.compose.material3.Shapes(
+                    small=RoundedCornerShape(
+                        if(themePalette.sharpCorners)4.dp else 10.dp),
+                    medium=RoundedCornerShape(
+                        if(themePalette.sharpCorners)7.dp else 15.dp),
+                    large=RoundedCornerShape(
+                        if(themePalette.sharpCorners)9.dp else 23.dp)
+                )
+            ) {
                 Box(Modifier.fillMaxSize().background(rootBackground)) {
                     PureGlassBackdrop()
                     Row(Modifier.fillMaxSize().padding(9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -858,7 +885,7 @@ class MainActivity : ComponentActivity() {
                                         fontWeight=FontWeight.Bold)
                                 }
                                 if(supportsThemeChoice) {
-                                    CMActionPill("THEME · "+appliedFinish.displayName+" ↻") {
+                                    CMActionPill("STYLE ↻") {
                                         val choices=SurfaceFinish.values()
                                         val next=choices[(finish.ordinal+1)%choices.size]
                                         finish=next
@@ -1655,31 +1682,25 @@ class MainActivity : ComponentActivity() {
                                                  color=coreSecondary,
                                                  style=MaterialTheme.typography.bodySmall)
                                             if(supportsThemeChoice) {
-                                                Text("APP APPEARANCE · TAP TO APPLY",
-                                                    color=iceBlue,
-                                                    style=MaterialTheme.typography.titleSmall)
-                                                Row(Modifier.horizontalScroll(rememberScrollState()),
-                                                    horizontalArrangement=
-                                                        Arrangement.spacedBy(7.dp)) {
-                                                    SurfaceFinish.values().forEach { option ->
-                                                        FilterChip(selected=finish==option,
-                                                            onClick={
-                                                                finish=option
-                                                                prefs.edit().putString(
-                                                                    "ui_surface_finish",option.key)
-                                                                    .apply()
-                                                            },label={Text(option.displayName)})
+                                                ThemePicker(
+                                                    selected=appliedFinish,
+                                                    onSelect={ option ->
+                                                        finish=option
+                                                        prefs.edit().putString(
+                                                            "ui_surface_finish",option.key).apply()
                                                     }
-                                                }
-                                                Text("CURRENT: "+appliedFinish.displayName,
-                                                    color=coreMint,fontWeight=FontWeight.Bold)
-                                                Text(appliedFinish.description,
+                                                )
+                                                Text("Visual treatment is static. Frosted "+
+                                                    "retains the original appearance. "+
+                                                    "True Glass uses layered transparency "+
+                                                    "(not a GPU blur shader). Modern Colorful "+
+                                                    "emphasizes bold controls; Technical Cockpit "+
+                                                    "uses compact instrument geometry.",
                                                     color=coreSecondary,
-                                                    style=MaterialTheme.typography.bodySmall)
-                                                Text("Only application screens change. "+
-                                                    "The in-game native floating HUD, its "+
-                                                    "touch-lock and all telemetry remain unchanged. "+
-                                                    "No idle animation or expensive background blur is used.",
+                                                    style=MaterialTheme.typography.labelSmall)
+                                                Text("Press animation runs only on interaction. "+
+                                                    "No telemetry, database or in-game HUD "+
+                                                    "changes when switching themes.",
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                                 HorizontalDivider(color=coreBorder)
@@ -1688,8 +1709,8 @@ class MainActivity : ComponentActivity() {
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
                                                 Text("This Frosted test APK has one fixed finish. "+
                                                     "Use the separate CoreMetrics Themes APK "+
-                                                    "for the visible THEME button, Crystal Aero and "+
-                                                    "Solar Pulse / Cobalt Matrix.",
+                                                    "to select True Glass, Modern Colorful or "+
+                                                    "Technical Cockpit.",
                                                     color=coreSecondary)
                                             }
                                             Row(verticalAlignment=Alignment.CenterVertically,
