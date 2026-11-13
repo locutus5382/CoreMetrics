@@ -127,7 +127,8 @@ class DirectSampler(private val app: Application) {
             priorCore[label] = ticks
             if (load == null) null else label to load
         }.toList()
-        val peak = CpuMath.uniqueBusiest(perCore)
+        val peakLoad = CpuMath.maxCoreLoad(perCore)
+        val uniqueWinner = CpuMath.uniqueBusiest(perCore)
         val mem = read("/proc/meminfo")
         fun kb(key: String): Long? = mem?.lineSequence()?.firstOrNull { it.startsWith(key + ":") }
             ?.substringAfter(':')?.trim()?.substringBefore(' ')
@@ -145,7 +146,7 @@ class DirectSampler(private val app: Application) {
         return Snapshot(
             timeMs = now, cpuTempC = thermal(true), gpuTempC = thermal(false),
             batteryTempC = battery.first, batteryPercent = battery.second,
-            cpuPercent = cpuPercent, busiestPercent = peak?.second, busiestCore = peak?.first,
+            cpuPercent = cpuPercent, busiestPercent = peakLoad, busiestCore = uniqueWinner?.first,
             gpuPercent = gpuLoad(), gpuMHz = gpuClock(), ramGiB = ram,
             cpuClockSummary = cpuClockSummary(), appPackage = appPackage,
             signedBatteryWatts = power.signedBatteryWatts,
