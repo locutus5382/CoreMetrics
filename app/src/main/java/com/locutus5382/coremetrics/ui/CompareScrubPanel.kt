@@ -72,6 +72,14 @@ internal fun CompareScrubPanel(
 ) {
     if(a.isEmpty() || b.isEmpty())return
     var metric by remember { mutableStateOf(Metric.CPU_TEMP) }
+    val selectableMetrics=remember(a,b) {
+        val hasFps=a.any { it.sfFps?.isFinite()==true } ||
+            b.any { it.sfFps?.isFinite()==true }
+        Metric.values().filter { it!=Metric.FPS || hasFps }
+    }
+    LaunchedEffect(selectableMetrics) {
+        if(metric !in selectableMetrics)metric=Metric.CPU_TEMP
+    }
     val duration=max(a.last().timeMs-a.first().timeMs,
         b.last().timeMs-b.first().timeMs).coerceAtLeast(1L)
     val elapsed=(duration*fraction).toLong()
@@ -92,11 +100,9 @@ internal fun CompareScrubPanel(
             color=iceBlue,fontWeight=FontWeight.Bold)
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-            // Do not offer an empty FPS graph when this device cannot supply
-            // verified, non-null layer FPS telemetry.
-            Metric.values().filter { candidate ->
-                candidate!=Metric.FPS || (a+b).any { it.sfFps?.isFinite()==true }
-            }.forEach { candidate ->
+            // Skip the unavailable FPS selector without rescanning every
+            // recorded point on each chart drag/recomposition.
+            selectableMetrics.forEach { candidate ->
                 FilterChip(selected=metric==candidate,onClick={metric=candidate},
                     label={Text(candidate.title)})
             }
