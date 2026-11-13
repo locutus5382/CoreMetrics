@@ -17,6 +17,10 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
         </activity>
         <service android:name=".monitor.RecordingService"
             android:process=":monitor" android:exported="false"
@@ -29,16 +33,18 @@
             android:process=":monitor" android:exported="false"/>
         <service android:name=".quick.HudTile" android:process=":monitor" android:exported="true"
             android:label="${coremetricsHudTileLabel}"
-            android:icon="@drawable/ic_coremetrics_hud_tile"
+            android:icon="@drawable/ic_qs_cm_off"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="true"/>
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="true"/>
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE"/>
             </intent-filter>
         </service>
         <service android:name=".quick.SessionTile" android:process=":monitor" android:exported="true"
-            android:label="${coremetricsTileLabel}" android:icon="@drawable/ic_coremetrics_notification"
+            android:label="${coremetricsTileLabel}" android:icon="@drawable/ic_qs_cm_rec_off"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE"
                 android:value="true"/>

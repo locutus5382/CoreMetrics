@@ -10,43 +10,14 @@ android {
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 23
-        versionName = "0.9.3-qs-lmk-hardening-alpha"
+        versionCode = 24
+        versionName = "0.9.4-unified-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM · HUD"
     }
+    // One canonical app; all four finishes are selected at runtime.
     buildTypes {
-        create("v093themes") {
-            initWith(getByName("debug"))
-            applicationIdSuffix = ".v093themes"
-            versionNameSuffix = "-themes"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.3 Themes"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.3 Themes Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.3 Themes · HUD"
-        }
-        create("v093base") {
-            initWith(getByName("debug"))
-            applicationIdSuffix = ".v093base"
-            versionNameSuffix = "-analytics"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.3 Frosted"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.3 Frosted Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.3 Frosted · HUD"
-        }
-        create("v07test") {
-            initWith(getByName("debug"))
-            applicationIdSuffix = ".v07test"
-            versionNameSuffix = "-side-by-side"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.7 Test"
-            manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics v0.7 Record"
-        }
-        create("preview") {
-            initWith(getByName("debug"))
-            applicationIdSuffix = ".preview"
-            versionNameSuffix = "-preview"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics Preview"
-            manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Preview Record"
-        }
         release {
             isMinifyEnabled = false
         }

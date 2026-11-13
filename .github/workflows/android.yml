@@ -1,4 +1,4 @@
-name: CoreMetrics Android debug build
+name: CoreMetrics unified Android build
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -24,15 +24,10 @@ jobs:
           gradle-version: '8.11.1'
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Unit tests and assemble debug APK
-        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleV093base :app:assembleV093themes :app:assembleDebugAndroidTest --no-daemon
-      - name: Upload v0.9.3 Frosted APK
+      - name: Unit tests and assemble unified APK
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+      - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.3-frosted
-          path: app/build/outputs/apk/v093base/app-v093base.apk
-      - name: Upload v0.9.3 Themes APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CoreMetrics-v0.9.3-themes
-          path: app/build/outputs/apk/v093themes/app-v093themes.apk
+          name: CoreMetrics-v0.9.4-unified-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
