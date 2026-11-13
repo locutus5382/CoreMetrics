@@ -262,7 +262,7 @@ object SessionDiagnosticsAnalyzer {
 
     fun text(result: Result, originMs: Long? = null): String = buildString {
         appendLine()
-        appendLine("ADVANCED SINGLE-SESSION DIAGNOSTICS (v0.8.6)")
+        appendLine("ADVANCED SINGLE-SESSION DIAGNOSTICS (RECORDED SAMPLE WINDOW)")
         val origin = originMs ?: result.distributions.firstOrNull()
             ?.readings?.firstOrNull()?.timeMs ?: 0L
         for (stat in result.distributions) {

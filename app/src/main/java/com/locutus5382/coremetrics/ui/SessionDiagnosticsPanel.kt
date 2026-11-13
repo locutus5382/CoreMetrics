@@ -355,14 +355,25 @@ private fun DiagnosticEvidence(
         Text("Mean CPU-sensor / battery-temperature difference: "+
             fmtDiagnostic(result.meanCpuBatteryDeltaC)+" °C (not battery health)",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
-        Text("RUNTIME ESTIMATE",color=iceBlue,fontWeight=FontWeight.Bold)
-        Text("Remaining "+fmtDiagnostic(result.remainingHours,2)+
-            " h at "+(result.measuredBatteryPct?.toString()?:"—")+"% · full "+
-            fmtDiagnostic(result.fullChargeHours,2)+" h",
-            color=coreText,style=MaterialTheme.typography.bodySmall)
-        Text(result.runtimeNote,color=coreSecondary,
-            style=MaterialTheme.typography.labelSmall)
-        Text("Telemetry integrity "+report.quality.score+"/100 · cadence "+
+        // Do not make a short recording's nominal-capacity projection look
+        // like a validated battery fuel-gauge forecast.
+        var runtimeExpanded by rememberSaveable { mutableStateOf(false) }
+        TextButton(onClick={runtimeExpanded=!runtimeExpanded}) {
+            Text(if(runtimeExpanded)
+                "Hide theoretical battery runtime"
+                else "Show theoretical battery runtime (low confidence)",
+                color=coreSecondary)
+        }
+        if(runtimeExpanded) {
+            Text("Remaining "+fmtDiagnostic(result.remainingHours,1)+
+                " h at "+(result.measuredBatteryPct?.toString()?:"—")+"% · full "+
+                fmtDiagnostic(result.fullChargeHours,1)+" h",
+                color=coreText,style=MaterialTheme.typography.bodySmall)
+            Text(result.runtimeNote+" Nominal capacity and present workload "+
+                "are assumptions; not a verified remaining-life estimate.",
+                color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+        }
+        Text("Telemetry integrity "+report.quality.score+"/100 · sampling coverage "+
             fmtDiagnostic(report.quality.coveragePct)+"% · recording gaps "+
             result.gapCount+" · discharge coverage "+
             fmtDiagnostic(report.energy.coveragePct)+"%",
