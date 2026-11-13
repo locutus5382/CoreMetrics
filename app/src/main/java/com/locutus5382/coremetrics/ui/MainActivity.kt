@@ -319,7 +319,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v084base")
+            val supportsThemeChoice=packageName.endsWith(".v085themes")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -639,16 +639,18 @@ class MainActivity : ComponentActivity() {
             val rootBackground=when(appliedFinish) {
                 SurfaceFinish.FROSTED -> Brush.linearGradient(listOf(
                     cobaltNavy,Color(0xFF09173A),Color(0xFF10265C),cobaltNavy))
-                SurfaceFinish.LIQUID -> Brush.linearGradient(listOf(
-                    Color(0xFF030815),Color(0xFF0A1A3A),
-                    Color(0xFF121B39),Color(0xFF030815)))
-                SurfaceFinish.TACTICAL -> Brush.linearGradient(listOf(
-                    Color(0xFF04060C),Color(0xFF04060C)))
+                SurfaceFinish.CRYSTAL_AERO -> Brush.linearGradient(listOf(
+                    Color(0xFF030B1A),Color(0xFF0B2154),
+                    Color(0xFF0D1A37),Color(0xFF040915)))
+                SurfaceFinish.SOLAR_PULSE -> Brush.linearGradient(listOf(
+                    cobaltNavy,Color(0xFF091E3D),Color(0xFF071226)))
+                SurfaceFinish.COBALT_MATRIX -> Brush.linearGradient(listOf(
+                    Color(0xFF030916),Color(0xFF081226)))
             }
             MaterialTheme(colorScheme = darkColorScheme(primary = iceBlue,
-                surface=if(appliedFinish==SurfaceFinish.TACTICAL)
+                surface=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
                     Color(0xFF121620) else cobaltNavy,
-                background=if(appliedFinish==SurfaceFinish.TACTICAL)
+                background=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
                     Color(0xFF04060C) else cobaltNavy,
                 onSurface=coreText)) {
                 Box(Modifier.fillMaxSize().background(rootBackground)) {
@@ -1652,7 +1654,7 @@ private fun CompactRailAction(
     modifier:Modifier=Modifier,onClick:()->Unit
 ) {
     val shape=RoundedCornerShape(11.dp)
-    val isTactical=LocalSurfaceFinish.current==SurfaceFinish.TACTICAL
+    val isTactical=LocalSurfaceFinish.current==SurfaceFinish.COBALT_MATRIX
     var hasFocus by remember {mutableStateOf(false)}
     Column(
         modifier.fillMaxWidth().height(49.dp)

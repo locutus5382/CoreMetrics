@@ -3,18 +3,26 @@ package com.locutus5382.coremetrics.ui
 import androidx.compose.runtime.staticCompositionLocalOf
 
 /**
- * UI-only finishes. Cobalt/Solar Frosted is the product default.
- * These flags never change the WindowManager HUD or recording service.
+ * Static UI materials, identical observational recorder and overlay for all.
+ * The Base test APK locks Frosted, Themes APK exposes all four.
  */
-internal enum class SurfaceFinish(val key:String,val displayName:String,
-    val description:String) {
-    FROSTED("frosted","Frosted Glass","Original CoreMetrics glass · unchanged"),
-    LIQUID("liquid","Liquid Glass","Brighter hairline reflections, static specular gradients"),
-    TACTICAL("tactical","Tactical Flat","Opaque slate surfaces and strong contrast");
+internal enum class SurfaceFinish(
+    val key:String,val displayName:String,val description:String
+) {
+    FROSTED("frosted","Frosted Glass","Original Cobalt & Solar ambient glass"),
+    CRYSTAL_AERO("crystal_aero","Crystal Aero",
+        "Clear optical panes with specular rims over static Cobalt & Solar ribbons"),
+    SOLAR_PULSE("solar_pulse","Solar Pulse",
+        "Modern vivid Cobalt, Orange and Gold control surfaces"),
+    COBALT_MATRIX("cobalt_matrix","Cobalt Matrix",
+        "Precision telemetry, segmented ticks and instrument-like dark panels");
 
     companion object {
-        fun parse(key:String?):SurfaceFinish =
-            values().firstOrNull{it.key==key}?:FROSTED
+        fun parse(key:String?):SurfaceFinish=when(key) {
+            "liquid" -> CRYSTAL_AERO // previous saved choice, intentionally migrated
+            "tactical" -> COBALT_MATRIX
+            else -> values().firstOrNull{it.key==key}?:FROSTED
+        }
     }
 }
 
