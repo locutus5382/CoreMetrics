@@ -70,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
@@ -82,6 +83,7 @@ import com.locutus5382.coremetrics.analysis.DocumentWindowRequest
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
+import com.locutus5382.coremetrics.telemetry.ForegroundAttribution
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.data.UiSessionStoreOwner
 import com.locutus5382.coremetrics.monitor.RecordingService
@@ -410,8 +412,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
             var page by rememberSaveable {
-                mutableStateOf(if(intent?.action==TileService.ACTION_QS_TILE_PREFERENCES)
-                    "HUD" else "Live")
+                mutableStateOf(when {
+                    intent?.getBooleanExtra("show_setup",false)==true -> "Live"
+                    intent?.action==TileService.ACTION_QS_TILE_PREFERENCES -> "HUD"
+                    else -> "Live"
+                })
             }
             var compareCursor by rememberSaveable { mutableFloatStateOf(.5f) }
             val contentScroll=rememberScrollState()
@@ -472,6 +477,31 @@ class MainActivity : ComponentActivity() {
             }
             var overlayAllowed by remember {
                 mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
+            }
+            var showSetup by rememberSaveable {
+                mutableStateOf(intent?.getBooleanExtra("show_setup",false)==true ||
+                    !prefs.getBoolean("onboarding_dismissed",false))
+            }
+            // Return from Android Settings / permission sheets refreshes the
+            // explanatory card immediately. Never pop up OS dialogs on launch.
+            var permissionRevision by remember { mutableIntStateOf(0) }
+            DisposableEffect(Unit) {
+                val observer=LifecycleEventObserver { _,event ->
+                    if(event==Lifecycle.Event.ON_RESUME)permissionRevision++
+                }
+                lifecycle.addObserver(observer)
+                onDispose { lifecycle.removeObserver(observer) }
+            }
+            val notificationsGranted=remember(permissionRevision) {
+                Build.VERSION.SDK_INT<33 ||
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==
+                        PackageManager.PERMISSION_GRANTED
+            }
+            val usageGranted=remember(permissionRevision) {
+                ForegroundAttribution(this@MainActivity).permissionGranted()
+            }
+            val overlayGranted=remember(permissionRevision,overlayAllowed) {
+                Settings.canDrawOverlays(this@MainActivity)
             }
             val liveTrace = remember { mutableStateListOf<LiveTracePoint>() }
             val thermalGauge = remember { ThermalTrendFilter() }
@@ -1112,6 +1142,35 @@ class MainActivity : ComponentActivity() {
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 when (page) {
                                     "Live" -> {
+                                        if(showSetup) {
+                                            FirstRunSetupPanel(
+                                                notificationsGranted=notificationsGranted,
+                                                overlayGranted=overlayGranted,
+                                                usageGranted=usageGranted,
+                                                onNotifications={
+                                                    if(Build.VERSION.SDK_INT>=33)
+                                                        notifyPermission.launch(
+                                                            Manifest.permission.POST_NOTIFICATIONS)
+                                                },
+                                                onOverlay={
+                                                    startActivity(Intent(
+                                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                        Uri.parse("package:"+packageName)))
+                                                },
+                                                onUsage={
+                                                    startActivity(Intent(
+                                                        Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                                },
+                                                onHudTile={
+                                                    requestHudQuickSettingsTile{message=it}
+                                                },
+                                                onDismiss={
+                                                    showSetup=false
+                                                    prefs.edit().putBoolean(
+                                                        "onboarding_dismissed",true).apply()
+                                                }
+                                            )
+                                        }
                                         Text("Eden first → Quick Settings → CM HUD → REC. " +
                                             "Standby performs no hardware sampling.",
                                             color=coreSecondary,
@@ -1542,8 +1601,14 @@ class MainActivity : ComponentActivity() {
                                                                         detailedId=0L;detailReport=null
                                                                         detailPoints=emptyList()
                                                                     }
-                                                                    if(firstId==s.id)firstId=0L
-                                                                    if(secondId==s.id)secondId=0L
+                                                                    if(firstId==s.id) {
+                                                                        firstId=0L
+                                                                        firstPoints=emptyList()
+                                                                    }
+                                                                    if(secondId==s.id) {
+                                                                        secondId=0L
+                                                                        secondPoints=emptyList()
+                                                                    }
                                                                     sessionList=withContext(Dispatchers.IO){database.list()}
                                                                     linkedPairs=withContext(Dispatchers.IO){database.links()}
                                                                     message="Session #"+s.id+" deleted"
@@ -1612,6 +1677,16 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                             if(firstId>0L && secondId>0L && firstId!=secondId) {
+                                                OutlinedButton(onClick={
+                                                    // Swap IDs and cached point lists together
+                                                    // to preserve the displayed B-A baseline.
+                                                    val oldA=firstId
+                                                    firstId=secondId
+                                                    secondId=oldA
+                                                    val oldPoints=firstPoints
+                                                    firstPoints=secondPoints
+                                                    secondPoints=oldPoints
+                                                }){Text("Swap A ⇄ B")}
                                                 val linked=linkedPairs.any{
                                                     setOf(it.firstId,it.secondId)==setOf(firstId,secondId)
                                                 }
@@ -2020,6 +2095,10 @@ class MainActivity : ComponentActivity() {
                                                 })
                                             }
                                             HorizontalDivider(color=coreBorder)
+                                            OutlinedButton(onClick={
+                                                showSetup=true
+                                                page="Live"
+                                            }){Text("Review permissions and privacy setup")}
                                             Text("SUPPORT COREMETRICS",color=iceBlue,
                                                 style=MaterialTheme.typography.titleSmall)
                                             Text("CoreMetrics is free, offline and fully functional. "+
@@ -2165,7 +2244,7 @@ private fun fmt(value: Double) = String.format(Locale.US,"%.1f",value)
 private fun time(ms: Long) = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(ms))
 
 @Composable
-private fun GlassPanel(content: @Composable ColumnScope.() -> Unit) {
+internal fun GlassPanel(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxWidth().pureGlass(18)
             .padding(15.dp),
