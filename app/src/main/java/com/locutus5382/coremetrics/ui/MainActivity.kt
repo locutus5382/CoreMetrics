@@ -348,6 +348,8 @@ class MainActivity : ComponentActivity() {
     private var lastObservedMonitorActive=false
     private fun notifyAppVisible(visible:Boolean) {
         if(!lastObservedMonitorActive)return
+        // Async status updates must never re-hide the HUD during Activity exit.
+        if(visible && (!appVisible || isFinishing || isDestroyed))return
         runCatching {
             startService(Intent(this,RecordingService::class.java).setAction(
                 if(visible)RecordingService.APP_FOREGROUND
@@ -364,7 +366,8 @@ class MainActivity : ComponentActivity() {
             // provider in onStart(). Cold Activity recreation must promptly
             // pause its own HUD rather than cover the app for 4.5 seconds.
             val state=withContext(Dispatchers.IO){query()}
-            if(appVisible && lifecycle.currentState.isAtLeast(
+            if(appVisible && !isFinishing && !isDestroyed &&
+                lifecycle.currentState.isAtLeast(
                     Lifecycle.State.STARTED) &&
                 (state.running || state.starting || state.standby)){
                 lastObservedMonitorActive=true
@@ -568,13 +571,12 @@ class MainActivity : ComponentActivity() {
                 if(uri!=null && idA!=0L)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
-                            val list=database.list(200)
-                            val a=list.firstOrNull{it.id==idA}
+                            val a=database.sessionById(idA)
                                 ?:error("Report session A is missing")
                             val reportPoints=database.points(a.id)
                             val analyzedA=BenchmarkAnalyzer.analyze(a,reportPoints,if(warmup)30 else 0)
                             val content=if(idB!=0L && idB!=a.id) {
-                                val b=list.firstOrNull{it.id==idB}
+                                val b=database.sessionById(idB)
                                     ?:error("Report session B is missing")
                                 BenchmarkAnalyzer.comparison(analyzedA,
                                     BenchmarkAnalyzer.analyze(b,database.points(b.id),if(warmup)30 else 0))
@@ -601,7 +603,7 @@ class MainActivity : ComponentActivity() {
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
-                            val session=database.list(200).firstOrNull{it.id==request.sessionId}
+                            val session=database.sessionById(request.sessionId)
                                 ?:error("Source session no longer exists")
                             val source=database.points(request.sessionId)
                             require(source.size>=session.count) {
@@ -629,7 +631,7 @@ class MainActivity : ComponentActivity() {
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
-                            val session=database.list(200).firstOrNull{it.id==request.sessionId}
+                            val session=database.sessionById(request.sessionId)
                                 ?:error("Source session no longer exists")
                             val source=database.points(request.sessionId)
                             require(source.size>=session.count) {
@@ -658,10 +660,9 @@ class MainActivity : ComponentActivity() {
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
-                            val list=database.list(200)
-                            val sa=list.firstOrNull{it.id==request.firstId}
+                            val sa=database.sessionById(request.firstId)
                                 ?:error("Session A has been removed")
-                            val sb=list.firstOrNull{it.id==request.secondId}
+                            val sb=database.sessionById(request.secondId)
                                 ?:error("Session B has been removed")
                             val pa=database.points(sa.id)
                             val pb=database.points(sb.id)
@@ -696,8 +697,7 @@ class MainActivity : ComponentActivity() {
                     val outcome=try {
                         withContext(Dispatchers.IO) {
                             runCatching {
-                                val sessions=database.list(200)
-                            val a=sessions.firstOrNull {it.id==request.firstId}
+                                val a=database.sessionById(request.firstId)
                                 ?:error("Source session no longer exists")
                             val pointsA=database.points(a.id)
                             require(pointsA.size>=a.count) {
@@ -709,7 +709,7 @@ class MainActivity : ComponentActivity() {
                                         request.startMs,request.endMs))
                                 ScorecardModel.single(bundle)
                             }else {
-                                val b=sessions.firstOrNull {it.id==request.secondId}
+                                val b=database.sessionById(request.secondId)
                                     ?:error("Comparison session B no longer exists")
                                 val pointsB=database.points(b.id)
                                 require(pointsB.size>=b.count) {
@@ -837,6 +837,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            // Drop cached 12k-sample analysis lists once their page is closed.
+            // Reopening a page loads original data from the local database.
+            LaunchedEffect(page) {
+                if(page!="Sessions"){
+                    detailReport=null
+                    detailPoints=emptyList()
+                    detailedId=0L
+                    detailTechnical=false
+                    metadataEditorId=0L
+                }
+                if(page!="Compare"){
+                    firstPoints=emptyList()
+                    secondPoints=emptyList()
+                    compareTechnical=false
+                }
+            }
             LaunchedEffect(page, status.running) {
                 if(page=="Live" && !status.running)
                     sessionList=withContext(Dispatchers.IO){database.list(1)}
@@ -849,7 +865,7 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(page,detailedId,skipWarmUp,sessionList) {
                 if(page=="Sessions" && detailedId>0L) {
                     val response=withContext(Dispatchers.IO) {
-                        val session=database.list(200).firstOrNull{it.id==detailedId}
+                        val session=database.sessionById(detailedId)
                         val points=database.points(detailedId)
                         val report=session?.let{BenchmarkAnalyzer.analyze(it,points,if(skipWarmUp)30 else 0)}
                         report to points
@@ -923,7 +939,11 @@ class MainActivity : ComponentActivity() {
                     onSuccess={
                         lastObservedMonitorActive=true
                         message="Standby requested · no recording until REC"
-                        if(closeUiOnArm) this@MainActivity.finish()
+                        if(closeUiOnArm) {
+                            appVisible=false
+                            notifyAppVisible(false)
+                            this@MainActivity.finish()
+                        }
                     },
                     onFailure={message="Standby failed: "+it.javaClass.simpleName})
             }
@@ -1420,7 +1440,7 @@ class MainActivity : ComponentActivity() {
                                                         metadataEditorId=if(metadataEditorId==s.id)
                                                             0L else s.id
                                                     },enabled=!status.running && !status.starting){
-                                                        Text("Tags")
+                                                        Text("Edit")
                                                     }
                                                     OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         reportAId=s.id;reportBId=0L
@@ -1435,7 +1455,9 @@ class MainActivity : ComponentActivity() {
                                                             scope.launch {
                                                                 val outcome=withContext(Dispatchers.IO){
                                                                     runCatching{
-                                                                        database.updateGraphicsDriver(s.id,tag)
+                                                                        check(database.updateGraphicsDriver(s.id,tag)){
+                                                                            "Session no longer exists"
+                                                                        }
                                                                     }
                                                                 }
                                                                 outcome.fold(onSuccess={
@@ -1453,7 +1475,9 @@ class MainActivity : ComponentActivity() {
                                                             scope.launch {
                                                                 val outcome=withContext(Dispatchers.IO){
                                                                     runCatching{
-                                                                        database.updateResolutionScale(s.id,tag)
+                                                                        check(database.updateResolutionScale(s.id,tag)){
+                                                                            "Session no longer exists"
+                                                                        }
                                                                     }
                                                                 }
                                                                 outcome.fold(onSuccess={
@@ -1464,6 +1488,68 @@ class MainActivity : ComponentActivity() {
                                                                 },onFailure={e->
                                                                     message="Resolution tag failed: "+
                                                                         (e.message?:e.javaClass.simpleName)
+                                                                })
+                                                            }
+                                                        },
+                                                        onNote={note->
+                                                            scope.launch {
+                                                                val outcome=withContext(Dispatchers.IO){
+                                                                    runCatching {
+                                                                        check(database.updateGameNote(s.id,note)){
+                                                                            "Session missing or recording"
+                                                                        }
+                                                                    }
+                                                                }
+                                                                outcome.fold(onSuccess={
+                                                                    sessionList=withContext(Dispatchers.IO){database.list()}
+                                                                    message="Game note updated"
+                                                                },onFailure={
+                                                                    message="Game note failed: "+
+                                                                        (it.message?:it.javaClass.simpleName)
+                                                                })
+                                                            }
+                                                        },
+                                                        onConfig={config->
+                                                            scope.launch {
+                                                                val outcome=withContext(Dispatchers.IO){
+                                                                    runCatching {
+                                                                        check(database.updateConfiguration(s.id,config)){
+                                                                            "Session missing or recording"
+                                                                        }
+                                                                    }
+                                                                }
+                                                                outcome.fold(onSuccess={
+                                                                    sessionList=withContext(Dispatchers.IO){database.list()}
+                                                                    message="Configuration updated"
+                                                                },onFailure={
+                                                                    message="Configuration failed: "+
+                                                                        (it.message?:it.javaClass.simpleName)
+                                                                })
+                                                            }
+                                                        },
+                                                        onDelete={
+                                                            scope.launch {
+                                                                val outcome=withContext(Dispatchers.IO){
+                                                                    runCatching {
+                                                                        check(database.deleteSession(s.id)){
+                                                                            "Session missing or still recording"
+                                                                        }
+                                                                    }
+                                                                }
+                                                                outcome.fold(onSuccess={
+                                                                    metadataEditorId=0L
+                                                                    if(detailedId==s.id) {
+                                                                        detailedId=0L;detailReport=null
+                                                                        detailPoints=emptyList()
+                                                                    }
+                                                                    if(firstId==s.id)firstId=0L
+                                                                    if(secondId==s.id)secondId=0L
+                                                                    sessionList=withContext(Dispatchers.IO){database.list()}
+                                                                    linkedPairs=withContext(Dispatchers.IO){database.links()}
+                                                                    message="Session #"+s.id+" deleted"
+                                                                },onFailure={
+                                                                    message="Delete failed: "+
+                                                                        (it.message?:it.javaClass.simpleName)
                                                                 })
                                                             }
                                                         },
@@ -1932,6 +2018,36 @@ class MainActivity : ComponentActivity() {
                                                     prefs.edit().putBoolean("immersive_ui",enabled)
                                                         .apply()
                                                 })
+                                            }
+                                            HorizontalDivider(color=coreBorder)
+                                            Text("SUPPORT COREMETRICS",color=iceBlue,
+                                                style=MaterialTheme.typography.titleSmall)
+                                            Text("CoreMetrics is free, offline and fully functional. "+
+                                                "If you find it useful, an optional donation "+
+                                                "supports development. There are no paid features, "+
+                                                "subscriptions or donor-only versions.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
+                                            Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                                                OutlinedButton(onClick={
+                                                    runCatching {
+                                                        startActivity(Intent(Intent.ACTION_VIEW,
+                                                            Uri.parse("https://ko-fi.com/locutus5382")))
+                                                    }.onFailure {
+                                                        getSystemService(ClipboardManager::class.java)
+                                                            ?.setPrimaryClip(ClipData.newPlainText(
+                                                                "CoreMetrics Ko-fi",
+                                                                "https://ko-fi.com/locutus5382"))
+                                                        message="Browser unavailable; Ko-fi link copied"
+                                                    }
+                                                }) { Text("Open Ko-fi") }
+                                                OutlinedButton(onClick={
+                                                    getSystemService(ClipboardManager::class.java)
+                                                        ?.setPrimaryClip(ClipData.newPlainText(
+                                                            "CoreMetrics Ko-fi",
+                                                            "https://ko-fi.com/locutus5382"))
+                                                    message="Ko-fi link copied"
+                                                }) { Text("Copy link") }
                                             }
                                             HorizontalDivider(color=coreBorder)
                                             Text("Recording is always user-started, offline, and read-only.",
