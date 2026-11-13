@@ -117,7 +117,11 @@ class MainActivity : ComponentActivity() {
     /** Hardware shoulder navigation even after touch focus is lost. */
     private var controllerTabAction:((Int)->Unit)?=null
     private var controllerFocusAction:((Int)->Boolean)?=null
+    private var controllerScrollAction:((Float)->Unit)?=null
+    private var controllerScrubAction:((Float)->Unit)?=null
+    private var controllerIsCompare:(()->Boolean)?=null
     private var lastAnalogMoveMs=0L
+    private var lastAnalogFocusMs=0L
     override fun dispatchKeyEvent(event:KeyEvent):Boolean {
         if(event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) {
             val delta=when(event.keyCode) {
@@ -154,26 +158,44 @@ class MainActivity : ComponentActivity() {
     override fun onGenericMotionEvent(event:MotionEvent):Boolean {
         if(event.action==MotionEvent.ACTION_MOVE &&
             (event.source and InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK) {
-            // Portal: right stick commonly maps to Z/RZ; certain controller
-            // modes use RX/RY. D-pad hats may also arrive as motion axes.
+            val now=SystemClock.uptimeMillis()
             val hatX=event.getAxisValue(MotionEvent.AXIS_HAT_X)
             val hatY=event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            // Hardware right stick: Z (horizontal) + RZ (vertical).
+            // Fallback for controller firmwares exposing RX/RY instead.
             val z=event.getAxisValue(MotionEvent.AXIS_Z)
             val rz=event.getAxisValue(MotionEvent.AXIS_RZ)
             val rx=event.getAxisValue(MotionEvent.AXIS_RX)
             val ry=event.getAxisValue(MotionEvent.AXIS_RY)
-            val x=if(kotlin.math.abs(hatX)>.55f)hatX
-                else if(kotlin.math.abs(z)>.58f)z else rx
-            val y=if(kotlin.math.abs(hatY)>.55f)hatY
-                else if(kotlin.math.abs(rz)>.58f)rz else ry
-            val dir=if(kotlin.math.abs(x)<.60f && kotlin.math.abs(y)<.60f)0
-                else if(kotlin.math.abs(x)>kotlin.math.abs(y))
-                    if(x<0f)1 else 2
-                else if(y<0f)3 else 4
-            val now=SystemClock.uptimeMillis()
-            if(dir!=0 && now-lastAnalogMoveMs>=190L) {
-                lastAnalogMoveMs=now
+            if((kotlin.math.abs(hatX)>.55f ||
+                    kotlin.math.abs(hatY)>.55f) &&
+                    now-lastAnalogFocusMs>=180L) {
+                lastAnalogFocusMs=now
+                val dir=if(kotlin.math.abs(hatX)>kotlin.math.abs(hatY))
+                    if(hatX<0f)1 else 2
+                else if(hatY<0f)3 else 4
                 if(controllerFocusAction?.invoke(dir)==true)return true
+            }
+            val x=if(kotlin.math.abs(z)>.18f)z else rx
+            val y=if(kotlin.math.abs(rz)>.18f)rz else ry
+            // Only scroll a *visible Activity*. The game/HUD never receives
+            // fabricated touch events, and no sampler is started here.
+            if(kotlin.math.abs(y)>.18f && now-lastAnalogMoveMs>=55L) {
+                lastAnalogMoveMs=now
+                controllerScrollAction?.let{it(y);return true}
+            }
+            if(kotlin.math.abs(x)>.18f) {
+                if(controllerIsCompare?.invoke()==true &&
+                    now-lastAnalogMoveMs>=55L) {
+                    lastAnalogMoveMs=now
+                    controllerScrubAction?.let{it(x);return true}
+                } else if(controllerIsCompare?.invoke()!=true &&
+                    kotlin.math.abs(x)>.60f &&
+                    now-lastAnalogFocusMs>=180L) {
+                    lastAnalogFocusMs=now
+                    if(controllerFocusAction?.invoke(if(x<0f)1 else 2)==true)
+                        return true
+                }
             }
         }
         return super.onGenericMotionEvent(event)
@@ -299,6 +321,9 @@ class MainActivity : ComponentActivity() {
             }
             val appliedFinish=if(supportsThemeChoice)finish else SurfaceFinish.FROSTED
             var page by rememberSaveable { mutableStateOf("Live") }
+            var compareCursor by rememberSaveable { mutableFloatStateOf(.5f) }
+            val contentScroll=rememberScrollState()
+            val scope=rememberCoroutineScope()
             // Device-reported capacity, read once for the display gauge.
             // Do not hard-code a Portal-specific (or decimal GB) memory ceiling.
             val ramTotalGiB=remember {
@@ -309,6 +334,7 @@ class MainActivity : ComponentActivity() {
                 }.getOrNull()
             }
             val firstNavFocus=remember {FocusRequester()}
+            LaunchedEffect(page) {contentScroll.scrollTo(0)}
             val focusManager=LocalFocusManager.current
             SideEffect {
                 controllerTabAction={ delta ->
@@ -322,11 +348,23 @@ class MainActivity : ComponentActivity() {
                         else -> FocusDirection.Down
                     })
                 }
+                controllerIsCompare={page=="Compare"}
+                controllerScrollAction={value ->
+                    val target=(contentScroll.value+value*60f).toInt()
+                        .coerceIn(0,contentScroll.maxValue)
+                    scope.launch{contentScroll.scrollTo(target)}
+                }
+                controllerScrubAction={value ->
+                    compareCursor=(compareCursor+value*.025f).coerceIn(0f,1f)
+                }
             }
             DisposableEffect(Unit) {
                 onDispose {
                     controllerTabAction=null
                     controllerFocusAction=null
+                    controllerScrollAction=null
+                    controllerScrubAction=null
+                    controllerIsCompare=null
                 }
             }
             // Focus a real clickable control, not the previous non-clickable
@@ -387,7 +425,6 @@ class MainActivity : ComponentActivity() {
             var reportAId by remember { mutableLongStateOf(0L) }
             var reportBId by remember { mutableLongStateOf(0L) }
             var reportSkipWarmup by remember { mutableStateOf(false) }
-            val scope = rememberCoroutineScope()
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -678,7 +715,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Spacer(Modifier.height(9.dp))
-                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                            Column(Modifier.weight(1f).verticalScroll(contentScroll),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 when (page) {
                                     "Live" -> {
@@ -1311,7 +1348,9 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 Text("CPU temperature · elapsed time · A cyan, B amber",
                                                     color=coreSecondary)
-                                                CompareScrubPanel(viewA,viewB)
+                                                CompareScrubPanel(viewA,viewB,
+                                                    fraction=compareCursor,
+                                                    onFractionChange={compareCursor=it})
                                                 Text("Frame rate remains unavailable if SurfaceFlinger layer access fails. " +
                                                     "Time alignment uses first selected sample, not synchronized in-game events.",
                                                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
