@@ -19,6 +19,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import com.locutus5382.coremetrics.telemetry.Snapshot
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
 import java.util.Locale
@@ -137,6 +138,10 @@ internal class RecorderHud(private val context:Context) {
     private var unlockWindow:TextView?=null
     private var unlockParams:WindowManager.LayoutParams?=null
     private var drawerControl:TextView?=null
+    private val drawerSwitches=LinkedHashMap<String,TextView>()
+    private var graphSwitch:TextView?=null
+    private var opacityLabel:TextView?=null
+    private var drawerRecControl:TextView?=null
     private var closeControl:TextView?=null
     private var params:WindowManager.LayoutParams?=null
     private var opts=HudOptions()
@@ -308,10 +313,68 @@ internal class RecorderHud(private val context:Context) {
             setOnClickListener{handler()}
         }
 
+    /** Clear state communication: enabled = cyan frosted, disabled = muted,
+     * almost borderless, REC = red. The native drawer does not poll telemetry. */
+    private fun paintDrawerToggle(view:TextView,label:String,enabled:Boolean) {
+        view.text=(if(enabled)"● " else "○ ")+label
+        view.contentDescription=label+(if(enabled)" enabled" else " disabled")
+        view.setTextColor(if(enabled)Color.rgb(223,250,255)
+            else Color.rgb(172,191,211))
+        view.background=GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            if(enabled)intArrayOf(Color.argb(225,16,91,115),
+                Color.argb(205,9,54,93))
+            else intArrayOf(Color.argb(65,6,17,35),
+                Color.argb(55,12,31,56))
+        ).apply {
+            cornerRadius=dp(12f).toFloat()
+            setStroke(if(enabled)dp(1f).coerceAtLeast(1) else 0,
+                if(enabled)Color.rgb(94,224,255) else Color.TRANSPARENT)
+        }
+    }
+
+    private fun refreshDrawerControls() {
+        val selected=mapOf(
+            "CPU T" to opts.showCpuTemp,"GPU T" to opts.showGpuTemp,
+            "CPU %" to opts.showCpuLoad,"GPU %" to opts.showGpuLoad,
+            "FPS" to opts.showFps,"W" to opts.showPower,
+            "RAM" to opts.showRam)
+        drawerSwitches.forEach { (name,view) ->
+            paintDrawerToggle(view,name,selected[name]==true)
+        }
+        graphSwitch?.let {
+            paintDrawerToggle(it,"Graphs",opts.showSparkline)
+        }
+        opacityLabel?.text=String.format(Locale.US,
+            " Glass %d%% ",(opts.opacity*100f).roundToInt())
+        drawerRecControl?.let { button ->
+            button.text=if(recording)"● STOP SESSION" else "● START REC"
+            button.setTextColor(Color.WHITE)
+            button.background=GradientDrawable().apply {
+                cornerRadius=dp(12f).toFloat()
+                setColor(if(recording)Color.rgb(154,35,48)
+                    else Color.rgb(60,109,133))
+                setStroke(dp(1f).coerceAtLeast(1),
+                    if(recording)Color.rgb(255,106,115)
+                    else Color.rgb(113,204,238))
+            }
+        }
+        drawerControl?.let { gear ->
+            gear.text=if(drawerOpen)"▴" else "⚙"
+            gear.contentDescription=if(drawerOpen)
+                "Close quick HUD controls" else "Open quick HUD controls"
+            gear.background=if(drawerOpen)GradientDrawable().apply{
+                cornerRadius=dp(12f).toFloat()
+                setColor(Color.rgb(11,80,101))
+                setStroke(dp(1f).coerceAtLeast(1),Color.rgb(94,224,255))
+            } else rounded(.35f)
+        }
+    }
+
     private fun newDrawer():LinearLayout {
         val column=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
-            setPadding(dp(9f),dp(8f),dp(9f),dp(8f))
+            setPadding(dp(8f),dp(8f),dp(8f),dp(8f))
         }
         val row1=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
@@ -326,28 +389,48 @@ internal class RecorderHud(private val context:Context) {
             "W" to { opts.copy(showPower=!opts.showPower) },
             "RAM" to { opts.copy(showRam=!opts.showRam) }
         )
-        for((label,make) in toggles) {
-            val b=action(label){changeOptions(make())}
-            row1.addView(b,LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,dp(37f)))
+        toggles.forEach { (label,make) ->
+            val button=action(label){changeOptions(make())}
+            drawerSwitches[label]=button
+            row1.addView(button,LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,dp(42f)).apply {
+                marginEnd=dp(5f)
+            })
         }
-        column.addView(row1)
+        val metricsScroll=HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled=false
+            overScrollMode=View.OVER_SCROLL_NEVER
+            addView(row1)
+        }
+        column.addView(metricsScroll,LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,dp(45f)))
         val row2=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
         }
         row2.addView(action("− Glass"){changeOptions(
             opts.copy(opacity=(opts.opacity-.1f).coerceAtLeast(.30f)))})
-        row2.addView(styledLabel("  GLASS  ",10f))
+        opacityLabel=styledLabel("",11f).also{row2.addView(it)}
         row2.addView(action("+ Glass"){changeOptions(
             opts.copy(opacity=(opts.opacity+.1f).coerceAtMost(.90f)))})
-        row2.addView(action("◉ Graphs"){changeOptions(
-            opts.copy(showSparkline=!opts.showSparkline))})
-        row2.addView(action("● REC / STOP"){onRecord?.invoke()})
-        column.addView(row2)
+        graphSwitch=action("Graphs"){changeOptions(
+            opts.copy(showSparkline=!opts.showSparkline))}.also{
+            row2.addView(it)
+        }
+        drawerRecControl=action("REC"){onRecord?.invoke()}.also{
+            row2.addView(it)
+        }
+        val controlScroll=HorizontalScrollView(context).apply{
+            isHorizontalScrollBarEnabled=false
+            overScrollMode=View.OVER_SCROLL_NEVER
+            addView(row2)
+        }
+        column.addView(controlScroll,LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,dp(45f)))
         column.addView(styledLabel(
-            "Quick controls · graphs use recorder samples only · FPS needs a verified provider",
+            "Cyan = enabled · dim = off · red = recording · swipe for more controls",
             10f))
+        refreshDrawerControls()
         return column
     }
 
@@ -378,7 +461,8 @@ internal class RecorderHud(private val context:Context) {
         if(attached()){applyAppearance();return "HUD_ALREADY_ATTACHED"}
         disposed=false
         locked=false;collapsed=false;drawerOpen=false
-        graphs.clear();graphCells.clear()
+        graphs.clear();graphCells.clear();drawerSwitches.clear()
+        graphSwitch=null;opacityLabel=null;drawerRecControl=null
         val line=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -387,8 +471,10 @@ internal class RecorderHud(private val context:Context) {
             setPadding(dp(7f),dp(4f),dp(8f),dp(4f))
         }
         mainText=label
+        // A weighted telemetry label shrinks BEFORE settings/lock/REC do.
+        // Previously a long metric string could push the ⚙ button off-screen.
         line.addView(label,LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,LinearLayout.LayoutParams.WRAP_CONTENT))
+            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
         val rec=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -454,8 +540,13 @@ internal class RecorderHud(private val context:Context) {
             addView(tab)
         }
         root=frame
+        // Fix the panel width to the available viewport. The two settings
+        // rows scroll internally instead of expanding the whole overlay beyond
+        // the screen and hiding its settings/unlock controls.
+        val hudWidth=minOf(dp(475f),
+            (windowWidth()-dp(24f)).coerceAtLeast(dp(190f)))
         val p=WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            hudWidth,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -463,7 +554,7 @@ internal class RecorderHud(private val context:Context) {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT).apply {
             gravity=Gravity.TOP or Gravity.START
-            x=(windowWidth()-dp(380f)).coerceAtLeast(0)
+            x=(windowWidth()-hudWidth-dp(12f)).coerceAtLeast(0)
             y=dp(43f)
             alpha=1f
         }
@@ -584,6 +675,7 @@ internal class RecorderHud(private val context:Context) {
         pill?.visibility=if(collapsed)View.GONE else View.VISIBLE
         dockTab?.visibility=if(collapsed)View.VISIBLE else View.GONE
         drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
+        refreshDrawerControls()
         graphsRow?.visibility=if(!collapsed && recording && opts.layout=="pro" &&
             opts.showSparkline)View.VISIBLE else View.GONE
         graphCells["CPU"]?.visibility=if(opts.showCpuLoad)View.VISIBLE else View.GONE
@@ -702,7 +794,8 @@ internal class RecorderHud(private val context:Context) {
             wm.removeViewImmediate(frame)
             root=null;pill=null;drawer=null;graphsRow=null;dockTab=null
             params=null;mainText=null;recText=null;recDot=null
-            graphs.clear();graphCells.clear()
+            graphs.clear();graphCells.clear();drawerSwitches.clear()
+            graphSwitch=null;opacityLabel=null;drawerRecControl=null
             recording=false;locked=false;collapsed=false
             "HUD_REMOVED"
         }catch(e:Exception){
