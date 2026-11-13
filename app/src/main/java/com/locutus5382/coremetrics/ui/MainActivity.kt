@@ -1451,12 +1451,18 @@ class MainActivity : ComponentActivity() {
                                                 Switch(activeOnly,onCheckedChange={activeOnly=it})
                                             }
                                             Text("Select session A · D-pad focus + A", color = cyan)
+                                            Text("Stock is a CPU-limit profile, NOT the graphics driver. "+
+                                                "Use Sessions → Edit metadata to tag T30 or StevenMXZ "+
+                                                "for each recording before comparing.",
+                                                color=solarGold,
+                                                style=MaterialTheme.typography.bodySmall)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 sessionList.take(14).forEach { s ->
                                                     FilterChip(selected = firstId == s.id,
                                                         onClick = { firstId = s.id },
-                                                        label = { Text("Session " + s.id + " · " + s.configuration) })
+                                                        label = { Text("Session " + s.id + " · " + s.configuration+
+                                                            " · driver: "+(s.graphicsDriver?:"untagged")) })
                                                 }
                                             }
                                             Text("Select session B · D-pad focus + A", color = cyan)
@@ -1465,7 +1471,8 @@ class MainActivity : ComponentActivity() {
                                                 sessionList.take(14).forEach { s ->
                                                     FilterChip(selected = secondId == s.id,
                                                         onClick = { secondId = s.id },
-                                                        label = { Text("Session " + s.id + " · " + s.configuration) })
+                                                        label = { Text("Session " + s.id + " · " + s.configuration+
+                                                            " · driver: "+(s.graphicsDriver?:"untagged")) })
                                                 }
                                             }
                                             if(firstId>0L && secondId>0L && firstId!=secondId) {

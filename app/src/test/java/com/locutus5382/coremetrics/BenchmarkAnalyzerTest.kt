@@ -50,6 +50,14 @@ class BenchmarkAnalyzerTest {
         assertEquals(42.0,report.meanCpuLoad!!,.001)
         assertEquals(40.0,report.meanGpuLoad!!,.001)
     }
+    @Test fun tinyCompleteRecordingsAreInsufficientForComparison() {
+        val two=listOf(p(1_000_000L),p(1_005_000L))
+        val r=BenchmarkAnalyzer.analyze(sess(),two)
+        assertEquals("INSUFFICIENT FOR COMPARISON",r.quality.category)
+        assertTrue(r.quality.score<=49)
+        assertEquals(100.0,r.quality.coveragePct,.001)
+        assertTrue(r.quality.reasons.any{it.contains("Insufficient independent duration")})
+    }
     @Test fun nearFlatThermalWindowIsNotEquilibriumClaim() {
         val input=(0..45).map{p(1_000_000L+it*2_000L)}
         val r=BenchmarkAnalyzer.analyze(sess(),input)

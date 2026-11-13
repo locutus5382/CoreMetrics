@@ -170,7 +170,9 @@ internal object ScorecardPngRenderer {
         label(if(ab)"CPU TEMPERATURE  /  A VS B" else "RECORDED SENSOR TEMPERATURES",
             76f,731f,21f,MUTED,true,900f,matte)
         card.series.take(2).forEachIndexed { i,series ->
-            val color=if(i==0)ORANGE else CYAN
+            val color=if(card.type==ScorecardModel.Type.AB)
+                if(i==0)CYAN else ORANGE
+            else if(i==0)ORANGE else CYAN
             rect(1030f+i*275f,713f,1048f+i*275f,731f,color,4f)
             label(series.label,1056f+i*275f,729f,19f,WHITE,false,249f,matte)
         }
@@ -193,7 +195,9 @@ internal object ScorecardPngRenderer {
         canvas.save()
         canvas.clipRect(left,top,right,bottom)
         card.series.take(2).forEachIndexed { i,series ->
-            val color=if(i==0)ORANGE else CYAN
+            val color=if(card.type==ScorecardModel.Type.AB)
+                if(i==0)CYAN else ORANGE
+            else if(i==0)ORANGE else CYAN
             val path=Path()
             var lastTime:Long?=null
             for(p in series.samples) {
