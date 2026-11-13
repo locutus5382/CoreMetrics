@@ -698,6 +698,19 @@ class MainActivity : ComponentActivity() {
                                     Text("FROSTED · FIXED",color=coreSecondary,
                                         style=MaterialTheme.typography.labelSmall)
                                 }
+                                if(page=="Live") {
+                                    Button(onClick={
+                                        if(status.standby||status.running)page="HUD"
+                                        else armHud()
+                                    },contentPadding=PaddingValues(
+                                        horizontal=10.dp,vertical=6.dp),
+                                        colors=ButtonDefaults.buttonColors(
+                                            containerColor=solarOrange)) {
+                                        Text(if(status.standby||status.running)"HUD"
+                                            else "ARM HUD",
+                                            style=MaterialTheme.typography.labelMedium)
+                                    }
+                                }
                                 Box(
                                     Modifier.clip(RoundedCornerShape(9.dp))
                                         .background(if(status.running) Color(0xBB19473F)
@@ -719,30 +732,20 @@ class MainActivity : ComponentActivity() {
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 when (page) {
                                     "Live" -> {
-                                        Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
-                                            Button(onClick={ if(status.standby || status.running) {
-                                                page="HUD"
-                                            } else armHud() },
-                                                colors=ButtonDefaults.buttonColors(
-                                                    containerColor=solarOrange)) {
-                                                Text(if(status.standby) "HUD READY"
-                                                    else if(status.running) "● REC"
-                                                    else "LAUNCH HUD STANDBY")
-                                            }
-                                            OutlinedButton(onClick={page="HUD"}) {
-                                                Text("Customize HUD")
-                                            }
-                                            OutlinedButton(onClick={
-                                                requestQuickSettingsTile { message=it }
-                                            }) { Text("Add QS tile") }
-                                        }
-                                        Text("LOW-MEMORY DEVICE TIP · The Portal can terminate "+
-                                            "CoreMetrics when Eden loads. For a more reliable run, "+
-                                            "start Eden first, open Quick Settings, activate the "+
-                                            "CoreMetrics HUD tile, then press REC. No recorder "+
-                                            "can guarantee survival of Android low-memory kills.",
+                                        Text("Eden first → Quick Settings → CM HUD → REC. " +
+                                            "Standby performs no hardware sampling.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
+                                        val powerState=when {
+                                            status.powerStatus?.startsWith("DISCHARGING")==true ->
+                                                "Discharging"
+                                            status.powerStatus?.startsWith(
+                                                "CHARGING_OR_EXTERNAL_POWER")==true ||
+                                            status.powerStatus?.startsWith("FULL")==true ->
+                                                "Plugged in"
+                                            status.powerStatus==null -> null
+                                            else -> "Unknown"
+                                        }
                                         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
                                             val cpuDisplay=cpuEma?.let {
                                                 String.format(Locale.US,"%.1f°C",it)
@@ -750,15 +753,20 @@ class MainActivity : ComponentActivity() {
                                             PureGlassGauge("CPU",cpuDisplay,
                                                 (((cpuDisplay?.removeSuffix("°C")
                                                     ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
-                                                solarOrange,Modifier.weight(1f))
+                                                solarOrange,Modifier.weight(1f),
+                                                subtitle=status.cpuLoad?.let{"Load $it%"}
+                                                    ?:"Load unavailable")
                                             PureGlassGauge("GPU",status.gpu,
                                                 (((status.gpu?.removeSuffix("°C")
                                                     ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
-                                                solarGold,Modifier.weight(1f))
+                                                solarGold,Modifier.weight(1f),
+                                                subtitle=status.gpuLoad?.let{"Load $it%"}
+                                                    ?:"Load unavailable")
                                             PureGlassGauge("Battery W",status.power,
                                                 ((status.power?.removeSuffix(" W")
                                                     ?.toDoubleOrNull() ?: 0.0)/12.0).toFloat(),
-                                                solarGold,Modifier.weight(1f))
+                                                solarGold,Modifier.weight(1f),
+                                                subtitle=powerState?:"Battery state unavailable")
                                             val usedRamGiB=status.ram
                                                 ?.removeSuffix(" GiB")?.toDoubleOrNull()
                                             PureGlassGauge("RAM GiB",usedRamGiB?.let{
@@ -767,7 +775,10 @@ class MainActivity : ComponentActivity() {
                                                 ramTotalGiB>0.0)
                                                 (usedRamGiB/ramTotalGiB).toFloat()
                                             else 0f,
-                                                iceBlue,Modifier.weight(1f))
+                                                iceBlue,Modifier.weight(1f),
+                                                subtitle=ramTotalGiB?.let{
+                                                    String.format(Locale.US,"of %.1f GiB",it)
+                                                }?:"System RAM")
                                         }
                                         Text("CPU EMA · raw peak " +
                                             (cpuPeak?.let { fmt(it)+"°C" } ?: "—") +
@@ -778,33 +789,19 @@ class MainActivity : ComponentActivity() {
                                                 else -> "—"
                                             },color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
-                                         Text("RAM ring uses Android-reported total system memory; " +
-                                            "other rings use display-only reference scales, not safety limits.",
+                                        Text("Gauge arcs are reference scales, not safety limits.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
+                                        if(status.lastAt>0) {
+                                            Text("Last sample: "+
+                                                java.text.DateFormat.getTimeInstance(
+                                                    java.text.DateFormat.MEDIUM)
+                                                    .format(java.util.Date(status.lastAt)),
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.labelSmall)
+                                        }
                                         LiveScope(liveTrace)
                                         PerCoreLoadMatrix(status.coreLoads)
-                                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                            MetricCard("CPU load",status.cpuLoad?.plus("%"),
-                                                "All cores",Modifier.weight(1f))
-                                            MetricCard("GPU load",status.gpuLoad?.plus("%"),
-                                                "Adreno KGSL",Modifier.weight(1f))
-                                            MetricCard("Prime / busiest",status.peakCore?.plus("%"),
-                                                "Observed single core",Modifier.weight(1f))
-                                            val powerState=when {
-                                                status.powerStatus?.startsWith("DISCHARGING")==true ->
-                                                    "Discharging"
-                                                status.powerStatus?.startsWith(
-                                                    "CHARGING_OR_EXTERNAL_POWER")==true ->
-                                                    "Plugged in"
-                                                status.powerStatus?.startsWith("FULL")==true ->
-                                                    "Plugged in"
-                                                status.powerStatus==null -> null
-                                                else -> "Unknown"
-                                            }
-                                            MetricCard("Battery status",powerState,
-                                                "Android battery state",Modifier.weight(1f))
-                                        }
                                         GlassPanel {
                                             Text("RECORDING CONTROL  ·  ONE USER-STARTED SESSION",
                                                 color = coreCyan, style = MaterialTheme.typography.titleMedium)
@@ -870,14 +867,7 @@ class MainActivity : ComponentActivity() {
                                                 }) { Text("Add QS tile") }
                                             }
                                         }
-                                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                            MetricCard("Peak core", status.peakCore?.plus("%"),
-                                                "Highest sampled core", Modifier.weight(1f))
-                                            MetricCard("RAM used", status.ram,
-                                                "System total − available", Modifier.weight(1f))
-                                            MetricCard("Last sample", if (status.lastAt > 0)
-                                                time(status.lastAt) else null, "Device-local time", Modifier.weight(1f))
-                                        }
+
                                         GlassPanel {
                                             Text("ACTUAL CPU CLOCKS", color = coreCyan)
                                             Text(status.clock ?: "Unavailable", color = white)
