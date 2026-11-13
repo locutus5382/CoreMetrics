@@ -443,6 +443,9 @@ class MainActivity : ComponentActivity() {
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
             var skipWarmUp by rememberSaveable { mutableStateOf(false) }
+            var showCompareTechnical by rememberSaveable {mutableStateOf(false)}
+            var showSingleTechnical by rememberSaveable {mutableStateOf(false)}
+            var overlapOnly by rememberSaveable {mutableStateOf(true)}
             var hideShortRuns by rememberSaveable { mutableStateOf(false) }
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
@@ -963,6 +966,7 @@ class MainActivity : ComponentActivity() {
                                                     r.quality.category+" · "+
                                                     r.quality.score+"/100",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
+                                                SingleSessionTimeline(eligibleDetail)
                                                 Row(Modifier.fillMaxWidth(),
                                                     horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                                     EnergyRatePanel(r.energy,Modifier.weight(1f))
@@ -972,7 +976,14 @@ class MainActivity : ComponentActivity() {
                                                         referenceStartMs=
                                                             detailPoints.firstOrNull()?.timeMs)
                                                 }
-                                                CoreWinnerPanel(eligibleDetail,Modifier.fillMaxWidth())
+                                                OutlinedButton(onClick={
+                                                    showSingleTechnical=!showSingleTechnical
+                                                }){Text(if(showSingleTechnical)
+                                                    "Hide core diagnostics" else
+                                                    "Show technical core diagnostics")}
+                                                if(showSingleTechnical)
+                                                    CoreWinnerPanel(eligibleDetail,
+                                                        Modifier.fillMaxWidth())
                                                 OutlinedButton(onClick={
                                                     detailedId=0L
                                                     detailReport=null;detailPoints=emptyList()
@@ -1170,6 +1181,57 @@ class MainActivity : ComponentActivity() {
                                                     ?.takeIf{secondPoints.isNotEmpty()}
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
+                                            CompactCompareOverview(analysisA,analysisB)
+                                            Row(verticalAlignment=Alignment.CenterVertically,
+                                                horizontalArrangement=Arrangement.spacedBy(9.dp)){
+                                                Text("Compare overlapping duration",
+                                                    color=coreText,modifier=Modifier.weight(1f))
+                                                Switch(checked=overlapOnly,
+                                                    onCheckedChange={overlapOnly=it})
+                                            }
+                                            val overlapMs=if(eligibleA.size>=2 && eligibleB.size>=2)
+                                                minOf(eligibleA.last().timeMs-
+                                                        eligibleA.first().timeMs,
+                                                    eligibleB.last().timeMs-
+                                                        eligibleB.first().timeMs)
+                                            else 0L
+                                            val timelineA=remember(eligibleA,eligibleB,overlapOnly){
+                                                if(!overlapOnly || overlapMs<=0L)eligibleA
+                                                else eligibleA.filter{
+                                                    it.timeMs-eligibleA.first().timeMs<=overlapMs
+                                                }
+                                            }
+                                            val timelineB=remember(eligibleB,eligibleA,overlapOnly){
+                                                if(!overlapOnly || overlapMs<=0L)eligibleB
+                                                else eligibleB.filter{
+                                                    it.timeMs-eligibleB.first().timeMs<=overlapMs
+                                                }
+                                            }
+                                            if(timelineA.size>=2 && timelineB.size>=2){
+                                                CompareScrubPanel(timelineA,timelineB,
+                                                    fraction=compareCursor,
+                                                    onFractionChange={compareCursor=it})
+                                            }else Text("Not enough shared measured time for "+
+                                                "comparison. Select longer recorded sessions.",
+                                                color=solarOrange)
+                                            OutlinedButton(onClick={
+                                                showCompareTechnical=!showCompareTechnical
+                                            }){
+                                                Text(if(showCompareTechnical)
+                                                    "Hide technical evidence"
+                                                else "Show technical evidence and regime details")
+                                            }
+                                            if(showCompareTechnical) {
+                                            val viewA=remember(eligibleA,activeOnly) {
+                                                if(activeOnly)eligibleA.filter {
+                                                    (it.gpuLoad ?: 0.0)>=15.0
+                                                }else eligibleA
+                                            }
+                                            val viewB=remember(eligibleB,activeOnly) {
+                                                if(activeOnly)eligibleB.filter {
+                                                    (it.gpuLoad ?: 0.0)>=15.0
+                                                }else eligibleB
+                                            }
                                             analysisA?.let { r ->
                                                 Row(Modifier.fillMaxWidth(),
                                                     horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -1258,16 +1320,6 @@ class MainActivity : ComponentActivity() {
                                                     reportFile.launch("CoreMetrics_AB_"+
                                                         firstId+"_"+secondId+".txt")
                                                 }){Text("Export A/B report")}
-                                            }
-                                            val viewA=remember(eligibleA,activeOnly) {
-                                                if(activeOnly)eligibleA.filter {
-                                                    (it.gpuLoad ?: 0.0)>=15.0
-                                                }else eligibleA
-                                            }
-                                            val viewB=remember(eligibleB,activeOnly) {
-                                                if(activeOnly)eligibleB.filter {
-                                                    (it.gpuLoad ?: 0.0)>=15.0
-                                                }else eligibleB
                                             }
                                             // Segment the original chronology *within the
                                             // selected analysis window* before the GPU-load
@@ -1374,9 +1426,6 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 Text("CPU temperature · elapsed time · A cyan, B amber",
                                                     color=coreSecondary)
-                                                CompareScrubPanel(viewA,viewB,
-                                                    fraction=compareCursor,
-                                                    onFractionChange={compareCursor=it})
                                                 Text("Frame rate remains unavailable if SurfaceFlinger layer access fails. " +
                                                     "Time alignment uses first selected sample, not synchronized in-game events.",
                                                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
@@ -1384,6 +1433,7 @@ class MainActivity : ComponentActivity() {
                                                 Text("Select two recordings. If the gameplay filter returns nothing, " +
                                                     "turn it off to inspect all samples.",
                                                     color=muted)
+                                            }
                                             }
                                         }
                                     }
