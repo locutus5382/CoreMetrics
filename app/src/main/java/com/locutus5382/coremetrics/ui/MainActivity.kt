@@ -986,7 +986,8 @@ class MainActivity : ComponentActivity() {
                                                         detailPoints,if(skipWarmUp)30 else 0)
                                                 }
                                                 SessionQuickOverview(r)
-                                                SessionMetricTimeline(eligibleDetail)
+                                                SessionMetricTimeline(eligibleDetail,
+                                                    referenceStartMs=detailPoints.firstOrNull()?.timeMs)
                                                 OutlinedButton(onClick={
                                                     detailTechnical=!detailTechnical
                                                 }) {

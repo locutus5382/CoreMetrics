@@ -69,6 +69,11 @@ internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report) {
             "${num(report.quality.coveragePct)}% cadence coverage · "+
             "${report.quality.gapCount} detected gaps",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+        Text("Thermal trend: "+
+            (report.thermal.slopeCPerMin?.let{
+                String.format(Locale.US,"%+.1f°C/min",it)
+            }?:"unavailable")+" · "+report.thermal.state,
+            color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Text("Battery energy: "+num(report.energy.wh,4)+" Wh · "+
             num(report.energy.milliWhPerMinute,2)+" mWh/min · "+
             report.energy.powerCondition.label,
@@ -88,7 +93,7 @@ private fun SummaryMetric(label:String,value:String,modifier:Modifier=Modifier) 
 
 @Composable
 internal fun SessionMetricTimeline(points:List<SessionStore.Point>,
-    label:String="SESSION TIMELINE") {
+    label:String="SESSION TIMELINE",referenceStartMs:Long?=null) {
     var first by remember {mutableStateOf(SessionSignal.CPU_TEMP)}
     var second by remember {mutableStateOf(SessionSignal.CPU_LOAD)}
     var cursor by remember(points) {mutableFloatStateOf(.5f)}
@@ -128,6 +133,7 @@ internal fun SessionMetricTimeline(points:List<SessionStore.Point>,
                 color=coreSecondary)
         }else {
             val start=sorted.first().timeMs
+            val absoluteOrigin=referenceStartMs?:start
             val end=sorted.last().timeMs
             val time=start+((end-start)*cursor).toLong()
             val tolerance=max(10_000L,
@@ -137,7 +143,7 @@ internal fun SessionMetricTimeline(points:List<SessionStore.Point>,
             listOf(first,second).forEach {signal->
                 SignalTrack(sorted,signal,cursor,{cursor=it})
                 Text(signal.caption+": "+num(nearest?.let{signal.value(it)})+
-                    signal.unit+" at "+(time-start)/1000L+" s",
+                    signal.unit+" at "+(time-absoluteOrigin)/1000L+" s",
                     color=signal.accent,style=MaterialTheme.typography.bodySmall)
             }
             Text("No values are reconstructed across unavailable sensors, "+
@@ -159,8 +165,13 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
     val margin=range*.12
     val bottom=minV-margin
     val scale=range+2*margin
-    val cadence=if(points.size>1)duration/(points.size-1) else 5_000.0
-    val gapLimit=max(15_000.0,cadence*3.0)
+    // Use a bounded time gap, never average duration: a 2-point recording
+    // with a one-minute interruption must NOT draw a continuous line.
+    val gaps=points.zipWithNext{a,b->(b.timeMs-a.timeMs).toDouble()}
+        .filter{it>0.0}.sorted()
+    val cadence=gaps.getOrNull(gaps.size/2)?:5_000.0
+    val gapLimit=if(cadence>10_000.0)15_000.0
+        else max(10_000.0,cadence*2.5)
     Column {
         Row(horizontalArrangement=Arrangement.SpaceBetween,
             modifier=Modifier.fillMaxWidth()) {
@@ -277,6 +288,23 @@ internal fun CompareQuickOverview(a:BenchmarkAnalyzer.Report,
             Text("• "+it,color=coreSecondary,
                 style=MaterialTheme.typography.bodySmall)
         }
+        val observedCpu=when {
+            a.meanCpuC==null || b.meanCpuC==null->"CPU temperatures not comparable"
+            a.meanCpuC < b.meanCpuC->"A had the lower recorded mean CPU temperature"
+            b.meanCpuC < a.meanCpuC->"B had the lower recorded mean CPU temperature"
+            else->"Mean CPU temperatures were equal"
+        }
+        val observedPower=when{
+            a.energy.weightedMeanW==null || b.energy.weightedMeanW==null->
+                "discharge power cannot be compared"
+            a.energy.weightedMeanW < b.energy.weightedMeanW->
+                "A had lower observed battery discharge"
+            b.energy.weightedMeanW < a.energy.weightedMeanW->
+                "B had lower observed battery discharge"
+            else->"observed battery discharge was equal"
+        }
+        Text("OBSERVED: "+observedCpu+"; "+observedPower+".",
+            color=iceBlue,style=MaterialTheme.typography.bodySmall)
         Text("Even matching metadata cannot prove the same in-game scene. "+
             "Integrity scores describe samples, not benchmark equivalence.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
