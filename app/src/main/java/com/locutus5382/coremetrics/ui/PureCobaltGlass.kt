@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,27 +119,67 @@ internal fun Modifier.pureGlass(radius:Int=18):Modifier {
                 iceBlue.copy(alpha=.22f),
                 Color.White.copy(alpha=.09f))),shape)
         SurfaceFinish.CRYSTAL_AERO -> this
-            // Clear material: only 8–10% surface fill, not opaque navy paint.
+            // Optical depth without camera capture, runtime blur or shaders.
+            // Darkened clear core preserves legibility over luminous ribbons.
             .background(Brush.linearGradient(listOf(
-                Color.White.copy(alpha=.10f),
-                coreCyan.copy(alpha=.075f),
-                Color.White.copy(alpha=.045f),
-                cobalt.copy(alpha=.07f))),shape)
+                Color.White.copy(alpha=.16f),
+                Color(0xFF114476).copy(alpha=.22f),
+                Color(0xFF05172E).copy(alpha=.27f),
+                Color.White.copy(alpha=.045f))),shape)
             .border(1.25.dp,Brush.linearGradient(listOf(
-                Color.White.copy(alpha=.86f),
-                coreCyan.copy(alpha=.46f),
-                Color.White.copy(alpha=.10f),
-                iceBlue.copy(alpha=.69f))),shape)
+                Color.White.copy(alpha=.93f),
+                coreCyan.copy(alpha=.58f),
+                Color.White.copy(alpha=.15f),
+                iceBlue.copy(alpha=.83f))),shape)
+            .drawWithContent {
+                drawContent()
+                val pad=12.dp.toPx()
+                drawLine(Color.White.copy(alpha=.52f),
+                    Offset(pad,1.5.dp.toPx()),
+                    Offset((size.width*.56f).coerceAtLeast(pad),1.5.dp.toPx()),
+                    strokeWidth=1.3.dp.toPx())
+                drawLine(coreCyan.copy(alpha=.24f),
+                    Offset(1.5.dp.toPx(),pad),
+                    Offset(1.5.dp.toPx(),size.height*.68f),
+                    strokeWidth=1.dp.toPx())
+            }
         SurfaceFinish.SOLAR_PULSE -> this
             .background(Brush.linearGradient(listOf(
-                Color(0xFF13254A),Color(0xFF091630),
-                Color(0xFF07132A))),shape)
+                Color(0xFF1A3B6C),Color(0xFF10294F),
+                Color(0xFF08152E))),shape)
             .border(1.5.dp,Brush.linearGradient(listOf(
-                solarOrange.copy(alpha=.74f),cobalt.copy(alpha=.65f),
-                coreCyan.copy(alpha=.61f))),shape)
+                solarOrange.copy(alpha=.92f),
+                cobalt.copy(alpha=.68f),
+                coreCyan.copy(alpha=.72f))),shape)
+            .drawWithContent {
+                drawContent()
+                drawLine(solarOrange.copy(alpha=.8f),
+                    Offset(11.dp.toPx(),1.5.dp.toPx()),
+                    Offset(size.width*.38f,1.5.dp.toPx()),
+                    strokeWidth=2.dp.toPx())
+            }
         SurfaceFinish.COBALT_MATRIX -> this
-            .background(Color(0xFF081226),shape)
-            .border(1.dp,Color(0xFF295174),shape)
+            .background(Brush.verticalGradient(listOf(
+                Color(0xFF111E2D),Color(0xFF091222))),shape)
+            .border(1.dp,Color(0xFF31506C),shape)
+            .drawWithContent {
+                drawContent()
+                val y=1.5.dp.toPx()
+                val tick=6.dp.toPx()
+                drawLine(coreCyan.copy(alpha=.45f),
+                    Offset(tick,y),Offset(size.width*.24f,y),
+                    strokeWidth=1.2.dp.toPx())
+                // Static technical panel ruler; no continuous animation.
+                var x=tick
+                val step=12.dp.toPx()
+                var index=0
+                while(x<size.width*.36f) {
+                    drawLine(coreCyan.copy(alpha=.23f),
+                        Offset(x,y),Offset(x,y+if(index%4==0)5.dp.toPx()
+                            else 2.dp.toPx()),strokeWidth=1.dp.toPx())
+                    x+=step;index++
+                }
+            }
     }
 }
 

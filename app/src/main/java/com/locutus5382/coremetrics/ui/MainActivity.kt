@@ -821,7 +821,9 @@ class MainActivity : ComponentActivity() {
                     onSurfaceVariant=themePalette.muted,
                     outline=themePalette.borderSoft
                 ),
-                shapes=androidx.compose.material3.Shapes(
+                shapes=if(appliedFinish==SurfaceFinish.FROSTED)
+                    androidx.compose.material3.Shapes()
+                else androidx.compose.material3.Shapes(
                     small=RoundedCornerShape(
                         if(themePalette.sharpCorners)4.dp else 10.dp),
                     medium=RoundedCornerShape(
@@ -1917,28 +1919,32 @@ private fun CompactRailAction(
     label:String,icon:ImageVector,selected:Boolean,
     modifier:Modifier=Modifier,onClick:()->Unit
 ) {
-    val shape=RoundedCornerShape(11.dp)
-    val isTactical=LocalSurfaceFinish.current==SurfaceFinish.COBALT_MATRIX
+    val finish=LocalSurfaceFinish.current
+    val p=finish.palette
+    val shape=RoundedCornerShape(if(p.sharpCorners)6.dp else 11.dp)
     var hasFocus by remember {mutableStateOf(false)}
     Column(
         modifier.fillMaxWidth().height(49.dp)
             .onFocusChanged {hasFocus=it.isFocused}
             .clip(shape)
-            .background(if(isTactical)
-                (if(selected||hasFocus)Color(0xFF1F3A4C) else Color(0xFF171E2A))
-            else (if(selected||hasFocus) Color(0xE7245367) else Color(0x42192335)))
+            .background(if(selected||hasFocus)p.navSelected else p.navIdle)
             .border(if(hasFocus)2.dp else 1.dp,
-                if(hasFocus)solarGold else if(selected)coreCyan.copy(alpha=0.7f)
-                    else coreBorder.copy(alpha=0.38f),shape)
+                if(hasFocus)solarGold else if(selected)p.border
+                    else p.borderSoft,shape)
             .cmInteractive(cornerRadiusDp=11,accent=solarGold,onClick=onClick)
             .padding(vertical=4.dp),
         horizontalAlignment=Alignment.CenterHorizontally,
         verticalArrangement=Arrangement.Center
     ) {
         Icon(icon,contentDescription=null,modifier=Modifier.size(20.dp),
-            tint=if(selected) coreCyan else coreSecondary)
-        Text(label,color=if(selected) coreText else coreSecondary,
-            fontSize=10.sp,fontWeight=if(selected) FontWeight.Bold else FontWeight.Medium,
-            maxLines=1)
+            tint=if(selected && finish!=SurfaceFinish.SOLAR_PULSE)
+                p.accent else p.foreground)
+        Text(label,color=if(selected)p.foreground else p.muted,
+            fontSize=10.sp,
+            fontWeight=if(selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines=1,
+            fontFamily=if(p.sharpCorners)
+                androidx.compose.ui.text.font.FontFamily.Monospace
+                else androidx.compose.ui.text.font.FontFamily.Default)
     }
 }

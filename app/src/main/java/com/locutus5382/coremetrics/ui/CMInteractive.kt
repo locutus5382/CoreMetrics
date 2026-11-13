@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
 /** One shot on touch/controller press or focus. No idle timer or infinite
@@ -51,14 +52,23 @@ internal fun Modifier.cmInteractive(
             if(shine>.01f) {
                 val radius=cornerRadiusDp.dp.toPx()
                 val x=size.width*shine
+                val streak=Brush.linearGradient(
+                    listOf(Color.Transparent,
+                        accent.copy(alpha=.13f*shine),
+                        Color.White.copy(alpha=.22f*shine),
+                        Color.Transparent),
+                    start=Offset(x-size.width*.65f,0f),
+                    end=Offset(x+size.width*.12f,size.height))
+                drawRoundRect(brush=streak,
+                    cornerRadius=CornerRadius(radius,radius))
                 drawRoundRect(
                     brush=Brush.linearGradient(
                         listOf(Color.Transparent,
-                            accent.copy(alpha=.75f*shine),
-                            Color.White.copy(alpha=.90f*shine),
+                            accent.copy(alpha=.72f*shine),
+                            Color.White.copy(alpha=.88f*shine),
                             Color.Transparent),
-                        start=Offset(x-size.width*.6f,0f),
-                        end=Offset(x+size.width*.10f,size.height)),
+                        start=Offset(x-size.width*.62f,0f),
+                        end=Offset(x+size.width*.12f,size.height)),
                     cornerRadius=CornerRadius(radius,radius),
                     style=Stroke(width=1.5.dp.toPx()))
             }
@@ -76,8 +86,8 @@ internal fun CMActionPill(text:String,primary:Boolean=false,onClick:()->Unit) {
             if(primary)solarOrange.copy(alpha=.32f) else Color.White.copy(alpha=.15f),
             cobalt.copy(alpha=.14f)))
         style==SurfaceFinish.SOLAR_PULSE ->Brush.linearGradient(listOf(
-            if(primary)solarOrange else cobalt,
-            if(primary)solarGold else coreCyan))
+            if(primary)Color(0xFFCB5200) else Color(0xFF2457C5),
+            if(primary)solarOrange else Color(0xFF16639B)))
         style==SurfaceFinish.COBALT_MATRIX ->Brush.linearGradient(listOf(
             if(primary)cobalt else Color(0xFF081226),
             if(primary)coreCyan else Color(0xFF152F53)))
@@ -85,13 +95,14 @@ internal fun CMActionPill(text:String,primary:Boolean=false,onClick:()->Unit) {
             if(primary)solarOrange else Color.White.copy(alpha=.13f),
             if(primary)Color(0xFFDE5700) else cobalt.copy(alpha=.12f)))
     }
-    val textColor=if(style==SurfaceFinish.SOLAR_PULSE && !primary)
-        cobaltNavy else Color.White
+    val textColor=Color.White
     Box(Modifier.background(background,shape)
         .border(1.dp,if(primary)solarGold else iceBlue.copy(alpha=.64f),shape)
         .cmInteractive(if(style==SurfaceFinish.COBALT_MATRIX)9 else 18,
             accent=if(primary)solarGold else coreCyan,onClick=onClick)
         .padding(horizontal=15.dp,vertical=11.dp)) {
-        Text(text,color=textColor,fontWeight=FontWeight.Bold,maxLines=1)
+        Text(text,color=textColor,fontWeight=FontWeight.Bold,maxLines=1,
+            fontFamily=if(style==SurfaceFinish.COBALT_MATRIX)
+                FontFamily.Monospace else FontFamily.Default)
     }
 }

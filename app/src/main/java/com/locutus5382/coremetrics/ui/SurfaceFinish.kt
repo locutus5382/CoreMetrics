@@ -50,6 +50,7 @@ internal val SurfaceFinish.palette:SurfacePalette get()=when(this) {
         border=Color(0xAAB6E6FC),borderSoft=Color(0x4E8CA5C3),
         navSelected=Color(0xE7245367),navIdle=Color(0x42192335),
         accent=Color(0xFF93C5FD),secondary=Color(0xFFFFC700),
+        foreground=Color(0xFFECF6FC),muted=Color(0xFFC3D7ED),
         emphasisFill=Color(0xFF2563EB))
     SurfaceFinish.CRYSTAL_AERO -> SurfacePalette(
         top=Color(0x27FFFFFF),bottom=Color(0x140B2C60),
