@@ -19,6 +19,14 @@ class CpuMathTest {
             CpuMath.uniqueBusiest(listOf("cpu0" to 10,"cpu7" to 61)))
     }
 
+    @Test fun tiedPeakLoadIsKnownEvenWhenNoUniqueWinningCore() {
+        val tied=listOf("cpu0" to 64,"cpu2" to 64,"cpu7" to 9)
+        assertEquals(64,CpuMath.maxCoreLoad(tied))
+        assertNull(CpuMath.uniqueBusiest(tied))
+        assertNull(CpuMath.maxCoreLoad(listOf("cpu0" to 0)))
+        assertNull(CpuMath.maxCoreLoad(emptyList()))
+        assertEquals(94,CpuMath.maxCoreLoad(listOf("cpu4" to 94)))
+    }
     @Test fun rejectsUnavailableOrCounterReset() {
         assertNull(CpuMath.percent(null, CpuMath.parse("cpu 1 2 3 4 5")))
         assertNull(CpuMath.percent(CpuMath.parse("cpu 40 0 30 20 0"),

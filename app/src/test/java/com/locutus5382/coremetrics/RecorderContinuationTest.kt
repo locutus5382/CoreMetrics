@@ -15,6 +15,10 @@ class RecorderContinuationTest {
         for(action in actions) assertTrue("Action $action must preserve recovery",
             RecorderContinuation.sticky(action,active=true,stopping=false))
     }
+    @Test fun androidTeardownIsNotUserCompletion() {
+        assertEquals("INTERRUPTED",RecorderContinuation.cancellationOutcome(false))
+        assertEquals("COMPLETED",RecorderContinuation.cancellationOutcome(true))
+    }
     @Test fun explicitStopAndDisarmCancelRestartAndIdleDoesNotSelfStart() {
         for(action in listOf(RecordingService.STOP,RecordingService.DISARM))
             assertFalse(RecorderContinuation.sticky(action,active=true,stopping=false))
