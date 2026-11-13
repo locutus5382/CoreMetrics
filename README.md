@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.8 draft analytics-only baseline with an optional theme branch, NOT Play Store ready, stacked on the unmerged v0.4 branch. Not validated on the AYN Odin 2 Portal or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.8.2 experimental maintenance branch, with separately installable Frosted Analytics and optional Themes test APKs. Not merged into main, not physically validated on the Odin 2 Portal, and not approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,25 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.8.2 efficiency and consistency review
+
+Gemini's v0.8.1 follow-up audit was checked against the repository source. All eight ideas are directionally valid, with two safeguards: do not permanently cache an empty CPU policy list, and do not reset elapsed-time labels when analysis drops the first 30 seconds.
+
+- **One sticky battery broadcast per sample** feeds battery percent/temperature and net electrical power status. The standalone BatteryPowerReader.read() API remains supported.
+- **CPU policy directory discovery and compiled regular expressions are reused.** The policy path cache retries if its initial scan is empty; current limits and clocks are still read from sysfs every sample. Changes to policy *directory topology* after successful cache creation may require a fresh recorder.
+- **HUD blink** is scheduled only for a visible expanded recording pill when blinking is enabled; dock, option changes and mode transitions cancel/re-arm callbacks centrally. The dock's existing drawable has its color changed without constructing a new one on each refresh.
+- **Compose memoization** covers the observed-profile card, busiest-core chart, linked timeline, A/B active-gameplay filters and A/B numeric summaries, invalidating when inputs change. No extra polling.
+- **One CPU ceiling review rule** now feeds the Live warning, persisted-profile card and benchmark quality check, including Medium/Large UC vs Stock and generic Underclocking with Stock-like CPU ceilings. CPU ceilings cannot verify tuner identity or rule out GPU-only changes.
+- **30-second warm-up** now applies consistently to Session detail and Compare profile/core/regime/thermal views; elapsed labels retain the original recording origin. Manual linked source timelines and original stored samples remain complete.
+- **A/B Δ battery W** now uses only observed discharging samples, not charging or missing readings. It is labeled as a **sample mean**, distinct from integrated Wh, normalized mWh/min and time-weighted W.
+- Unused CompareChart/InstrumentBackdrop visualizations and scrubFraction state are removed. No database migration, extra permissions, root, privileged PServer, FPS fabrication, driver manipulation or OOM priority hack.
+
+Two separate packages (data does **not** sync automatically):
+- `CoreMetrics-v0.8.2-analytics-only` / `app-v082base.apk` / `com.locutus5382.coremetrics.v082base` — original Frosted Glass always.
+- `CoreMetrics-v0.8.2-themes` / `app-v082themes.apk` / `com.locutus5382.coremetrics.v082themes` — Frosted default, optional Liquid Glass / Tactical Flat.
+
+See `docs/V082_PROFESSIONAL_AUDIT.md` and `docs/PORTAL_V082_TEST_PLAN.md`. Source review and a green CI build do **not** establish device memory survival, real game FPS accuracy, overlay touch success, real performance improvement or Play Store readiness.
 
 ## v0.8.1 Gemini-review fixes — separate Odin validation builds
 
