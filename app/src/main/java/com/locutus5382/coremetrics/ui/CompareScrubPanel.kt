@@ -27,12 +27,13 @@ import kotlin.math.max
 
 /** Elapsed alignment, NOT synchronization by a shared game event. */
 internal object CompareTimeCursor {
-    fun nearest(points:List<SessionStore.Point>, elapsed:Long, toleranceMs:Long=10_000L)
+    fun nearest(points:List<SessionStore.Point>, elapsed:Long, toleranceMs:Long=10_000L,
+        originalOriginMs:Long?=null)
         :SessionStore.Point? {
         if(points.isEmpty())return null
-        val start=points.first().timeMs
+        val start=originalOriginMs ?: points.first().timeMs
         val target=start+elapsed
-        if(target<start || target>points.last().timeMs)return null
+        if(target<points.first().timeMs || target>points.last().timeMs)return null
         var lo=0
         var hi=points.lastIndex
         while(lo<hi) {
@@ -68,7 +69,11 @@ private fun f(value:Double?):String =
 @Composable
 internal fun CompareScrubPanel(
     a:List<SessionStore.Point>,b:List<SessionStore.Point>,
-    fraction:Float,onFractionChange:(Float)->Unit
+    fraction:Float,onFractionChange:(Float)->Unit,
+    originalStartA:Long?=null,originalStartB:Long?=null,
+    axisDurationMs:Long?=null,
+    selectedStartElapsedMs:Long=0L,
+    selectedEndElapsedMs:Long?=null
 ) {
     if(a.isEmpty() || b.isEmpty())return
     var metric by remember { mutableStateOf(Metric.CPU_TEMP) }
@@ -80,11 +85,21 @@ internal fun CompareScrubPanel(
     LaunchedEffect(selectableMetrics) {
         if(metric !in selectableMetrics)metric=Metric.CPU_TEMP
     }
-    val duration=max(a.last().timeMs-a.first().timeMs,
-        b.last().timeMs-b.first().timeMs).coerceAtLeast(1L)
+    val originA=originalStartA ?: a.first().timeMs
+    val originB=originalStartB ?: b.first().timeMs
+    val duration=(axisDurationMs ?: max(a.last().timeMs-originA,
+        b.last().timeMs-originB)).coerceAtLeast(1L)
+    val endBound=(selectedEndElapsedMs ?: duration).coerceAtMost(duration)
+    val startBound=selectedStartElapsedMs.coerceIn(0L,endBound)
     val elapsed=(duration*fraction).toLong()
-    val left=CompareTimeCursor.nearest(a,elapsed)
-    val right=CompareTimeCursor.nearest(b,elapsed)
+    val cursorA=remember(a,originA,startBound,endBound) {
+        a.filter { it.timeMs-originA in startBound..endBound }
+    }
+    val cursorB=remember(b,originB,startBound,endBound) {
+        b.filter { it.timeMs-originB in startBound..endBound }
+    }
+    val left=CompareTimeCursor.nearest(cursorA,elapsed,originalOriginMs=originA)
+    val right=CompareTimeCursor.nearest(cursorB,elapsed,originalOriginMs=originB)
     val vals=remember(a,b,metric) {
         (a+b).mapNotNull { reading(it,metric) }
     }
@@ -138,7 +153,7 @@ internal fun CompareScrubPanel(
             if(available) {
                 fun drawRun(points:List<SessionStore.Point>,color:Color) {
                     if(points.size<2)return
-                    val origin=points.first().timeMs
+                    val origin=if(color==coreCyan)originA else originB
                     val path=Path()
                     var previous:Long?=null
                     var n=0
@@ -162,6 +177,16 @@ internal fun CompareScrubPanel(
                 drawRun(a,coreCyan)
                 drawRun(b,solarGold)
             }
+            // Selected analysis bounds are painted independently of the cursor.
+            // An unmatched tail may be shown visually, never added to A/B statistics.
+            val xStart=(startBound.toDouble()/duration*w).toFloat().coerceIn(0f,w)
+            val xEnd=(endBound.toDouble()/duration*w).toFloat().coerceIn(xStart,w)
+            drawRect(Color(0xA0030917),Offset(0f,0f),
+                androidx.compose.ui.geometry.Size(xStart,h))
+            drawRect(Color(0xA0030917),Offset(xEnd,0f),
+                androidx.compose.ui.geometry.Size(w-xEnd,h))
+            drawLine(solarGold,Offset(xStart,0f),Offset(xStart,h),1.6.dp.toPx())
+            drawLine(solarGold,Offset(xEnd,0f),Offset(xEnd,h),1.6.dp.toPx())
             val x=fraction*w
             drawLine(solarGold.copy(alpha=.95f),Offset(x,0f),Offset(x,h),
                 strokeWidth=2.dp.toPx())
@@ -170,7 +195,7 @@ internal fun CompareScrubPanel(
         if(!available)Text("This metric was not measured in either session.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Slider(value=fraction,onValueChange=onFractionChange,valueRange=0f..1f)
-        Text("Cursor: "+(elapsed/1000)+" s · tap/drag chart or use slider with controller",
+        Text("Cursor: "+(elapsed/1000)+" s from original REC · tap/drag chart or use slider with controller",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             CursorCard("A",left,metric,Modifier.weight(1f))
@@ -183,7 +208,7 @@ internal fun CompareScrubPanel(
             color=solarGold,fontWeight=FontWeight.Bold)
         Text("Battery-W excludes charging, unknown status and invalid watts. " +
             "Closest measured points within ±10 seconds. A gap, ended run or " +
-            "missing sensor is not interpolated. A/B times start at each run's first sample.",
+            "missing sensor is not interpolated. Time origins use each original run's first sample.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
     }
 }
