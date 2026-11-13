@@ -3,6 +3,7 @@ package com.locutus5382.coremetrics.data
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
+import com.locutus5382.coremetrics.monitor.RecorderLease
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.locutus5382.coremetrics.telemetry.Snapshot
@@ -12,7 +13,9 @@ import java.io.Writer
  * :monitor owns writes, UI reads through WAL. Data never leaves this database
  * without a user-selected Android document URI.
  */
-class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 4) {
+class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 5) {
+    private val leaseContext = context.applicationContext
+
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
         val label: String, val configuration: String, val status: String, val count: Int,
         val note: String? = null,
@@ -50,6 +53,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             sf_layer_fps REAL, sf_frame_ms REAL, sf_status TEXT,
             observed_cpu_limits TEXT)""")
         db.execSQL("CREATE INDEX samples_by_time ON samples(session_id,time_ms)")
+        // Cover battery status predicates without visiting large sample rows.
+        db.execSQL("CREATE INDEX samples_by_session_power ON samples(session_id,battery_status)")
         createLinkTable(db)
     }
     private fun createLinkTable(db:SQLiteDatabase) {
@@ -62,7 +67,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion in 1..3 && newVersion==4) {
+        require(oldVersion in 1..4 && newVersion==5) {
             "Unsupported database migration $oldVersion -> $newVersion"
         }
         if(oldVersion<2) {
@@ -81,6 +86,10 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         if(oldVersion<4) {
             db.execSQL("ALTER TABLE sessions ADD COLUMN graphics_driver TEXT")
             db.execSQL("ALTER TABLE sessions ADD COLUMN resolution_scale TEXT")
+        }
+        if(oldVersion<5) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS samples_by_session_power "+
+                "ON samples(session_id,battery_status)")
         }
     }
 
@@ -299,9 +308,15 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
      */
     @Synchronized fun deleteSession(id:Long):Boolean {
         if(id<=0L)return false
+        // A process-death recovery lease may still refer to a recording that
+        // appears completed/interrupted in a stale UI. Refuse destruction.
+        if(RecorderLease.recover(leaseContext)?.let{it.recording && it.id==id}==true)
+            return false
         val db=writableDatabase
         db.beginTransaction()
         try {
+            if(RecorderLease.recover(leaseContext)?.let{
+                    it.recording && it.id==id}==true)return false
             val deletable=db.rawQuery(
                 "SELECT status FROM sessions WHERE id=? LIMIT 1",
                 arrayOf(id.toString())).use { c ->
@@ -365,8 +380,12 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     if(rowCount==0)null else lastTime,now)
                 if(rowCount==0) {
                     firstTime=now
-                    val label=columns.field(row,"game_label")?.take(60) ?: "Imported session"
-                    val config=columns.field(row,"configuration")?.take(38) ?: "Unknown profile"
+                    val label=columns.field(row,"game_label")
+                        ?.filter { it.code>=32 && it.code!=127 && it.code !in 0x80..0x9F }
+                        ?.take(60) ?: "Imported session"
+                    val config=columns.field(row,"configuration")
+                        ?.filter { it.code>=32 && it.code!=127 && it.code !in 0x80..0x9F }
+                        ?.take(38) ?: "Unknown profile"
                     sessionId=db.insertOrThrow("sessions",null,ContentValues().apply {
                         put("started_at",firstTime)
                         put("label","Imported session")
@@ -402,7 +421,20 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                         put(column,v.toInt())
                     }
                     fun text(column:String,key:String) {
-                        columns.field(row,key)?.let { put(column,it.take(1024)) }
+                        val max=when(key) {
+                            "android_app_package"->256
+                            "cpu_clocks","observed_cpu_limits"->256
+                            else->128
+                        }
+                        columns.field(row,key)?.let { raw ->
+                            // Preserve international scripts; reject control
+                            // characters which could spoof log/UI boundaries.
+                            val cleaned=raw.asSequence().filter { ch ->
+                                ch.code>=32 && ch.code!=127 &&
+                                    ch.code !in 0x80..0x9F
+                            }.take(max).joinToString("")
+                            put(column,cleaned)
+                        }
                     }
                     decimal("cpu_temp","cpu_temp_c")
                     decimal("gpu_temp","gpu_temp_c")

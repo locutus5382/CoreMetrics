@@ -15,21 +15,32 @@ import java.util.Locale
  * Logs transition metadata, never user-entered game labels.
  */
 object RecorderJournal {
-    private fun file(context: Context): File = File(context.filesDir, "coremetrics-recorder-journal.txt")
+    private fun file(context: Context): File =
+        File(context.filesDir, "coremetrics-recorder-journal.txt")
+    private fun previous(context: Context): File =
+        File(context.filesDir, "coremetrics-recorder-journal.old")
 
     @Synchronized fun event(context: Context, name: String, details: String = "") {
         runCatching {
-            val f = file(context)
-            if (f.exists() && f.length() > 64_000) {
-                f.writeText(f.readLines().takeLast(160).joinToString("\n") + "\n")
+            val f=file(context)
+            // Rename instead of rereading/rewriting 64 KB on the service
+            // main thread. If rotation fails, preserve the current log.
+            if(f.exists() && f.length()>48_000L) {
+                val old=previous(context)
+                if(!old.exists() || old.delete())f.renameTo(old)
             }
-            f.appendText(System.currentTimeMillis().toString() + " | " +
-                name.replace('|','/') + " | " + details.take(160).replace('\n',' ') + "\n")
+            f.appendText(System.currentTimeMillis().toString()+" | "+
+                name.replace('|','/').take(48)+" | "+
+                details.take(160).replace('\n',' ').replace('\r',' ')+"\n")
         }
     }
-    fun read(context: Context): String = runCatching {
-        file(context).takeIf { it.exists() }?.readLines()?.takeLast(160)
-            ?.joinToString("\n") ?: "No lifecycle events yet"
+    @Synchronized fun read(context: Context): String = runCatching {
+        val lines=buildList {
+            for(f in listOf(previous(context),file(context))) {
+                if(f.exists())addAll(f.readLines().takeLast(160))
+            }
+        }
+        lines.takeLast(160).joinToString("\n").ifEmpty{"No lifecycle events yet"}
     }.getOrDefault("Journal unavailable")
 
     fun report(context: Context): String {

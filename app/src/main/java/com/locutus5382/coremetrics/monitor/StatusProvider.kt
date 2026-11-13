@@ -5,6 +5,8 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.os.Binder
+import android.os.Process
 import com.locutus5382.coremetrics.telemetry.Snapshot
 
 /**
@@ -15,7 +17,10 @@ class StatusProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
-        if (method != "status") return null
+        // exported=false is primary protection; UID check is defense-in-depth
+        // for alternate provider entry points on modified Android systems.
+        if(Binder.getCallingUid()!=Process.myUid() || method!="status")
+            return null
         val s: Snapshot? = MonitorState.latest
         // A status-provider query may start the :monitor process without
         // starting the Service. A fresh lease is pending recovery, NOT idle.
