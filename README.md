@@ -2,11 +2,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.4 unified alpha — one CoreMetrics application ID, one APK, four optional finishes.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+**Current development status: v0.9.6 unified alpha — one CoreMetrics application ID, one APK, four optional finishes.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.4)
+## One-app Quick Start (v0.9.6)
 
-1. Install the **single** `CoreMetrics-v0.9.4-unified-debug` GitHub Actions artifact (`app-debug.apk`, package `com.locutus5382.coremetrics`), with overlay and notification permissions enabled.
+1. Install the **single** `CoreMetrics-v0.9.6-unified-debug` GitHub Actions artifact (`app-debug.apk`, package `com.locutus5382.coremetrics`), with overlay and notification permissions enabled.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CoreMetrics HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CoreMetrics REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -17,10 +17,21 @@
 
 **Migration warning:** Older `.v092themes`, `.v093base`, `.v093themes`, `.preview`, and other side-by-side test variants remain distinct Android packages with **separate SQLite session databases**. Installing the unified APK will NOT import their private sessions. Export any valuable CSVs and diagnostic reports from old builds first, then import CSVs into the unified application. Remove old Quick Settings tiles, revoke older variants' overlay grants and uninstall variants only AFTER preserving data. The canonical package `com.locutus5382.coremetrics` retains its own app-private data when updated with a compatible signing key; a different signing key may require uninstall/reinstall and backup first.
 
-**Validation:** See `docs/PORTAL_V094_UNIFIED_ACCEPTANCE.md`. Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
+**Validation:** See `docs/PORTAL_V096_UNIFIED_ACCEPTANCE.md`. Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
 
 ---
 
+
+## v0.9.6 — Session management, analysis and optional support
+
+- **Free for everyone:** No paywall, paid plan, donation-exclusive APK, gated feature or in-app purchase. Every function remains available whether or not anyone contributes.
+- **Voluntary Ko-fi:** [Support CoreMetrics](https://ko-fi.com/locutus5382) if you want to. Settings opens the external browser; the app itself keeps **zero INTERNET permission** and no donation SDK. GitHub's FUNDING button points to the same page. Exported PNG reports contain **no donation link**.
+- **Session maintenance:** After recording, edit game note, configuration, driver and render scale. One recording may be deleted only after a deliberate second confirmation. Sample rows and A/B links are removed atomically, while active RECORDING rows are protected.
+- **Faster historical access:** Direct `sessionById` lookups replace arbitrary `list(200)` scans for individual reports and exports, reducing work and eliminating a historical session age limit in these lookups.
+- **Improved comparison:** Busiest-core P50 is visible in the 8-row A/B PNG table; the A/B scrubber additionally supports observed busiest-core %, P3 and P7 clocks when present. These cannot prove a graphics driver caused a temperature or performance difference.
+- **Lighter UI:** The Activity drops heavy source/analysis datasets when their pages are closed, fixes the finish-after-arming visibility transition, and caches the remaining session signal chart path.
+- **Release shrink:** R8 minification and resource shrinking are applied to release builds; the debug APK remains unminified. Build success does not measure runtime RAM or imply OEM LMK immunity.
+- **Still required:** real Portal acceptance, signing-key/data migration plan, Play foreground-service review and device profiling before marking stable.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -37,7 +48,7 @@
 - No PServer in initial Play-compatible version. A separate strictly read-only Odin variant may be designed later only if it provides validated value and clear permissions; a read-only observer cannot claim LMK immunity.
 - On-device collected readings and session history stay in app-private storage unless the user chooses to export them.
 
-**Historical note:** Previous development stages used separate Preview / Frosted / Themes packages to compare builds. The unified v0.9.4 build replaces this workflow; historical test instructions below are retained only for traceability.
+**Historical note:** Previous development stages used separate Preview / Frosted / Themes packages to compare builds. The unified v0.9.6 build replaces this workflow; historical test instructions below are retained only for traceability.
 
 ## Optional v0.8 Themes build (separate side-by-side APK)
 

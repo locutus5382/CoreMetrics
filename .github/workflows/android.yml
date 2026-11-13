@@ -1,4 +1,4 @@
-name: CoreMetrics unified Android build
+name: CoreMetrics v0.9.6 unified Android build
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -25,9 +25,9 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Unit tests and assemble unified APK
-        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease --no-daemon
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.4-unified-debug
+          name: CoreMetrics-v0.9.6-unified-debug
           path: app/build/outputs/apk/debug/app-debug.apk

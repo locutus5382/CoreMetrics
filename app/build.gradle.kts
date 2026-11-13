@@ -19,7 +19,11 @@ android {
     // One canonical app; all four finishes are selected at runtime.
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 is enabled for public/release candidates; the debug build
+            // remains unminified for accurate crash and device investigation.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }
     compileOptions {
