@@ -12,6 +12,21 @@ class V08AnalyticsTest {
         SessionStore.Point(t,45.0,40.0,40.0,35.0,5.0,4.0,null,null,
             observedCpuLimits=limits,busiestCore=core)
 
+    @Test fun compareSampleMeansOmitExternalPowerAndInvalidValues() {
+        val a=p(0).copy(cpu=45.0,gpu=40.0,batteryWatts=4.0,
+            batteryPowerStatus="DISCHARGING; BATTERY_NET_ONLY")
+        val b=p(2_000).copy(cpu=50.0,gpu=41.0,batteryWatts=-9.0,
+            batteryPowerStatus="CHARGING_OR_EXTERNAL_POWER; BATTERY_NET_ONLY")
+        val c=p(4_000).copy(cpu=55.0,gpu=42.0,batteryWatts=Double.NaN,
+            batteryPowerStatus="DISCHARGING; BATTERY_NET_ONLY")
+        val m=V08Analytics.sampleAverages(listOf(a,b,c))
+        assertEquals(50.0,m.cpuC!!,1e-5)
+        assertEquals(55.0,m.peakCpuC!!,1e-5)
+        assertEquals(41.0,m.gpuC!!,1e-5)
+        assertEquals(4.0,m.dischargeW!!,1e-5)
+        assertNull(V08Analytics.sampleAverages(listOf(b)).dischargeW)
+    }
+
     @Test fun busiestCoreCountsRecordedWinnersOnly() {
         val d=V08Analytics.busiestCores(listOf(p(10,"cpu0"),p(20,"cpu0"),
             p(30,"cpu7"),p(40,null),p(50,"cpu99")))

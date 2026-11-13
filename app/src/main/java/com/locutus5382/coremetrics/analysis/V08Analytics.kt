@@ -47,6 +47,27 @@ object V08Analytics {
         else "CHECK CPU LIMITS: Selected "+selected+"; observed "+label+
             ". CPU ceilings do not authenticate the applied tuner."
     }
+    /** These are sample-based HUD comparisons, NOT time-weighted energy rates.
+     * Never mix charging current into a discharge-power delta. */
+    data class SampleAverages(val cpuC:Double?,val peakCpuC:Double?,
+        val gpuC:Double?,val dischargeW:Double?)
+    fun sampleAverages(points:List<SessionStore.Point>):SampleAverages {
+        fun finiteMean(values:List<Double?>):Double? {
+            val valid=values.filterNotNull().filter{it.isFinite()}
+            return valid.takeIf{it.isNotEmpty()}?.average()
+        }
+        return SampleAverages(
+            finiteMean(points.map{it.cpu}),
+            points.mapNotNull{it.cpu?.takeIf(Double::isFinite)}.maxOrNull(),
+            finiteMean(points.map{it.gpu}),
+            finiteMean(points.map {
+                it.batteryWatts?.takeIf { watts ->
+                    watts.isFinite() && watts>0.1 &&
+                        it.batteryPowerStatus?.startsWith("DISCHARGING")==true
+                }
+            })
+        )
+    }
     data class CoreWinner(val core:Int,val count:Int,val sharePct:Double)
     data class CoreDistribution(val observations:Int,val ignored:Int,
         val winners:List<CoreWinner>)
