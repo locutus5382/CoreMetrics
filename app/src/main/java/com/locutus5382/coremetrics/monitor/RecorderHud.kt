@@ -1,16 +1,17 @@
 package com.locutus5382.coremetrics.monitor
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -45,7 +46,8 @@ internal data class HudOptions(
     val showRam: Boolean = true,
     val showPower: Boolean = true,
     val showFps: Boolean = false,
-    val showSparkline: Boolean = true
+    val showSparkline: Boolean = false, // legacy preference ignored; no HUD graphs
+    val adaptiveColors: Boolean = false
 ) {
     companion object {
         const val OPACITY = "hud_opacity"
@@ -53,6 +55,7 @@ internal data class HudOptions(
         const val LAYOUT = "hud_layout"
         const val INDICATOR = "hud_indicator"
         const val BLINK = "hud_blink"
+        const val ADAPTIVE = "hud_adaptive_colors"
         private val fields = listOf(
             "cpuTemp", "gpuTemp", "cpuLoad", "gpuLoad", "ram", "power", "fps", "sparkline")
         fun from(context: Context, intent: Intent? = null): HudOptions {
@@ -77,7 +80,8 @@ internal data class HudOptions(
                 showRam=b("hud_ram",true),
                 showPower=b("hud_power",true),
                 showFps=b("hud_fps",false),
-                showSparkline=b("hud_sparkline",true)
+                showSparkline=false,
+                adaptiveColors=b(ADAPTIVE,false)
             )
         }
         fun addExtras(i: Intent, options: HudOptions): Intent = i.apply {
@@ -86,6 +90,7 @@ internal data class HudOptions(
             putExtra(LAYOUT,options.layout)
             putExtra(INDICATOR,options.indicatorColor)
             putExtra(BLINK,options.blink)
+            putExtra(ADAPTIVE,options.adaptiveColors)
             for ((k,v) in listOf(
                 "cpuTemp" to options.showCpuTemp,"gpuTemp" to options.showGpuTemp,
                 "cpuLoad" to options.showCpuLoad,"gpuLoad" to options.showGpuLoad,
@@ -106,26 +111,24 @@ internal data class HudOptions(
             .putBoolean("hud_ram",showRam)
             .putBoolean("hud_power",showPower)
             .putBoolean("hud_fps",showFps)
-            .putBoolean("hud_sparkline",showSparkline).commit()
+            .putBoolean("hud_sparkline",false)
+            .putBoolean(ADAPTIVE,adaptiveColors).commit()
     }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
         showGpuLoad,showRam,showPower,showFps).count { it }
 }
 
 /**
- * Single WindowManager overlay. Its four 30-point graphs are fed only by the
- * existing :monitor DirectSampler snapshots; the HUD never polls hardware.
- * The dock is 12dp visually, inside one 44dp touch target.
+ * Single WindowManager telemetry overlay, no parallel hardware polling.
+ * The dock is 12dp visually inside one 44dp touch target. Charts live in
+ * post-session analysis rather than unreadable in-game micrographs.
  */
 internal class RecorderHud(private val context:Context) {
     private val wm=context.getSystemService(WindowManager::class.java)
     private val ui=Handler(Looper.getMainLooper())
-    private val graphs=LinkedHashMap<String,GraphView>()
-    private val graphCells=LinkedHashMap<String,View>()
     private var root:LinearLayout?=null
     private var pill:LinearLayout?=null
     private var drawer:LinearLayout?=null
-    private var graphsRow:LinearLayout?=null
     private var dockTab:LinearLayout?=null
     private var dockVisual:View?=null
     private var mainText:TextView?=null
@@ -139,10 +142,11 @@ internal class RecorderHud(private val context:Context) {
     private var unlockParams:WindowManager.LayoutParams?=null
     private var drawerControl:TextView?=null
     private val drawerSwitches=LinkedHashMap<String,TextView>()
-    private var graphSwitch:TextView?=null
     private var opacityLabel:TextView?=null
     private var drawerRecControl:TextView?=null
     private var closeControl:TextView?=null
+    private var minimizeControl:TextView?=null
+    private val metricLevels=mutableMapOf<String,HudSeverity.Level>()
     private var params:WindowManager.LayoutParams?=null
     private var opts=HudOptions()
     private var latest:Snapshot?=null
@@ -164,7 +168,7 @@ internal class RecorderHud(private val context:Context) {
     private var disposed=false
 
     private fun shouldBlink() =
-        !disposed && recording && opts.blink && !collapsed && attached()
+        !disposed && recording && opts.blink && !collapsed && visible()
 
     private val blink=object:Runnable {
         override fun run() {
@@ -195,13 +199,23 @@ internal class RecorderHud(private val context:Context) {
         GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(
             Color.argb((255*alpha).roundToInt(),7,17,40),
             Color.argb((220*alpha).roundToInt(),26,56,107))).apply {
-            cornerRadius=dp(23f).toFloat()
+            cornerRadius=dp(if(opts.layout=="pro")13f else 23f).toFloat()
             setStroke(dp(1f).coerceAtLeast(1),Color.argb(150,210,234,255))
         }
 
     fun permissionGranted()=Settings.canDrawOverlays(context)
     fun attached()=root?.isAttachedToWindow==true
+    fun visible()=attached() && root?.visibility==View.VISIBLE
     fun isLocked()=locked
+    /** Hide only the UI. Keep the recorder/lease/foreground service alive. */
+    fun setVisible(show:Boolean):String {
+        val view=root ?:return "HUD_NOT_ATTACHED"
+        view.visibility=if(show)View.VISIBLE else View.GONE
+        unlockWindow?.visibility=if(show)View.VISIBLE else View.GONE
+        if(show)applyAppearance()
+        syncBlink()
+        return if(show)"HUD_VISIBLE" else "HUD_HIDDEN"
+    }
 
     /** Positions the independent unlock handle exactly above the original lock.
      * Only 48 dp of screen can intercept taps; the rest of the HUD is click-through.
@@ -348,9 +362,6 @@ internal class RecorderHud(private val context:Context) {
         drawerSwitches.forEach { (name,view) ->
             paintDrawerToggle(view,name,selected[name]==true)
         }
-        graphSwitch?.let {
-            paintDrawerToggle(it,"Graphs",opts.showSparkline)
-        }
         opacityLabel?.text=String.format(Locale.US,
             " Glass %d%% ",(opts.opacity*100f).roundToInt())
         drawerRecControl?.let { button ->
@@ -418,8 +429,8 @@ internal class RecorderHud(private val context:Context) {
         drawerSwitches["W"]=addChip(bottom,"W") {
             changeOptions(opts.copy(showPower=!opts.showPower))
         }
-        graphSwitch=addChip(bottom,"Graphs") {
-            changeOptions(opts.copy(showSparkline=!opts.showSparkline))
+        addChip(bottom,"Dock") {
+            dock((params?.x?:0)+(root?.width?:0)/2>=windowWidth()/2)
         }
         drawerRecControl=addChip(bottom,"REC") {
             onRecord?.invoke()
@@ -438,24 +449,10 @@ internal class RecorderHud(private val context:Context) {
             opts.copy(opacity=(opts.opacity+.1f).coerceAtMost(.90f)))},
             LinearLayout.LayoutParams(dp(45f),dp(33f)))
         opacity.addView(styledLabel(
-            "  ● enabled · ○ hidden · FPS requires validation",9f))
+            "  ✓ enabled · ○ hidden",9f))
         column.addView(opacity)
         refreshDrawerControls()
         return column
-    }
-
-    private fun graphCell(name:String,color:Int):View {
-        val container=LinearLayout(context).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
-            setPadding(dp(3f),0,dp(4f),0)
-        }
-        container.addView(styledLabel(name,9f))
-        val graph=GraphView(context,color)
-        graphs[name]=graph
-        container.addView(graph,LinearLayout.LayoutParams(dp(64f),dp(26f)))
-        graphCells[name]=container
-        return container
     }
 
     fun show(options:HudOptions,onRecordClick:()->Unit,onLockClick:()->Unit,
@@ -468,11 +465,11 @@ internal class RecorderHud(private val context:Context) {
         onUnlock=onUnlockClick
         onClose=onDismissClick
         this.onOptionsChanged=onOptionsChanged
-        if(attached()){applyAppearance();return "HUD_ALREADY_ATTACHED"}
+        if(attached()){setVisible(true);applyAppearance();return "HUD_ALREADY_ATTACHED"}
         disposed=false
         locked=false;collapsed=false;drawerOpen=false
-        graphs.clear();graphCells.clear();drawerSwitches.clear()
-        graphSwitch=null;opacityLabel=null;drawerRecControl=null
+        drawerSwitches.clear()
+        opacityLabel=null;drawerRecControl=null
         val line=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -500,6 +497,12 @@ internal class RecorderHud(private val context:Context) {
         line.addView(rec)
         drawerControl=action("⚙"){drawerOpen=!drawerOpen;applyAppearance()}
         line.addView(drawerControl)
+        minimizeControl=action("‹"){dock(
+            (params?.x?:0)+(root?.width?:0)/2>=windowWidth()/2)
+        }.apply {
+            contentDescription="Dock HUD to nearest edge; tap edge tab to restore"
+        }
+        line.addView(minimizeControl)
         lockControl=action(""){onLock?.invoke()}.apply {
             background=FlatLockChipDrawable(locked=false)
             setPadding(0,0,0,0)
@@ -511,17 +514,6 @@ internal class RecorderHud(private val context:Context) {
         closeControl=action("×"){onClose?.invoke()}
         line.addView(closeControl)
         pill=line
-
-        val strip=LinearLayout(context).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
-            setPadding(dp(8f),dp(2f),dp(6f),dp(7f))
-        }
-        strip.addView(graphCell("CPU",Color.rgb(56,189,248)))
-        strip.addView(graphCell("GPU",Color.rgb(96,165,250)))
-        strip.addView(graphCell("TEMP",Color.rgb(255,107,0)))
-        strip.addView(graphCell("FPS",Color.rgb(255,199,0)))
-        graphsRow=strip
 
         val tab=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
@@ -545,7 +537,6 @@ internal class RecorderHud(private val context:Context) {
         val frame=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
             addView(line)
-            addView(strip)
             addView(newDrawer().also{drawer=it})
             addView(tab)
         }
@@ -619,7 +610,7 @@ internal class RecorderHud(private val context:Context) {
             }
             "HUD_ATTACHED"
         }catch(e:Exception){
-            root=null;params=null;pill=null;drawer=null;graphsRow=null
+            root=null;params=null;pill=null;drawer=null
             "HUD_ADD_FAILED_"+e.javaClass.simpleName
         }
     }
@@ -686,13 +677,6 @@ internal class RecorderHud(private val context:Context) {
         dockTab?.visibility=if(collapsed)View.VISIBLE else View.GONE
         drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
         refreshDrawerControls()
-        graphsRow?.visibility=if(!collapsed && recording && opts.layout=="pro" &&
-            opts.showSparkline)View.VISIBLE else View.GONE
-        graphCells["CPU"]?.visibility=if(opts.showCpuLoad)View.VISIBLE else View.GONE
-        graphCells["GPU"]?.visibility=if(opts.showGpuLoad)View.VISIBLE else View.GONE
-        graphCells["TEMP"]?.visibility=if(opts.showCpuTemp)View.VISIBLE else View.GONE
-        graphCells["FPS"]?.visibility=if(opts.showFps && latest?.surfaceFps!=null)
-            View.VISIBLE else View.GONE
         val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
         mainText?.textSize=12f*scale
         // Keep the compact pill on ONE line; a 460dp cap alone would hide
@@ -738,7 +722,7 @@ internal class RecorderHud(private val context:Context) {
         startedAtMs=startedMs
         if(!isRecording) {
             latest=null;thermal.reset();thermalValue=null
-            graphs.values.forEach{it.clear()}
+            metricLevels.clear()
         }
         applyAppearance()
         syncBlink()
@@ -748,27 +732,50 @@ internal class RecorderHud(private val context:Context) {
         if(!recording || !attached())return
         latest=s
         thermalValue=thermal.update(s.timeMs,s.cpuTempC)
-        graphs["CPU"]?.add(s.cpuPercent?.toFloat())
-        graphs["GPU"]?.add(s.gpuPercent?.toFloat())
-        graphs["TEMP"]?.add(thermalValue?.smoothedC?.toFloat())
-        graphs["FPS"]?.add(s.surfaceFps?.toFloat())
-        graphCells["FPS"]?.visibility=if(opts.showFps && s.surfaceFps!=null &&
-            opts.showSparkline && opts.layout=="pro")View.VISIBLE else View.GONE
+        updateLevels(s)
         val thermalColor=when(thermalValue?.direction) {
             ThermalTrendFilter.Direction.RISING -> Color.rgb(255,107,0)
             ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
             else -> Color.rgb(255,199,0)
         }
         (dockVisual?.background as? GradientDrawable)?.setColor(thermalColor)
-        renderTelemetry()
-        // Updating text and graph Canvas does NOT require a WindowManager
-        // relayout; keep the sampling path cheap during emulator gameplay.
+        // Rendering consumes only the recorder's current sample; never polls
+        // hardware at an independent cadence.
+        if(visible())renderTelemetry()
     }
 
+    private fun severityColor(level:HudSeverity.Level):Int=when(level){
+        HudSeverity.Level.ELEVATED->Color.rgb(255,199,0)
+        HudSeverity.Level.HIGH->Color.rgb(255,94,104)
+        else->Color.rgb(241,249,255)
+    }
+    private fun level(key:String,newLevel:HudSeverity.Level):HudSeverity.Level {
+        metricLevels[key]=newLevel
+        return newLevel
+    }
+    private fun updateLevels(s:Snapshot) {
+        if(!opts.adaptiveColors){metricLevels.clear();return}
+        level("CPU T",HudSeverity.thermal(thermalValue?.smoothedC,
+            metricLevels["CPU T"]?:HudSeverity.Level.NORMAL))
+        level("GPU T",HudSeverity.thermal(s.gpuTempC,
+            metricLevels["GPU T"]?:HudSeverity.Level.NORMAL))
+        level("CPU %",HudSeverity.usage(s.cpuPercent,
+            metricLevels["CPU %"]?:HudSeverity.Level.NORMAL))
+        level("GPU %",HudSeverity.usage(s.gpuPercent,
+            metricLevels["GPU %"]?:HudSeverity.Level.NORMAL))
+        if(opts.showRam){
+            val manager=context.getSystemService(ActivityManager::class.java)
+            val memory=ActivityManager.MemoryInfo()
+            manager?.getMemoryInfo(memory)
+            level("RAM",if(manager==null)HudSeverity.Level.NORMAL else
+                HudSeverity.ram(memory.lowMemory,memory.availMem,
+                    memory.threshold,metricLevels["RAM"]?:HudSeverity.Level.NORMAL))
+        }
+    }
     private fun renderTelemetry() {
         val view=mainText ?:return
         if(!recording) {
-            view.text="COREMETRICS · READY\nNo sensor sampling until REC"
+            view.text="COREMETRICS · READY\\nNo sensor sampling until REC"
             return
         }
         val s=latest
@@ -776,30 +783,43 @@ internal class RecorderHud(private val context:Context) {
             n?.takeIf{it.isFinite()}?.let{
                 String.format(Locale.US,"%."+decimal+"f%s",it,unit)
             } ?: "—"
-        val items=mutableListOf<String>()
+        val items=mutableListOf<Pair<String,HudSeverity.Level>>()
+        fun add(label:String,value:String) {
+            items+=(label+" "+value) to (if(opts.adaptiveColors)
+                metricLevels[label]?:HudSeverity.Level.NORMAL
+                else HudSeverity.Level.NORMAL)
+        }
         if(opts.showCpuTemp) {
-            val marker=when(thermalValue?.direction) {
+            val direction=when(thermalValue?.direction) {
                 ThermalTrendFilter.Direction.RISING -> " ▲"
                 ThermalTrendFilter.Direction.FALLING -> " ▼"
                 ThermalTrendFilter.Direction.STABLE -> " —"
                 else -> ""
             }
-            items+="CPU "+fmt(thermalValue?.smoothedC,"°C")+marker
+            add("CPU T",fmt(thermalValue?.smoothedC,"°C")+direction)
             if(opts.layout=="pro" && thermalValue?.rawPeakC!=null)
-                items+="Peak "+fmt(thermalValue?.rawPeakC,"°C")
+                items+=("Peak "+fmt(thermalValue?.rawPeakC,"°C")) to
+                    HudSeverity.Level.NORMAL
         }
-        if(opts.showGpuTemp)items+="GPU "+fmt(s?.gpuTempC,"°C")
-        if(opts.showCpuLoad)items+="CPU "+(s?.cpuPercent?.let{"$it%"}?:"—")
-        if(opts.showGpuLoad)items+="GPU "+(s?.gpuPercent?.let{"$it%"}?:"—")
-        if(opts.showRam)items+="RAM "+fmt(s?.ramGiB," GiB")
-        if(opts.showPower)items+="BAT "+fmt(s?.signedBatteryWatts," W")
-        // A dormant preference must never render the misleading "FPS —" token.
+        if(opts.showGpuTemp)add("GPU T",fmt(s?.gpuTempC,"°C"))
+        if(opts.showCpuLoad)add("CPU %",s?.cpuPercent?.let{"$it%"}?:"—")
+        if(opts.showGpuLoad)add("GPU %",s?.gpuPercent?.let{"$it%"}?:"—")
+        if(opts.showRam)add("RAM",fmt(s?.ramGiB," GiB"))
+        if(opts.showPower)add("BAT",fmt(s?.signedBatteryWatts," W"))
         if(opts.showFps && s?.surfaceFps!=null)
-            items+="FPS "+fmt(s.surfaceFps,"",0)
-        view.text=if(items.isEmpty())"REC · telemetry"
-            else if(opts.layout=="pro")items.chunked(3).joinToString("\n"){
-                it.joinToString(" · ")
-            } else items.joinToString(" · ")
+            add("FPS",fmt(s.surfaceFps,"",0))
+        val builder=SpannableStringBuilder()
+        if(items.isEmpty())builder.append("REC · telemetry")
+        else items.forEachIndexed{index,pair->
+            if(index>0)builder.append(if(opts.layout=="pro" && index%3==0)
+                "\\n" else " · ")
+            val begin=builder.length
+            builder.append(pair.first)
+            if(pair.second!=HudSeverity.Level.NORMAL)
+                builder.setSpan(ForegroundColorSpan(severityColor(pair.second)),
+                    begin,builder.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        view.text=builder
     }
 
     private fun renderAction() {
@@ -814,60 +834,25 @@ internal class RecorderHud(private val context:Context) {
     fun hide():String {
         disposed=true
         ui.removeCallbacks(blink)
+        metricLevels.clear()
         // Prevent an orphan touch-stealing chip after STOP or process cleanup.
         unlockWindow?.let { runCatching {wm.removeViewImmediate(it)} }
         unlockWindow=null;unlockParams=null
         val frame=root ?:return "HUD_NOT_ATTACHED"
         return try {
             wm.removeViewImmediate(frame)
-            root=null;pill=null;drawer=null;graphsRow=null;dockTab=null
+            root=null;pill=null;drawer=null;dockTab=null
             params=null;mainText=null;recText=null;recDot=null
-            graphs.clear();graphCells.clear();drawerSwitches.clear()
-            graphSwitch=null;opacityLabel=null;drawerRecControl=null
+            drawerSwitches.clear()
+            opacityLabel=null;drawerRecControl=null;minimizeControl=null
             recording=false;locked=false;collapsed=false
             "HUD_REMOVED"
         }catch(e:Exception){
             if(!frame.isAttachedToWindow) {
-                root=null;params=null;graphs.clear();graphCells.clear()
+                root=null;params=null;drawerSwitches.clear()
                 "HUD_REMOVED_AFTER_EXCEPTION"
             }else "HUD_REMOVE_FAILED_"+e.javaClass.simpleName
         }
     }
 
-    /** Each graph tracks 30 recorded samples (including null gaps). */
-    private class GraphView(context:Context,color:Int):View(context) {
-        private val history=ArrayDeque<Float?>()
-        private val pen=Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color=color;strokeWidth=resources.displayMetrics.density*1.65f
-            style=Paint.Style.STROKE;strokeCap=Paint.Cap.ROUND
-        }
-        fun clear(){history.clear();invalidate()}
-        fun add(value:Float?) {
-            history.addLast(value?.takeIf{it.isFinite()})
-            while(history.size>30)history.removeFirst()
-            invalidate()
-        }
-        override fun onDraw(canvas:Canvas) {
-            super.onDraw(canvas)
-            if(history.size<2)return
-            val data=history.toList()
-            val valid=data.filterNotNull()
-            if(valid.size<2)return
-            val min=valid.minOrNull()?:return
-            val max=valid.maxOrNull()?:return
-            val range=(max-min).coerceAtLeast(4f)
-            val base=min-range*.15f
-            val heightRange=range*1.3f
-            val path=Path()
-            var wasValid=false
-            data.forEachIndexed { index,item ->
-                if(item==null){wasValid=false;return@forEachIndexed}
-                val x=index*width.toFloat()/(data.size-1)
-                val y=(height*(1f-(item-base)/heightRange)).coerceIn(0f,height.toFloat())
-                if(!wasValid)path.moveTo(x,y) else path.lineTo(x,y)
-                wasValid=true
-            }
-            canvas.drawPath(path,pen)
-        }
-    }
 }

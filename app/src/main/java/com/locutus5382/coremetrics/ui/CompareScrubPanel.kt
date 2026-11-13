@@ -20,6 +20,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.locutus5382.coremetrics.data.SessionStore
+import com.locutus5382.coremetrics.analysis.DischargeSample
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
@@ -48,7 +49,7 @@ internal object CompareTimeCursor {
 
 private enum class Metric(val title:String, val unit:String) {
     CPU_TEMP("CPU °C","°C"),GPU_TEMP("GPU °C","°C"),GPU_LOAD("GPU load","%"),
-    CPU_LOAD("CPU load","%"),POWER("Net battery W"," W"),
+    CPU_LOAD("CPU load","%"),POWER("Discharge W"," W"),
     FPS("Layer FPS"," FPS")
 }
 
@@ -57,7 +58,7 @@ private fun reading(p:SessionStore.Point, metric:Metric):Double? = when(metric) 
     Metric.GPU_TEMP -> p.gpu
     Metric.CPU_LOAD -> p.cpuLoad
     Metric.GPU_LOAD -> p.gpuLoad
-    Metric.POWER -> p.batteryWatts
+    Metric.POWER -> DischargeSample.watts(p.batteryWatts,p.batteryPowerStatus)
     Metric.FPS -> p.sfFps
 }?.takeIf { it.isFinite() }
 
@@ -71,6 +72,14 @@ internal fun CompareScrubPanel(
 ) {
     if(a.isEmpty() || b.isEmpty())return
     var metric by remember { mutableStateOf(Metric.CPU_TEMP) }
+    val selectableMetrics=remember(a,b) {
+        val hasFps=a.any { it.sfFps?.isFinite()==true } ||
+            b.any { it.sfFps?.isFinite()==true }
+        Metric.values().filter { it!=Metric.FPS || hasFps }
+    }
+    LaunchedEffect(selectableMetrics) {
+        if(metric !in selectableMetrics)metric=Metric.CPU_TEMP
+    }
     val duration=max(a.last().timeMs-a.first().timeMs,
         b.last().timeMs-b.first().timeMs).coerceAtLeast(1L)
     val elapsed=(duration*fraction).toLong()
@@ -91,7 +100,9 @@ internal fun CompareScrubPanel(
             color=iceBlue,fontWeight=FontWeight.Bold)
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-            Metric.values().forEach { candidate ->
+            // Skip the unavailable FPS selector without rescanning every
+            // recorded point on each chart drag/recomposition.
+            selectableMetrics.forEach { candidate ->
                 FilterChip(selected=metric==candidate,onClick={metric=candidate},
                     label={Text(candidate.title)})
             }
@@ -170,7 +181,8 @@ internal fun CompareScrubPanel(
             f(reading(right,metric)!!-reading(left,metric)!!)+metric.unit
             else "unavailable"),
             color=solarGold,fontWeight=FontWeight.Bold)
-        Text("Closest measured points within ±10 seconds. A gap, ended run or " +
+        Text("Battery-W excludes charging, unknown status and invalid watts. " +
+            "Closest measured points within ±10 seconds. A gap, ended run or " +
             "missing sensor is not interpolated. A/B times start at each run's first sample.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
     }
@@ -187,7 +199,9 @@ private fun CursorCard(label:String,point:SessionStore.Point?,
             color=coreText,style=MaterialTheme.typography.bodyMedium)
         Text("CPU "+f(point?.cpu)+"°  GPU "+f(point?.gpu)+"°",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
-        Text("Battery "+f(point?.batteryWatts)+" W",
+        Text("Battery discharge "+f(point?.let{
+            DischargeSample.watts(it.batteryWatts,it.batteryPowerStatus)
+        })+" W",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
     }
 }

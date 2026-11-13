@@ -111,6 +111,7 @@ private data class ScreenStatus(
     val observedLimits: String? = null,
     val coreLoads: String? = null,
     val hudStatus: String? = null, val hudLocked: Boolean = false,
+    val hudVisible: Boolean = false,
     val hudOptionRevision: Long = 0L, val hudChanged: HudOptions? = null,
     val lastAt: Long = 0
 )
@@ -289,6 +290,7 @@ class MainActivity : ComponentActivity() {
             coreLoads = v.getString("coreLoads"),
             hudStatus = v.getString("hudStatus"),
             hudLocked = v.getBoolean("hudLocked",false),
+            hudVisible = v.getBoolean("hudVisible",false),
             hudOptionRevision = v.getLong("hudOptionRevision",0L),
             hudChanged = if(v.getLong("hudOptionRevision",0L)>0L) HudOptions(
                 opacity=v.getFloat("hudOptOpacity",0.57f),
@@ -303,7 +305,8 @@ class MainActivity : ComponentActivity() {
                 showRam=v.getBoolean("hudOptRam",true),
                 showPower=v.getBoolean("hudOptPower",true),
                 showFps=v.getBoolean("hudOptFps",false),
-                showSparkline=v.getBoolean("hudOptSparkline",true)
+                showSparkline=false,
+                adaptiveColors=v.getBoolean("hudOptAdaptive",false)
             ) else null,
             lastAt = v.getLong("lastSampleAt", 0)
         )
@@ -317,7 +320,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v084base")
+            val supportsThemeChoice=!packageName.endsWith(".v085base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -438,6 +441,9 @@ class MainActivity : ComponentActivity() {
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
             var skipWarmUp by rememberSaveable { mutableStateOf(false) }
+            var detailTechnical by rememberSaveable { mutableStateOf(false) }
+            var compareTechnical by rememberSaveable { mutableStateOf(false) }
+            var compareFullTimeline by rememberSaveable { mutableStateOf(false) }
             var hideShortRuns by rememberSaveable { mutableStateOf(false) }
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
@@ -552,6 +558,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
             LaunchedEffect(page, status.running) {
+                if(page=="Live" && !status.running)
+                    sessionList=withContext(Dispatchers.IO){database.list(1)}
                 if (page == "Sessions" || page == "Compare") {
                     sessionList = withContext(Dispatchers.IO) { database.list() }
                     if(page=="Compare")
@@ -637,17 +645,28 @@ class MainActivity : ComponentActivity() {
             val rootBackground=when(appliedFinish) {
                 SurfaceFinish.FROSTED -> Brush.linearGradient(listOf(
                     cobaltNavy,Color(0xFF09173A),Color(0xFF10265C),cobaltNavy))
-                SurfaceFinish.LIQUID -> Brush.linearGradient(listOf(
-                    Color(0xFF030815),Color(0xFF0A1A3A),
-                    Color(0xFF121B39),Color(0xFF030815)))
-                SurfaceFinish.TACTICAL -> Brush.linearGradient(listOf(
-                    Color(0xFF04060C),Color(0xFF04060C)))
+                SurfaceFinish.CRYSTAL_AERO -> Brush.linearGradient(listOf(
+                    Color(0xFF030B1D),Color(0xFF123C68),Color(0xFF0C2858),
+                    Color(0xFF0C132F),Color(0xFF030815)))
+                SurfaceFinish.SOLAR_PULSE -> Brush.linearGradient(listOf(
+                    cobaltNavy,Color(0xFF07192F),Color(0xFF081D43),cobaltNavy))
+                SurfaceFinish.COBALT_MATRIX -> Brush.linearGradient(listOf(
+                    Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
-            MaterialTheme(colorScheme = darkColorScheme(primary = iceBlue,
-                surface=if(appliedFinish==SurfaceFinish.TACTICAL)
-                    Color(0xFF121620) else cobaltNavy,
-                background=if(appliedFinish==SurfaceFinish.TACTICAL)
-                    Color(0xFF04060C) else cobaltNavy,
+            MaterialTheme(colorScheme=darkColorScheme(
+                primary=when(appliedFinish){
+                    SurfaceFinish.SOLAR_PULSE->solarOrange
+                    SurfaceFinish.COBALT_MATRIX->coreCyan
+                    else->iceBlue
+                },
+                onPrimary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
+                    Color.White else cobaltNavy,
+                secondary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
+                    cobalt else coreCyan,
+                surface=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
+                    Color(0xFF081226) else cobaltNavy,
+                background=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
+                    Color(0xFF030814) else cobaltNavy,
                 onSurface=coreText)) {
                 Box(Modifier.fillMaxSize().background(rootBackground)) {
                     PureGlassBackdrop()
@@ -704,32 +723,22 @@ class MainActivity : ComponentActivity() {
                                         fontWeight=FontWeight.Bold)
                                 }
                                 if(supportsThemeChoice) {
-                                    OutlinedButton(onClick={
+                                    CMActionPill("THEME · "+appliedFinish.displayName+" ↻") {
                                         val choices=SurfaceFinish.values()
                                         val next=choices[(finish.ordinal+1)%choices.size]
                                         finish=next
                                         prefs.edit().putString("ui_surface_finish",next.key)
                                             .apply()
-                                    }) {
-                                        Text("THEME · "+appliedFinish.displayName+" ↻",
-                                            color=iceBlue,
-                                            style=MaterialTheme.typography.labelMedium)
                                     }
                                 }else {
                                     Text("FROSTED · FIXED",color=coreSecondary,
                                         style=MaterialTheme.typography.labelSmall)
                                 }
                                 if(page=="Live") {
-                                    Button(onClick={
+                                    CMActionPill(if(status.standby||status.running)"HUD"
+                                        else "ARM HUD",primary=true) {
                                         if(status.standby||status.running)page="HUD"
                                         else armHud()
-                                    },contentPadding=PaddingValues(
-                                        horizontal=10.dp,vertical=6.dp),
-                                        colors=ButtonDefaults.buttonColors(
-                                            containerColor=solarOrange)) {
-                                        Text(if(status.standby||status.running)"HUD"
-                                            else "ARM HUD",
-                                            style=MaterialTheme.typography.labelMedium)
                                     }
                                 }
                                 Box(
@@ -757,6 +766,34 @@ class MainActivity : ComponentActivity() {
                                             "Standby performs no hardware sampling.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
+                                        if(!status.running && !status.starting &&
+                                            !status.standby) {
+                                            GlassPanel {
+                                                Text("READY FOR YOUR NEXT SESSION",
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                Text("Launch Eden first, then use CM HUD in Quick "+
+                                                    "Settings to show the floating controls. "+
+                                                    "The recorder remains idle until REC.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.bodySmall)
+                                                val previous=sessionList.firstOrNull()
+                                                if(previous!=null) {
+                                                    HorizontalDivider(color=coreBorder)
+                                                    Text("LAST RECORDING · SESSION "+previous.id,
+                                                        color=solarGold,
+                                                        fontWeight=FontWeight.Bold)
+                                                    Text(previous.configuration+" · "+
+                                                        previous.status+" · "+
+                                                        previous.count+" samples",
+                                                        color=coreText)
+                                                    OutlinedButton(onClick={
+                                                        detailedId=previous.id
+                                                        page="Sessions"
+                                                    }){Text("Analyze last session")}
+                                                }else Text("No recordings saved yet.",
+                                                    color=coreSecondary)
+                                            }
+                                        }else {
                                         val powerState=when {
                                             status.powerStatus?.startsWith("DISCHARGING")==true ->
                                                 "Discharging"
@@ -823,6 +860,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         LiveScope(liveTrace)
                                         PerCoreLoadMatrix(status.coreLoads)
+                                        }
                                         GlassPanel {
                                             Text("RECORDING CONTROL  ·  ONE USER-STARTED SESSION",
                                                 color = coreCyan, style = MaterialTheme.typography.titleMedium)
@@ -947,10 +985,17 @@ class MainActivity : ComponentActivity() {
                                                     V08Analytics.afterWarmUp(
                                                         detailPoints,if(skipWarmUp)30 else 0)
                                                 }
-                                                Text("Session "+detailedId+" · "+
-                                                    r.quality.category+" · "+
-                                                    r.quality.score+"/100",
-                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                SessionQuickOverview(r)
+                                                SessionMetricTimeline(eligibleDetail,
+                                                    referenceStartMs=detailPoints.firstOrNull()?.timeMs)
+                                                OutlinedButton(onClick={
+                                                    detailTechnical=!detailTechnical
+                                                }) {
+                                                    Text(if(detailTechnical)
+                                                        "Hide technical diagnostics"
+                                                        else "Show energy provenance, CPU limits and core chart")
+                                                }
+                                                if(detailTechnical) {
                                                 Row(Modifier.fillMaxWidth(),
                                                     horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                                     EnergyRatePanel(r.energy,Modifier.weight(1f))
@@ -961,6 +1006,7 @@ class MainActivity : ComponentActivity() {
                                                             detailPoints.firstOrNull()?.timeMs)
                                                 }
                                                 CoreWinnerPanel(eligibleDetail,Modifier.fillMaxWidth())
+                                                }
                                                 OutlinedButton(onClick={
                                                     detailedId=0L
                                                     detailReport=null;detailPoints=emptyList()
@@ -1158,6 +1204,63 @@ class MainActivity : ComponentActivity() {
                                                     ?.takeIf{secondPoints.isNotEmpty()}
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
+                                            if(analysisA!=null && analysisB!=null &&
+                                                eligibleA.isNotEmpty() && eligibleB.isNotEmpty()) {
+                                                CompareQuickOverview(analysisA,analysisB)
+                                                val chartA=remember(eligibleA,activeOnly) {
+                                                    if(activeOnly)eligibleA.filter{
+                                                        (it.gpuLoad?:0.0)>=15.0
+                                                    }else eligibleA
+                                                }
+                                                val chartB=remember(eligibleB,activeOnly) {
+                                                    if(activeOnly)eligibleB.filter{
+                                                        (it.gpuLoad?:0.0)>=15.0
+                                                    }else eligibleB
+                                                }
+                                                if(chartA.size>=2 && chartB.size>=2) {
+                                                    val overlap=minOf(
+                                                        chartA.last().timeMs-chartA.first().timeMs,
+                                                        chartB.last().timeMs-chartB.first().timeMs)
+                                                    Row(verticalAlignment=Alignment.CenterVertically) {
+                                                        Text("Show full timeline rather than shared "+
+                                                            "elapsed-time window",
+                                                            Modifier.weight(1f),color=coreSecondary,
+                                                            style=MaterialTheme.typography.bodySmall)
+                                                        Switch(compareFullTimeline,
+                                                            onCheckedChange={compareFullTimeline=it})
+                                                    }
+                                                    val plotA=remember(chartA,compareFullTimeline,overlap) {
+                                                        if(compareFullTimeline)chartA else chartA.filter{
+                                                            it.timeMs-chartA.first().timeMs<=overlap
+                                                        }
+                                                    }
+                                                    val plotB=remember(chartB,compareFullTimeline,overlap) {
+                                                        if(compareFullTimeline)chartB else chartB.filter{
+                                                            it.timeMs-chartB.first().timeMs<=overlap
+                                                        }
+                                                    }
+                                                    if(plotA.size>=2 && plotB.size>=2) {
+                                                        Text("SYNCHRONIZED COMPARISON · "+
+                                                            if(compareFullTimeline)"full recordings"
+                                                            else "overlapping "+(overlap/1000L)+" s",
+                                                            color=iceBlue,fontWeight=FontWeight.Bold)
+                                                        CompareScrubPanel(plotA,plotB,
+                                                            fraction=compareCursor,
+                                                            onFractionChange={compareCursor=it})
+                                                    }else Text("Not enough overlapping samples to chart.",
+                                                        color=coreSecondary)
+                                                }else Text("Gameplay filter excluded a run. "+
+                                                    "Disable it to inspect complete chronology.",
+                                                    color=solarOrange)
+                                            }else Text("Choose two recordings to compare.",
+                                                color=coreSecondary)
+                                            OutlinedButton(onClick={
+                                                compareTechnical=!compareTechnical
+                                            }) {
+                                                Text(if(compareTechnical)"Hide technical evidence"
+                                                    else "Show full evidence, regimes and diagnostics")
+                                            }
+                                            if(compareTechnical) {
                                             analysisA?.let { r ->
                                                 Row(Modifier.fillMaxWidth(),
                                                     horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -1362,9 +1465,8 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 Text("CPU temperature · elapsed time · A cyan, B amber",
                                                     color=coreSecondary)
-                                                CompareScrubPanel(viewA,viewB,
-                                                    fraction=compareCursor,
-                                                    onFractionChange={compareCursor=it})
+                                                Text("The synchronized cursor and chart are above.",
+                                                    color=coreSecondary)
                                                 Text("Frame rate remains unavailable if SurfaceFlinger layer access fails. " +
                                                     "Time alignment uses first selected sample, not synchronized in-game events.",
                                                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
@@ -1373,6 +1475,7 @@ class MainActivity : ComponentActivity() {
                                                     "turn it off to inspect all samples.",
                                                     color=muted)
                                             }
+                                            } // optional technical details
                                         }
                                     }
                                     "HUD" -> {
@@ -1399,7 +1502,8 @@ class MainActivity : ComponentActivity() {
                                     }
                                     else -> {
                                         GlassPanel {
-                                            Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
+                                            Text("Settings & privacy",color=iceBlue,
+                                                style = MaterialTheme.typography.titleMedium)
                                              Text("CONTROLLER · L1/R1 (or L2/R2) switches tabs; "+
                                                  "D-pad/hat and right joystick move focus; "+
                                                  "A/DPAD CENTER selects focused controls. "+
@@ -1432,17 +1536,17 @@ class MainActivity : ComponentActivity() {
                                                 Text("Only application screens change. "+
                                                     "The in-game native floating HUD, its "+
                                                     "touch-lock and all telemetry remain unchanged. "+
-                                                    "No blur/animated shaders are used.",
+                                                    "No idle animation or expensive background blur is used.",
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                                 HorizontalDivider(color=coreBorder)
                                             }else {
-                                                Text("APPEARANCE · FROSTED (FIXED)",
+                                                Text("APPEARANCE · FROSTED GLASS (FIXED)",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
-                                                Text("This Analytics-only APK has one fixed finish. "+
+                                                Text("This Frosted test APK has one fixed finish. "+
                                                     "Use the separate CoreMetrics Themes APK "+
-                                                    "for the visible THEME button, Liquid and "+
-                                                    "Tactical Flat.",
+                                                    "for the visible THEME button, Crystal Aero and "+
+                                                    "Solar Pulse / Cobalt Matrix.",
                                                     color=coreSecondary)
                                             }
                                             Row(verticalAlignment=Alignment.CenterVertically,
@@ -1650,7 +1754,7 @@ private fun CompactRailAction(
     modifier:Modifier=Modifier,onClick:()->Unit
 ) {
     val shape=RoundedCornerShape(11.dp)
-    val isTactical=LocalSurfaceFinish.current==SurfaceFinish.TACTICAL
+    val isTactical=LocalSurfaceFinish.current==SurfaceFinish.COBALT_MATRIX
     var hasFocus by remember {mutableStateOf(false)}
     Column(
         modifier.fillMaxWidth().height(49.dp)
@@ -1662,7 +1766,7 @@ private fun CompactRailAction(
             .border(if(hasFocus)2.dp else 1.dp,
                 if(hasFocus)solarGold else if(selected)coreCyan.copy(alpha=0.7f)
                     else coreBorder.copy(alpha=0.38f),shape)
-            .clickable(role=Role.Button,onClick=onClick)
+            .cmInteractive(cornerRadiusDp=11,accent=solarGold,onClick=onClick)
             .padding(vertical=4.dp),
         horizontalAlignment=Alignment.CenterHorizontally,
         verticalArrangement=Arrangement.Center

@@ -12,6 +12,7 @@ internal object MonitorState {
     @Volatile var sampleCount = 0L
     @Volatile var message = "Idle"
     @Volatile var hudState = "HUD_OFF"
+    @Volatile var hudVisible = false
     @Volatile var hudLocked = false
     // Drawer edits occur in :monitor, not the Compose UI process.
     @Volatile var hudOptionRevision = 0L

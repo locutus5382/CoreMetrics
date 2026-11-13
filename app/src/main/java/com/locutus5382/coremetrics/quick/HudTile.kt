@@ -24,10 +24,7 @@ class HudTile:TileService() {
     private fun state():State=try {
         val b=contentResolver.call(Uri.parse(
             "content://"+packageName+".monitor.status"),"status",null,null)
-        val status=b?.getString("hudStatus").orEmpty()
-        val visible=status=="HUD_ATTACHED" ||
-            status=="HUD_ALREADY_ATTACHED" || status=="HUD_CONFIGURED" ||
-            status.startsWith("HUD_LOCKED") || status.startsWith("HUD_UNLOCKED")
+        val visible=b?.getBoolean("hudVisible",false)==true
         State(b?.getBoolean("running",false)==true ||
             b?.getBoolean("starting",false)==true,
             b?.getBoolean("standby",false)==true,visible)
@@ -40,44 +37,44 @@ class HudTile:TileService() {
     }
     private fun toggle(){
         val current=state()
-        if(current.recording){
-            Toast.makeText(this,
-                "Recording active · use the REC tile to stop and save",
-                Toast.LENGTH_LONG).show()
+        if(current.hudVisible) {
+            // Active recording is NEVER finalized by this tile.
+            runCatching{startService(Intent(this,RecordingService::class.java)
+                .setAction(if(current.recording)RecordingService.HUD_HIDE
+                    else RecordingService.DISARM))}
+                .onFailure{Toast.makeText(this,"Cannot hide HUD",
+                    Toast.LENGTH_LONG).show()}
             refresh();return
         }
-        if(current.standby){
-            runCatching{
-                startService(Intent(this,RecordingService::class.java)
-                    .setAction(RecordingService.DISARM))
-            }.onFailure{
-                Toast.makeText(this,"Could not close HUD",Toast.LENGTH_LONG).show()
-            }
+        if(current.recording || current.standby){
+            runCatching{startService(Intent(this,RecordingService::class.java)
+                .setAction(RecordingService.HUD_SHOW))}
+                .onFailure{Toast.makeText(this,"Cannot restore HUD",
+                    Toast.LENGTH_LONG).show()}
             refresh();return
         }
         if(!Settings.canDrawOverlays(this)){
-            Toast.makeText(this,
-                "Open CoreMetrics and grant floating overlay permission",
+            Toast.makeText(this,"Grant overlay permission in CoreMetrics",
                 Toast.LENGTH_LONG).show()
             return
         }
         if(Build.VERSION.SDK_INT>=33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=
-            PackageManager.PERMISSION_GRANTED){
+                PackageManager.PERMISSION_GRANTED){
             Toast.makeText(this,"Allow CoreMetrics notifications first",
                 Toast.LENGTH_LONG).show()
             return
         }
-        val preferences=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
+        val prefs=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
         runCatching {
             startForegroundService(Intent(this,RecordingService::class.java)
                 .setAction(RecordingService.ARM)
                 .putExtra(RecordingService.LABEL,
-                    preferences.getString("label","")?:"")
+                    prefs.getString("label","")?:"")
                 .putExtra(RecordingService.CONFIG,
-                    preferences.getString("configuration","Stock")?:"Stock")
+                    prefs.getString("configuration","Stock")?:"Stock")
                 .putExtra(RecordingService.INTERVAL,
-                    preferences.getLong("interval_ms",5000L)))
+                    prefs.getLong("interval_ms",5000L)))
         }.onFailure{
             Toast.makeText(this,"Cannot launch HUD: "+
                 it.javaClass.simpleName,Toast.LENGTH_LONG).show()
@@ -89,13 +86,13 @@ class HudTile:TileService() {
         qsTile?.apply {
             label=when {
                 current.recording && current.hudVisible->"CM HUD · REC"
-                current.recording->"REC · HUD OFF"
-                current.standby->"CM HUD · ON"
+                current.recording->"CM HUD · HIDDEN REC"
+                current.hudVisible->"CM HUD · ON"
                 else->"CM HUD · OFF"
             }
             icon=android.graphics.drawable.Icon.createWithResource(
                 this@HudTile,R.drawable.ic_coremetrics_hud_tile)
-            this.state=if(current.hudVisible||current.standby)
+            this.state=if(current.hudVisible)
                 Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             updateTile()
         }

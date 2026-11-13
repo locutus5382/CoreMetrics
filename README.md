@@ -2,14 +2,14 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.8.3 Portal UI/controller test branch, with separately installable Frosted Analytics and optional Themes test APKs. Prior v0.8.2 was tested on the Odin 2 Portal; v0.8.3 fixes still require physical verification. Not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.8.5 experimental usability and analytics branch with two separately installable test builds: fixed original Frosted Glass and 4-theme showcase. Built from v0.8.4; the latest v0.8.5 HUD/UI workflows have not yet been physically tested on the Odin 2 Portal. Not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
 - **Sessions:** User-started foreground recording with a persistent Stop notification, local SQLite storage and CSV exports.
 - **Compare:** Stock / ClusterTune / Custom run labels, elapsed-time-aligned thermal and utilization charts and differences. A label is user-entered, never proof that a tuner is active.
-- **HUD Studio:** Opt-in no-sampling standby capsule, tap REC to start the existing collector, STOP to save and return to standby, plus opacity, size, compact/Pro layouts, metric visibility, mini sparkline, blinking dot and color customization.
-- **FPS:** Opt-in experimental SurfaceFlinger per-layer frame-present probe. Standard app UID may lack DUMP permission; a clear error status is shown, never invented FPS. Do not present display refresh or emulator-internal timing as actual delivered game FPS.
+- **HUD Studio:** No-sampling standby, tap REC/STOP to record and save. Pill or rounded-card layouts, size, opacity, metric visibility, dock/minimize handle, blink indicator and optional per-metric adaptive severity colors. Tiny in-game sparklines are deliberately removed; post-session analysis retains raw recorded values.
+- **FPS:** Experimental SurfaceFlinger access remains OFF/unverified on the Portal. Standard app UID may lack DUMP permission; no gameplay FPS, percentile FPS, or fabricated frame graph is displayed. Never confuse display refresh with game rendering.
 
 ## Security, privacy and platform
 - Separate Android application ID: `com.locutus5382.coremetrics`. Separate database and notifications; no dependency on O2P.
@@ -33,6 +33,25 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.8.5 — HUD visibility, richer analysis, Frosted + optional themes
+
+**Two isolated debug test APKs built from identical v0.8.5 recording/analytics source:**
+- **Frosted**: `CoreMetrics-v0.8.5-frosted` → `app-v085base.apk` (`com.locutus5382.coremetrics.v085base`). Original Cobalt & Solar Frosted Glass only, with one-shot button light sweep on main actions.
+- **Themes**: `CoreMetrics-v0.8.5-themes` → `app-v085themes.apk` (`com.locutus5382.coremetrics.v085themes`). Frosted default plus Crystal Aero (transparent static ribbons), Solar Pulse (bold solid controls) and Cobalt Matrix (techy grid/ticked gauges). UI-only; the in-game WindowManager HUD is unchanged by app themes. The experimental optical glass *simulates* depth; no true live background refraction, blur or permanently animated shaders.
+
+**The changes shared by both builds:**
+- **CM HUD Quick Settings tile** now shows/hides the actual overlay without terminating any active recording. ON = visible; HIDDEN REC = recording active, HUD hidden; OFF = no visible HUD. Hiding idle standby releases the idle foreground service. The separate `CM REC` tile remains as an emergency fallback during device validation. Notification exposes Restore HUD while hidden and REC is active. The two-window independent touch-lock remains intact.
+- **Explicit Dock** control minimizes the overlay to the existing edge tab with a larger touch target. Capsule and rounded-card HUD layouts share the same lock/restore behavior and editable opacity/size. HUD mini-graphs and their toggle have been removed (they were too small and unavailable in normal pill mode).
+- **Adaptive Metric Colors** are opt-in under HUD Studio and operate only on *recorded* snapshots: CPU/GPU temp 65°C elevated yellow, 80°C high red; utilization ≥90% elevated yellow, never red just for high load; RAM assessed from Android `ActivityManager.MemoryInfo` low-memory threshold (not a fixed % of RAM used). Thermal color changes use a small release margin to avoid flickering. These are UI heuristics, NOT verified silicon/battery safety limits or automatic throttling triggers.
+- **Single session** begins with meaningful temperature/power/duration and data-integrity summaries plus two synchronized, selectable metric tracks (CPU/GPU temperatures, CPU/GPU loads, discharge-only battery watts, RAM). Actual samples only; no interpolation through missing readings or time gaps. Warm-up elapsed labels remain tied to original recorded timestamps. Historical technical evidence remains behind a disclosure.
+- **Compare** starts with Session A/Session B columns, compact differences, telemetry-integrity versus benchmark-comparability warnings, then the A/B chart using the overlap window by default. A switch can show complete, unequal-duration runs. Scroll-heavy CPU-regime cards and raw evidence are collapsed by default. No claim of synchronized gameplay scenes or comparative FPS without verified FPS data.
+- **Live idle** shows setup guidance and a last-recording shortcut instead of four blank gauges; no idle hardware sampling task added.
+- **Glass press glint** is interaction-driven (touch/gamepad focus), ~220ms with modest scale feedback, never an infinite background animation. Frosted surfaces and existing brand colors are preserved.
+
+**Engineering constraints:** This is not a fix for Android `LOW_MEMORY` terminations while Eden starts, nor a production release. No new permissions, CPU/GPU writes, root/PServer, tracking SDKs, OOM-priority manipulation, database migration or sensor sampling threads. User should still launch Eden before arming HUD via Quick Settings. Build variants have *separate* SQLite databases: do not delete older versions before exporting needed CSVs; never run two overlay variants simultaneously.
+
+See `docs/PORTAL_V085_ACCEPTANCE.md` for physical device acceptance and data integrity checks.
 
 ## v0.8.4 — landscape polish and controller navigation (draft)
 

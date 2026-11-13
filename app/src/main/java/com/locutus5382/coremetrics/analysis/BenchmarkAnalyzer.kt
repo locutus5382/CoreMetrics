@@ -131,8 +131,7 @@ object BenchmarkAnalyzer {
         var dischargeMs=0L
         var wh=0.0
         fun discharge(p:SessionStore.Point):Double? =
-            p.batteryWatts?.takeIf { it.isFinite() && it>0.0 &&
-                it<100.0 && p.batteryPowerStatus?.startsWith("DISCHARGING")==true }
+            DischargeSample.watts(p.batteryWatts,p.batteryPowerStatus)
         for(i in 1 until pts.size) {
             val prev=pts[i-1];val next=pts[i]
             val dt=next.timeMs-prev.timeMs
