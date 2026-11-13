@@ -48,6 +48,17 @@ class CompareStudioAnalysisTest {
             text.contains("not a synchronization"))
     }
 
+    @Test fun cadenceMismatchIsExplicitlyFlaggedWithoutChangingBMinusA() {
+        val fast=(0..100).map{
+            p(it).copy(timeMs=1_000_000L+it*2_000L)
+        }
+        val slow=b()
+        val result=analyze(pa=fast,pb=slow,window=Window(0,200_000L))
+        assertTrue(result.warnings.any{it.contains("cadences differ")})
+        assertEquals("LIMITED COMPARABILITY",result.evidenceLabel)
+        assertEquals(4.0,CompareStudioAnalysis.delta(
+            result.a.median(Metric.CPU_TEMP),result.b.median(Metric.CPU_TEMP))!!,.001)
+    }
     @Test fun forceSelectionInsideSharedMeasuredDuration() {
         val longA=(0..60).map{p(it)}
         val shortB=(0..16).map{p(it,origin=2_000_000L)}

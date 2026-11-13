@@ -86,6 +86,14 @@ object CompareStudioAnalysis {
                 val x=a.median(metric);val y=b.median(metric)
                 return if(x!=null&&y!=null)abs(y-x) else null
             }
+            // Different sampling cadences weight sample quantiles differently.
+            val cadenceA=a.diagnostics.cadenceMs
+            val cadenceB=b.diagnostics.cadenceMs
+            if(cadenceA>0L && cadenceB>0L &&
+                maxOf(cadenceA,cadenceB).toDouble()/
+                minOf(cadenceA,cadenceB).toDouble()>=1.5)
+                add("Sampling cadences differ substantially (A "+
+                    cadenceA+" ms, B "+cadenceB+" ms); sample percentiles differ in resolution")
             val load=diff(SessionDiagnosticsAnalyzer.Metric.GPU_LOAD)
             if(load==null)add("GPU utilization is unavailable in one selected window")
             else if(load>10.0)add("Median GPU load differs by more than 10 percentage points")
