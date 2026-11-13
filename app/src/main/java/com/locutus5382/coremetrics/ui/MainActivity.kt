@@ -1315,6 +1315,7 @@ class MainActivity : ComponentActivity() {
                                                     }) { Text("CSV") }
                                                     OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         detailedId=s.id;page="Sessions"
+                                                        scope.launch {contentScroll.scrollTo(0)}
                                                     }){Text("Analyze")}
                                                     OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         metadataEditorId=if(metadataEditorId==s.id)

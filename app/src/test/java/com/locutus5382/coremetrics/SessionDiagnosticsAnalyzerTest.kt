@@ -129,6 +129,18 @@ class SessionDiagnosticsAnalyzerTest {
         val gaps=diagnostics(split)
         assertNull(gaps.initialCpuSlopeCPerMin)
     }
+    @Test fun exportedTextUsesReadableDecimalsAndNAInsteadOfNull() {
+        val r=diagnostics((0..30).map{point(it,cpu=41.123456789+it*.03)})
+        val txt=SessionDiagnosticsAnalyzer.text(r)
+        assertTrue(txt.contains("°C/min"))
+        assertFalse(txt.contains("null"))
+        assertFalse(txt.contains("41.123456789"))
+        assertTrue(txt.contains("valid seconds"))
+        val empty=diagnostics((0..3).map {
+            point(it,cpu=null,gpuLoad=null,batteryW=null,batteryPct=null)
+        })
+        assertTrue(SessionDiagnosticsAnalyzer.text(empty).contains("n/a"))
+    }
     @Test fun thermalRegressionDoesNotBridgeMissingSensorSamples() {
         val points=(0..30).map {
             point(it,cpu=if(it==12)null else 41.0+it*.1)
