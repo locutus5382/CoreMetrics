@@ -28,6 +28,9 @@ import com.locutus5382.coremetrics.data.SessionStore
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.layout.onSizeChanged
+import com.locutus5382.coremetrics.analysis.ChartTraceReducer
+import com.locutus5382.coremetrics.analysis.DiagnosticTimeCursor
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -243,9 +246,28 @@ private fun DiagnosticTrack(
     val span=spread*1.3
     val duration=(end-start).coerceAtLeast(1L).toDouble()
     val selectedMs=start+(duration*cursor).toLong()
-    val nearest=remember(stat,selectedMs) {
-        readings.minByOrNull { abs(it.timeMs-selectedMs) }
-            ?.takeIf { abs(it.timeMs-selectedMs) <= gapLimit.coerceAtMost(8_000L) }
+    // Binary search in the original readings; chart reduction NEVER affects the
+    // measurement reported at a selected cursor position.
+    val nearest=remember(stat,selectedMs,gapLimit) {
+        DiagnosticTimeCursor.nearest(readings,selectedMs,
+            gapLimit.coerceAtMost(8_000L))
+    }
+    var chartWidth by remember { mutableIntStateOf(700) }
+    val traces=remember(stat,start,end,chartWidth,gapLimit) {
+        fun sampled(rolling:Boolean)=ChartTraceReducer.reduce(
+            readings.map { p->ChartTraceReducer.Sample(
+                p.timeMs,if(rolling)p.rolling60 else p.value,p.segment) },
+            start,end,chartWidth,gapLimit)
+        sampled(false) to sampled(true)
+    }
+    val spikeMarkers=remember(stat) {
+        val p95=stat.p95
+        if(p95==null || p95 <= (stat.median?:p95)+1e-6)
+            emptyList()
+        else readings.filter{it.value>=p95}.let { highs->
+            val stride=max(1,(highs.size+119)/120)
+            highs.filterIndexed{index,_->index%stride==0}
+        }
     }
     val accent=when(stat.metric) {
         Metric.CPU_TEMP,Metric.GPU_TEMP,Metric.BATTERY_TEMP->solarOrange
@@ -260,6 +282,7 @@ private fun DiagnosticTrack(
                 color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         }
         Canvas(Modifier.fillMaxWidth().height(118.dp)
+            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)}
             .background(Color(0x61091A30),RoundedCornerShape(9.dp))
             .pointerInput(start,end) {
                 detectTapGestures{offset ->
@@ -276,41 +299,34 @@ private fun DiagnosticTrack(
             fun y(v:Double)=((1.0-(v-bottom)/span)*size.height).toFloat()
             for(i in 1..3) drawLine(Color.White.copy(alpha=.10f),
                 Offset(0f,size.height*i/4f),Offset(size.width,size.height*i/4f),1.dp.toPx())
-            val raw=Path()
-            val smooth=Path()
-            var prior:SessionDiagnosticsAnalyzer.Reading?=null
-            var priorSmooth:SessionDiagnosticsAnalyzer.Reading?=null
-            for(p in readings) {
-                val px=x(p.timeMs)
-                if(prior==null || p.segment!=prior!!.segment || p.timeMs-prior!!.timeMs>gapLimit)
-                    raw.moveTo(px,y(p.value))
-                else raw.lineTo(px,y(p.value))
-                prior=p
-                val median=p.rolling60
-                if(median==null)priorSmooth=null
-                else {
-                    if(priorSmooth==null || p.segment!=priorSmooth!!.segment ||
-                        p.timeMs-priorSmooth!!.timeMs>gapLimit)
-                        smooth.moveTo(px,y(median))
-                    else smooth.lineTo(px,y(median))
-                    priorSmooth=p
+            fun trace(samples:List<ChartTraceReducer.Sample>):Path {
+                val path=Path()
+                var last:ChartTraceReducer.Sample?=null
+                for(p in samples) {
+                    val v=p.value
+                    if(v==null) {last=null;continue}
+                    val px=x(p.timeMs)
+                    if(last==null || p.segment!=last.segment ||
+                        p.timeMs-last.timeMs>gapLimit)
+                        path.moveTo(px,y(v))
+                    else path.lineTo(px,y(v))
+                    last=p
                 }
+                return path
             }
-            drawPath(raw,accent.copy(alpha=.68f),style=Stroke(1.6.dp.toPx()))
-            drawPath(smooth,coreMint,style=Stroke(2.3.dp.toPx()))
+            drawPath(trace(traces.first),accent.copy(alpha=.68f),
+                style=Stroke(1.6.dp.toPx()))
+            drawPath(trace(traces.second),coreMint,
+                style=Stroke(2.3.dp.toPx()))
             stat.p95?.let{p95 ->
                 drawLine(solarGold.copy(alpha=.85f),Offset(0f,y(p95)),
                     Offset(size.width,y(p95)),1.2.dp.toPx(),
                     pathEffect=PathEffect.dashPathEffect(floatArrayOf(8f,7f),0f))
                 // A constant signal has P95 == median: no false "spike".
                 // Bound drawn marker count on long recorded sessions.
-                if(p95 > (stat.median ?: p95)+1e-6) {
-                    val spikes=readings.filter { it.value>=p95 }
-                    val stride=max(1,(spikes.size+119)/120)
-                    spikes.forEachIndexed { index,p ->
-                        if(index%stride==0) drawCircle(solarGold,radius=2.5.dp.toPx(),
-                            center=Offset(x(p.timeMs),y(p.value)))
-                    }
+                spikeMarkers.forEach { p ->
+                    drawCircle(solarGold,radius=2.5.dp.toPx(),
+                        center=Offset(x(p.timeMs),y(p.value)))
                 }
             }
             val peakT=stat.peakTimeMs
