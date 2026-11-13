@@ -494,7 +494,10 @@ internal class RecorderHud(private val context:Context) {
         // Never construct another WindowManager view while a prior view or
         // unlock chip is still tracked. This survives Service recreation within
         // the same :monitor PID via MonitorHudOwner.
-        if(attached()) {
+        if(root!=null) {
+            // WindowManager.addView() may not yet mark the view as attached.
+            // A tracked root is already owned: NEVER allocate another window
+            // merely because isAttachedToWindow is briefly false.
             // Service onDestroy cancels animation callbacks. Reattaching
             // callbacks to a still-attached view must revive them as well.
             disposed=false
@@ -511,7 +514,9 @@ internal class RecorderHud(private val context:Context) {
                 "HUD_ALREADY_ATTACHED"
             }catch(e:Exception){"HUD_REBIND_FAILED_"+e.javaClass.simpleName}
         }
-        if(root!=null || unlockWindow!=null) {
+        if(unlockWindow!=null) {
+            // A previously retained unlock chip without a root must be
+            // removed before a new HUD can acquire WindowManager ownership.
             val cleaned=hide()
             if(root!=null || unlockWindow!=null)
                 return "HUD_OWNERSHIP_UNRESOLVED_"+cleaned

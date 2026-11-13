@@ -28,6 +28,8 @@ internal fun HudSettingsPanel(
     permissionGranted:Boolean,
     onChange:(HudOptions)->Unit,
     onArm:()->Unit,
+    closeUiOnArm:Boolean,
+    onCloseUiOnArmChange:(Boolean)->Unit,
     onDisarm:()->Unit,
     onUnlock:()->Unit,
     onGrantPermission:()->Unit,
@@ -59,6 +61,17 @@ internal fun HudSettingsPanel(
             }
             OutlinedButton(onClick=onTile){Text("Add REC tile")}
             OutlinedButton(onClick=onHudTile){Text("Add HUD tile")}
+        }
+        Row(verticalAlignment=Alignment.CenterVertically,
+            horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("Close this screen after launching standby",
+                    color=coreSecondary,style=MaterialTheme.typography.bodyMedium)
+                Text("Optional. Frees the UI for Android to reclaim; does not " +
+                    "stop the monitor or guarantee an immediate RAM reduction.",
+                    color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+            }
+            Switch(checked=closeUiOnArm,onCheckedChange=onCloseUiOnArmChange)
         }
         if(isArmed) {
             Row(verticalAlignment=Alignment.CenterVertically,

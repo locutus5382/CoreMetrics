@@ -3,6 +3,7 @@ package com.locutus5382.coremetrics.ui
 import android.Manifest
 import android.app.Activity
 import android.app.ActivityManager
+import com.locutus5382.coremetrics.monitor.RecorderLease
 import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -289,7 +290,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun query(): ScreenStatus = try {
-        val uri = Uri.parse("content://" + packageName + ".monitor.status")
+        // Do not start a second process merely to paint an idle UI page.
+        // ActivityManager is allowed to report null; in that case fall back
+        // to the provider rather than falsely claiming the recorder is idle.
+        val processes=getSystemService(ActivityManager::class.java)
+            ?.runningAppProcesses
+        if(processes!=null && processes.none {
+                it.processName=="$packageName:monitor"
+            }) {
+            val recoverable=RecorderLease.recover(this)!=null
+            ScreenStatus(known=true,pendingRecovery=recoverable,
+                message=if(recoverable)"Previous session available for recovery"
+                    else "Idle")
+        } else {
+            val uri = Uri.parse("content://" + packageName + ".monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
         if (v == null) ScreenStatus(known=false,message = "Recorder status unavailable")
         else ScreenStatus(
@@ -331,6 +345,7 @@ class MainActivity : ComponentActivity() {
             ) else null,
             lastAt = v.getLong("lastSampleAt", 0)
         )
+        }
     } catch (e: Exception) { ScreenStatus(known=false,message = "Recorder unreachable: " + e.javaClass.simpleName) }
 
     // The latest status poll already established whether a user-requested
@@ -509,7 +524,12 @@ class MainActivity : ComponentActivity() {
             var detailTechnical by rememberSaveable { mutableStateOf(false) }
             var compareTechnical by rememberSaveable { mutableStateOf(false) }
             var compareFullTimeline by rememberSaveable { mutableStateOf(false) }
-            var hideShortRuns by rememberSaveable { mutableStateOf(false) }
+            var hideShortRuns by rememberSaveable { mutableStateOf(true) }
+            // User controlled. Finishing an Activity never guarantees Android
+            // will immediately reclaim its cached UI process/PSS.
+            var closeUiOnArm by rememberSaveable {
+                mutableStateOf(prefs.getBoolean("close_ui_on_arm",false))
+            }
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
@@ -905,6 +925,7 @@ class MainActivity : ComponentActivity() {
                     onSuccess={
                         lastObservedMonitorActive=true
                         message="Standby requested · no recording until REC"
+                        if(closeUiOnArm) this@MainActivity.finish()
                     },
                     onFailure={message="Standby failed: "+it.javaClass.simpleName})
             }
@@ -1857,6 +1878,12 @@ class MainActivity : ComponentActivity() {
                                             permissionGranted=overlayAllowed,
                                             onChange={ persistHud(it) },
                                             onArm={ armHud() },
+                                            closeUiOnArm=closeUiOnArm,
+                                            onCloseUiOnArmChange={ enabled->
+                                                closeUiOnArm=enabled
+                                                prefs.edit().putBoolean(
+                                                    "close_ui_on_arm",enabled).apply()
+                                            },
                                             onDisarm={ closeHud() },
                                             onUnlock={ unlockHud() },
                                             onGrantPermission={

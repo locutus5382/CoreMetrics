@@ -27,7 +27,7 @@
         <provider android:name=".monitor.StatusProvider"
             android:authorities="${applicationId}.monitor.status"
             android:process=":monitor" android:exported="false"/>
-        <service android:name=".quick.HudTile" android:exported="true"
+        <service android:name=".quick.HudTile" android:process=":monitor" android:exported="true"
             android:label="${coremetricsHudTileLabel}"
             android:icon="@drawable/ic_coremetrics_hud_tile"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
@@ -37,7 +37,7 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE"/>
             </intent-filter>
         </service>
-        <service android:name=".quick.SessionTile" android:exported="true"
+        <service android:name=".quick.SessionTile" android:process=":monitor" android:exported="true"
             android:label="${coremetricsTileLabel}" android:icon="@drawable/ic_coremetrics_notification"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE"
