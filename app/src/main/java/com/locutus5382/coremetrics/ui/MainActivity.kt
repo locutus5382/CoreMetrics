@@ -316,7 +316,6 @@ class MainActivity : ComponentActivity() {
             var skipWarmUp by rememberSaveable { mutableStateOf(false) }
             var hideShortRuns by rememberSaveable { mutableStateOf(false) }
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
-            var scrubFraction by rememberSaveable { mutableFloatStateOf(0.5f) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var exportId by remember { mutableLongStateOf(0L) }
@@ -1464,38 +1463,6 @@ private fun RegimeTimeline(
             moveTo(coords.first().x,coords.first().y)
             coords.drop(1).forEach{lineTo(it.x,it.y)}
         },coreCyan,style=Stroke(width=3f))
-    }
-}
-
-/** Static graph; no infinite animation or frame polling. Points represent recorded samples. */
-@Composable
-private fun CompareChart(a: List<SessionStore.Point>, b: List<SessionStore.Point>) {
-    Canvas(Modifier.fillMaxWidth().height(180.dp)
-        .clip(RoundedCornerShape(12.dp))
-        .background(Color(0x80101C2B))) {
-        val w = size.width
-        val h = size.height
-        for (i in 1..3) {
-            val y = h * i / 4f
-            drawLine(Color(0x335A8FA3), Offset(0f,y),Offset(w,y),strokeWidth=1f)
-        }
-        fun pathFor(points: List<SessionStore.Point>): Path? {
-            if (points.size < 2) return null
-            val start = points.first().timeMs
-            val duration = max(1L, points.last().timeMs - start)
-            val coords = points.mapNotNull { p ->
-                val temp = p.cpu ?: return@mapNotNull null
-                Offset(((p.timeMs - start).toFloat() / duration) * w,
-                    ((85.0 - temp).coerceIn(0.0,65.0) / 65.0 * h).toFloat())
-            }
-            if (coords.size < 2) return null
-            return Path().apply {
-                moveTo(coords[0].x, coords[0].y)
-                coords.drop(1).forEach { lineTo(it.x, it.y) }
-            }
-        }
-        pathFor(a)?.let { drawPath(it, cyan, style = Stroke(width=3f)) }
-        pathFor(b)?.let { drawPath(it, Color(0xFFFFC077), style = Stroke(width=3f)) }
     }
 }
 

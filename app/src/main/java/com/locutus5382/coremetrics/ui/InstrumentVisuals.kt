@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -38,36 +37,11 @@ internal data class LiveTracePoint(
     val gpuLoad: Double?
 )
 
-/** Original unobtrusive backdrop: no bitmap, no blur, no animation. */
-@Composable
-internal fun InstrumentBackdrop() {
-    Canvas(Modifier.fillMaxSize()) {
-        val sizeRef = size.minDimension
-        val upper = Offset(size.width * .86f, size.height * .08f)
-        val lower = Offset(size.width * .14f, size.height * .96f)
-        drawCircle(Brush.radialGradient(
-            listOf(Color(0x6C21445D),Color(0x19223972),Color.Transparent),
-            center=upper,radius=sizeRef*.96f),
-            center=upper,radius=sizeRef*.96f)
-        drawCircle(Brush.radialGradient(
-            listOf(Color(0x44314A68),Color.Transparent),
-            center=lower,radius=sizeRef*.82f),
-            center=lower,radius=sizeRef*.82f)
-        val gridStep = 58.dp.toPx()
-        var x = gridStep
-        while (x < size.width) {
-            drawLine(Color(0x122A5E76),Offset(x,0f),Offset(x,size.height),1f)
-            x += gridStep
-        }
-    }
-}
-
 @Composable
 internal fun InstrumentKpi(
     title: String, value: String?, detail: String,
     color: Color = coreCyan, modifier: Modifier = Modifier
 ) {
-    val r = RoundedCornerShape(15.dp)
     Column(modifier.pureGlass(15)
         .padding(horizontal=12.dp,vertical=11.dp)) {
         Text(title.uppercase(),color=coreSecondary,
@@ -86,7 +60,6 @@ internal fun InstrumentKpi(
 internal fun LiveScope(points: List<LiveTracePoint>) {
     val latest = points.lastOrNull()?.timeMs ?: 0L
     val recent = points.filter { it.timeMs >= latest-60_000L }
-    val r = RoundedCornerShape(15.dp)
     Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp),
         verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement=Arrangement.spacedBy(18.dp)) {
