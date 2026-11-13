@@ -21,7 +21,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
         val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
         val observedCpuLimits: String? = null, val busiestCorePct: Double? = null,
-        val batteryPowerStatus: String? = null, val busiestCore: String? = null)
+        val batteryPowerStatus: String? = null, val busiestCore: String? = null,
+        val batteryTemp: Double? = null, val batteryPct: Int? = null,
+        val cpuClocks: String? = null, val gpuMHz: Double? = null)
 
     data class Link(val id:Long,val firstId:Long,val secondId:Long,val createdAt:Long)
 
@@ -262,7 +264,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     fun points(id: Long, max: Int = 12000): List<Point> = readableDatabase.rawQuery(
         """SELECT time_ms,cpu_temp,gpu_temp,cpu_pct,gpu_pct,ram_gib,
         battery_net_w,sf_layer_fps,app_package,
-        observed_cpu_limits,busiest_pct,battery_status,busiest_core
+        observed_cpu_limits,busiest_pct,battery_status,busiest_core,
+        battery_temp,battery_pct,cpu_clocks,gpu_mhz
         FROM samples WHERE session_id=? ORDER BY time_ms ASC LIMIT ?""",
         arrayOf(id.toString(), max.coerceIn(1,12000).toString())
     ).use { c ->
@@ -273,7 +276,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 if (c.isNull(8)) null else c.getString(8),
                 if (c.isNull(9)) null else c.getString(9),
                 value(10), if (c.isNull(11)) null else c.getString(11),
-                if(c.isNull(12))null else c.getString(12)))
+                if(c.isNull(12))null else c.getString(12),value(13),
+                if(c.isNull(14))null else c.getInt(14),
+                if(c.isNull(15))null else c.getString(15),value(16)))
         }
     }
 
