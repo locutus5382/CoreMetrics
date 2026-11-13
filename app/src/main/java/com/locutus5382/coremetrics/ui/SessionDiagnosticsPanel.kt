@@ -94,10 +94,22 @@ private fun DiagnosticSummary(
 
 @Composable
 private fun DiagnosticTile(label:String,value:String,note:String,modifier:Modifier) {
-    Column(modifier.background(Color(0x380B2038),RoundedCornerShape(9.dp))
-        .padding(8.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+    val finish=LocalSurfaceFinish.current
+    val accent=when {
+        label.startsWith("CPU")->solarOrange
+        label.startsWith("GPU")->coreCyan
+        label.startsWith("CORE")->solarGold
+        else->coreMint
+    }
+    Column(modifier.cmMetricSurface(accent=accent,
+        frostedTint=Color(0x380B2038)).padding(8.dp),
+        verticalArrangement=Arrangement.spacedBy(3.dp)) {
         Text(label,color=coreSecondary,style=MaterialTheme.typography.labelSmall,maxLines=1)
-        Text(value,color=coreText,fontWeight=FontWeight.Bold,
+        Text(value,color=if(finish==SurfaceFinish.SOLAR_PULSE)
+                accent else coreText,fontWeight=FontWeight.Bold,
+            fontFamily=if(finish==SurfaceFinish.COBALT_MATRIX)
+                androidx.compose.ui.text.font.FontFamily.Monospace
+                else androidx.compose.ui.text.font.FontFamily.Default,
             style=MaterialTheme.typography.titleSmall,maxLines=1)
         Text(note,color=coreSecondary,style=MaterialTheme.typography.labelSmall,maxLines=1)
     }

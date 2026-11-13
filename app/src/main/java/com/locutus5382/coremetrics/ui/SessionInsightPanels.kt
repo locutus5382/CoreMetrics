@@ -83,10 +83,22 @@ internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report) {
 
 @Composable
 private fun SummaryMetric(label:String,value:String,modifier:Modifier=Modifier) {
-    Column(modifier.background(Color(0x330C1D36),RoundedCornerShape(9.dp))
+    val finish=LocalSurfaceFinish.current
+    val accent=when(label) {
+        "CPU AVG"->solarOrange
+        "GPU AVG"->coreCyan
+        "BATTERY"->solarGold
+        else->coreMint
+    }
+    Column(modifier.cmMetricSurface(accent=accent)
         .padding(horizontal=10.dp,vertical=8.dp)) {
         Text(label,color=coreSecondary,style=MaterialTheme.typography.labelSmall)
-        Text(value,color=coreText,fontWeight=FontWeight.Bold,
+        Text(value,color=if(finish==SurfaceFinish.SOLAR_PULSE)
+                accent else coreText,
+            fontWeight=FontWeight.Bold,
+            fontFamily=if(finish==SurfaceFinish.COBALT_MATRIX)
+                androidx.compose.ui.text.font.FontFamily.Monospace
+                else androidx.compose.ui.text.font.FontFamily.Default,
             style=MaterialTheme.typography.titleMedium,maxLines=1)
     }
 }

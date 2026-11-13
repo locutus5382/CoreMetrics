@@ -97,7 +97,8 @@ internal fun HudSettingsPanel(
             Slider(value=opacityDraft,
                 onValueChange={opacityDraft=it},
                 onValueChangeFinished={onChange(options.copy(opacity=opacityDraft))},
-                valueRange=.30f..90f/100f,modifier=Modifier.weight(1f))
+                valueRange=.30f..90f/100f,colors=cmSliderColors(),
+                modifier=Modifier.weight(1f))
             Text((opacityDraft*100).toInt().toString()+"%",color=Color.White)
         }
         Text("HUD SIZE",color=iceBlue,style=MaterialTheme.typography.labelLarge)
