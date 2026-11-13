@@ -31,7 +31,8 @@ class HudTile:TileService(){
                 Toast.LENGTH_LONG).show()
             refresh();return
         }
-        if(action==QuickTileStatePolicy.HudAction.ARM &&
+        if((action==QuickTileStatePolicy.HudAction.ARM ||
+                action==QuickTileStatePolicy.HudAction.SHOW) &&
             !Settings.canDrawOverlays(this)){
             Toast.makeText(this,"Opening CoreMetrics setup for overlay permission",
                 Toast.LENGTH_SHORT).show()
