@@ -789,38 +789,44 @@ class MainActivity : ComponentActivity() {
                 SurfaceFinish.COBALT_MATRIX -> Brush.linearGradient(listOf(
                     Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
+            val displayColorScheme=if(appliedFinish==SurfaceFinish.FROSTED)
+                // Exact pre-v0.8.9 Frosted Material3 colors and defaults.
+                darkColorScheme(primary=iceBlue,onPrimary=cobaltNavy,
+                    secondary=coreCyan,surface=cobaltNavy,
+                    background=cobaltNavy,onSurface=coreText)
+            else darkColorScheme(
+                primary=when(appliedFinish) {
+                    SurfaceFinish.SOLAR_PULSE -> solarOrange
+                    SurfaceFinish.COBALT_MATRIX -> Color(0xFF75DBFF)
+                    SurfaceFinish.CRYSTAL_AERO -> Color(0xFFB9ECFF)
+                    else -> iceBlue
+                },
+                onPrimary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
+                    Color.White else cobaltNavy,
+                primaryContainer=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
+                    Color(0xFF8A3A0C) else Color(0xFF183E70),
+                onPrimaryContainer=themePalette.foreground,
+                secondary=when(appliedFinish) {
+                    SurfaceFinish.SOLAR_PULSE -> Color(0xFF62D7ED)
+                    SurfaceFinish.COBALT_MATRIX -> solarGold
+                    else -> coreCyan
+                },
+                onSecondary=Color(0xFF07152B),
+                surface=when(appliedFinish) {
+                    SurfaceFinish.COBALT_MATRIX -> Color(0xFF101A29)
+                    SurfaceFinish.SOLAR_PULSE -> Color(0xFF132747)
+                    SurfaceFinish.CRYSTAL_AERO -> Color(0xFF112E51)
+                    else -> cobaltNavy
+                },
+                surfaceVariant=themePalette.top,
+                background=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
+                    Color(0xFF030814) else cobaltNavy,
+                onSurface=themePalette.foreground,
+                onSurfaceVariant=themePalette.muted,
+                outline=themePalette.borderSoft
+            )
             MaterialTheme(
-                colorScheme=darkColorScheme(
-                    primary=when(appliedFinish) {
-                        SurfaceFinish.SOLAR_PULSE -> solarOrange
-                        SurfaceFinish.COBALT_MATRIX -> Color(0xFF75DBFF)
-                        SurfaceFinish.CRYSTAL_AERO -> Color(0xFFB9ECFF)
-                        SurfaceFinish.FROSTED -> iceBlue
-                    },
-                    onPrimary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
-                        Color.White else cobaltNavy,
-                    primaryContainer=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
-                        Color(0xFF8A3A0C) else Color(0xFF183E70),
-                    onPrimaryContainer=themePalette.foreground,
-                    secondary=when(appliedFinish) {
-                        SurfaceFinish.SOLAR_PULSE -> Color(0xFF62D7ED)
-                        SurfaceFinish.COBALT_MATRIX -> solarGold
-                        else -> coreCyan
-                    },
-                    onSecondary=Color(0xFF07152B),
-                    surface=when(appliedFinish) {
-                        SurfaceFinish.COBALT_MATRIX -> Color(0xFF101A29)
-                        SurfaceFinish.SOLAR_PULSE -> Color(0xFF132747)
-                        SurfaceFinish.CRYSTAL_AERO -> Color(0xFF112E51)
-                        else -> cobaltNavy
-                    },
-                    surfaceVariant=themePalette.top,
-                    background=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
-                        Color(0xFF030814) else cobaltNavy,
-                    onSurface=themePalette.foreground,
-                    onSurfaceVariant=themePalette.muted,
-                    outline=themePalette.borderSoft
-                ),
+                colorScheme=displayColorScheme,
                 shapes=if(appliedFinish==SurfaceFinish.FROSTED)
                     androidx.compose.material3.Shapes()
                 else androidx.compose.material3.Shapes(

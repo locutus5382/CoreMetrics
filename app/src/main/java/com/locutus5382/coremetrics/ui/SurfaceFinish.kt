@@ -47,7 +47,7 @@ internal data class SurfacePalette(
 internal val SurfaceFinish.palette:SurfacePalette get()=when(this) {
     SurfaceFinish.FROSTED -> SurfacePalette(
         top=Color(0x2BFFFFFF),bottom=Color(0x33091534),
-        border=Color(0xAAB6E6FC),borderSoft=Color(0x4E8CA5C3),
+        border=Color(0xB293C5FD),borderSoft=Color(0x619EC6ED),
         navSelected=Color(0xE7245367),navIdle=Color(0x42192335),
         accent=Color(0xFF93C5FD),secondary=Color(0xFFFFC700),
         foreground=Color(0xFFECF6FC),muted=Color(0xFFC3D7ED),
