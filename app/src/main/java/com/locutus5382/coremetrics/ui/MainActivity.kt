@@ -950,10 +950,10 @@ class MainActivity : ComponentActivity() {
                                                      s.endedAt-s.startedAt>=15_000L
                                              }.forEach { s ->
                                                 HorizontalDivider(color = Color(0x335F91A7))
-                                                Row(Modifier.horizontalScroll(rememberScrollState()),
+                                                Row(Modifier.fillMaxWidth(),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Column(Modifier.widthIn(min=155.dp)) {
+                                                    Column(Modifier.weight(1f)) {
                                                         Text("Session " + s.id + " · " + s.configuration, color = white,
                                                             fontWeight = FontWeight.Bold)
                                                         Text(time(s.startedAt) + " · " + s.count + " samples · " + s.status,
@@ -969,24 +969,27 @@ class MainActivity : ComponentActivity() {
                                                             color=coreSecondary,
                                                             style=MaterialTheme.typography.labelSmall)
                                                     }
-                                                    OutlinedButton(onClick = {
+                                                    Row(horizontalArrangement=Arrangement.spacedBy(4.dp),
+                                                        verticalAlignment=Alignment.CenterVertically) {
+                                                    OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick = {
                                                         exportId = s.id
                                                         exportFile.launch("CoreMetrics_" + s.id + ".csv")
                                                     }) { Text("CSV") }
-                                                    OutlinedButton(onClick={
+                                                    OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         detailedId=s.id;page="Sessions"
                                                     }){Text("Analyze")}
-                                                    OutlinedButton(onClick={
+                                                    OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         metadataEditorId=if(metadataEditorId==s.id)
                                                             0L else s.id
                                                     },enabled=!status.running && !status.starting){
                                                         Text("Tags")
                                                     }
-                                                    OutlinedButton(onClick={
+                                                    OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         reportAId=s.id;reportBId=0L
                                                         reportFile.launch("CoreMetrics_Report_"+
                                                             s.id+".txt")
                                                     }){Text("Report")}
+                                                    }
                                                 }
                                                 if(metadataEditorId==s.id) {
                                                     SessionMetadataEditor(session=s,
