@@ -384,7 +384,7 @@ class RecordingService:Service() {
                 val current=task
                 if(current==null || current.isCompleted){
                     stopping=false
-                    if(armed)standby()else disarmNow()
+                    if(armed && userWantsHud)standby()else disarmNow()
                 }else current.cancel()
                 refreshTile()
                 return START_NOT_STICKY
@@ -536,7 +536,7 @@ class RecordingService:Service() {
                             withContext(Dispatchers.Main.immediate){
                                 task=null
                                 stopping=false
-                                if(armed && hud.visible() && !disarmAfterStop){
+                                if(armed && userWantsHud && !disarmAfterStop){
                                     standby()
                                 }else{
                                     disarmAfterStop=false
