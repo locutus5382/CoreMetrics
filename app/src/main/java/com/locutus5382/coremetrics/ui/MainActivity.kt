@@ -571,6 +571,9 @@ class MainActivity : ComponentActivity() {
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
+                // Runtime notification dialogs may not pause/resume Activity;
+                // refresh the guide even if no lifecycle event is delivered.
+                permissionRevision++
                 message = if (granted) "Notifications allowed. Tap Start to record."
                     else "Notifications required for explicit recording."
             }
