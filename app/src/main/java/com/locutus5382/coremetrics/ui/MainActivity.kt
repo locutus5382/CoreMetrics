@@ -114,7 +114,8 @@ private data class SegmentExportRequest(
 
 private data class ScreenStatus(
     val running: Boolean = false, val starting: Boolean = false,
-    val standby: Boolean = false,
+    val standby: Boolean = false, val pendingRecovery:Boolean=false,
+    val known:Boolean=true,
     val sessionId: Long = 0, val count: Long = 0,
     val message: String = "Idle",
     val cpu: String? = null, val gpu: String? = null,
@@ -288,11 +289,12 @@ class MainActivity : ComponentActivity() {
     private fun query(): ScreenStatus = try {
         val uri = Uri.parse("content://" + packageName + ".monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
-        if (v == null) ScreenStatus(message = "Recorder status unavailable")
+        if (v == null) ScreenStatus(known=false,message = "Recorder status unavailable")
         else ScreenStatus(
             running = v.getBoolean("running", false),
             starting = v.getBoolean("starting", false),
             standby = v.getBoolean("standby", false),
+            pendingRecovery=v.getBoolean("pendingRecovery",false),
             sessionId = v.getLong("id", 0), count = v.getLong("count", 0),
             message = v.getString("message") ?: "Idle",
             cpu = v.getString("cpu"), gpu = v.getString("gpu"),
@@ -326,7 +328,7 @@ class MainActivity : ComponentActivity() {
             ) else null,
             lastAt = v.getLong("lastSampleAt", 0)
         )
-    } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
+    } catch (e: Exception) { ScreenStatus(known=false,message = "Recorder unreachable: " + e.javaClass.simpleName) }
 
     // The latest status poll already established whether a user-requested
     // recording/HUD exists. Never synchronously query the :monitor provider from
@@ -882,6 +884,18 @@ class MainActivity : ComponentActivity() {
                     message="Allow notifications, then tap Launch standby again."
                     return
                 }
+                if(!status.known || status.pendingRecovery){
+                    runCatching{
+                        startForegroundService(Intent(this@MainActivity,
+                            RecordingService::class.java)
+                            .setAction(RecordingService.RECOVER))
+                    }.fold(onSuccess={
+                        message="Trying to recover a previously started session"
+                    },onFailure={
+                        message="Recovery request failed: "+it.javaClass.simpleName
+                    })
+                    return
+                }
                 // Commit metadata before :monitor process sees the HUD click.
                 prefs.edit().putString("label",label.trim())
                     .putString("configuration",configuration)
@@ -1002,8 +1016,11 @@ class MainActivity : ComponentActivity() {
                             Text(if(status.running) "● REC"
                                 else if(status.starting) "START"
                                 else if(status.standby) "READY"
+                                else if(status.pendingRecovery) "RECOVER"
+                                else if(!status.known) "UNKNOWN"
                                 else "IDLE",color=if(status.running) solarOrange
-                                    else if(status.standby) solarGold else muted,
+                                    else if(status.standby || status.pendingRecovery)
+                                        solarGold else muted,
                                 style=MaterialTheme.typography.labelSmall,
                                 fontWeight=FontWeight.Bold)
                         }
@@ -1056,6 +1073,8 @@ class MainActivity : ComponentActivity() {
                                     Text(if(status.running) "● REC  " + status.count + " samples"
                                         else if(status.starting) "◌ STARTING"
                                         else if(status.standby) "◌ HUD READY · tap REC"
+                                        else if(status.pendingRecovery) "◌ RECOVER EXISTING SESSION"
+                                        else if(!status.known) "◌ RECORDER STATUS UNKNOWN"
                                         else status.message.take(52),
                                         color=if(status.running) coreMint else coreSecondary,
                                         style=MaterialTheme.typography.labelMedium)
@@ -1071,7 +1090,8 @@ class MainActivity : ComponentActivity() {
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
                                         if(!status.running && !status.starting &&
-                                            !status.standby) {
+                                            !status.standby && !status.pendingRecovery &&
+                                            status.known) {
                                             GlassPanel {
                                                 Text("READY FOR YOUR NEXT SESSION",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
@@ -1207,6 +1227,11 @@ class MainActivity : ComponentActivity() {
                                                             if (status.running || status.starting) {
                                                                 startService(svc.setAction(RecordingService.STOP))
                                                                 message = "Stop requested"
+                                                            } else if(!status.known || status.pendingRecovery) {
+                                                                startForegroundService(
+                                                                    svc.setAction(RecordingService.RECOVER))
+                                                                lastObservedMonitorActive=true
+                                                                message="Trying to recover the existing recorder"
                                                             } else {
                                                                 startForegroundService(svc.setAction(RecordingService.START)
                                                                     .putExtra(RecordingService.LABEL,label.trim())
@@ -1220,8 +1245,13 @@ class MainActivity : ComponentActivity() {
                                                         }
                                                     }
                                                 }) {
-                                                    Text(if (status.running || status.starting)
-                                                        "STOP AND SAVE" else "START RECORDING")
+                                                    Text(if(status.running || status.starting)
+                                                        "STOP AND SAVE"
+                                                        else if(status.pendingRecovery)
+                                                            "RECOVER EXISTING SESSION"
+                                                        else if(!status.known)
+                                                            "CHECK RECORDER STATUS"
+                                                        else "START RECORDING")
                                                 }
                                                 OutlinedButton(onClick = { page = "Sessions" }) {
                                                     Text("Sessions")
