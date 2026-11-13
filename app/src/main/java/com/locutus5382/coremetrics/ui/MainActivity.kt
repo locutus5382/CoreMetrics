@@ -558,6 +558,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
             LaunchedEffect(page, status.running) {
+                if(page=="Live" && !status.running)
+                    sessionList=withContext(Dispatchers.IO){database.list(1)}
                 if (page == "Sessions" || page == "Compare") {
                     sessionList = withContext(Dispatchers.IO) { database.list() }
                     if(page=="Compare")
@@ -763,6 +765,34 @@ class MainActivity : ComponentActivity() {
                                             "Standby performs no hardware sampling.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
+                                        if(!status.running && !status.starting &&
+                                            !status.standby) {
+                                            GlassPanel {
+                                                Text("READY FOR YOUR NEXT SESSION",
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                Text("Launch Eden first, then use CM HUD in Quick "+
+                                                    "Settings to show the floating controls. "+
+                                                    "The recorder remains idle until REC.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.bodySmall)
+                                                val previous=sessionList.firstOrNull()
+                                                if(previous!=null) {
+                                                    HorizontalDivider(color=coreBorder)
+                                                    Text("LAST RECORDING · SESSION "+previous.id,
+                                                        color=solarGold,
+                                                        fontWeight=FontWeight.Bold)
+                                                    Text(previous.configuration+" · "+
+                                                        previous.status+" · "+
+                                                        previous.count+" samples",
+                                                        color=coreText)
+                                                    OutlinedButton(onClick={
+                                                        detailedId=previous.id
+                                                        page="Sessions"
+                                                    }){Text("Analyze last session")}
+                                                }else Text("No recordings saved yet.",
+                                                    color=coreSecondary)
+                                            }
+                                        }else {
                                         val powerState=when {
                                             status.powerStatus?.startsWith("DISCHARGING")==true ->
                                                 "Discharging"
@@ -829,6 +859,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         LiveScope(liveTrace)
                                         PerCoreLoadMatrix(status.coreLoads)
+                                        }
                                         GlassPanel {
                                             Text("RECORDING CONTROL  ·  ONE USER-STARTED SESSION",
                                                 color = coreCyan, style = MaterialTheme.typography.titleMedium)
