@@ -793,7 +793,9 @@ internal class RecorderHud(private val context:Context) {
         if(opts.showGpuLoad)items+="GPU "+(s?.gpuPercent?.let{"$it%"}?:"—")
         if(opts.showRam)items+="RAM "+fmt(s?.ramGiB," GiB")
         if(opts.showPower)items+="BAT "+fmt(s?.signedBatteryWatts," W")
-        if(opts.showFps)items+="FPS "+fmt(s?.surfaceFps,"",0)
+        // A dormant preference must never render the misleading "FPS —" token.
+        if(opts.showFps && s?.surfaceFps!=null)
+            items+="FPS "+fmt(s.surfaceFps,"",0)
         view.text=if(items.isEmpty())"REC · telemetry"
             else if(opts.layout=="pro")items.chunked(3).joinToString("\n"){
                 it.joinToString(" · ")
