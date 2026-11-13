@@ -154,10 +154,21 @@ class RecordingService:Service() {
         val removal=hud.hide()
         RecorderJournal.event(this,"HUD_REMOVE",removal+" "+hud.windowIdentity())
         MonitorState.hudState=removal
-        MonitorState.hudVisible=false
-        MonitorState.hudLocked=false
+        MonitorState.hudVisible=hud.visible()
+        MonitorState.hudLocked=hud.isLocked()
         MonitorState.clear("Standby closed")
         RecorderLease.clear(this)
+        if(removal.startsWith("HUD_REMOVE_FAILED")){
+            // Keep the foreground service user-accessible for a later retry.
+            // Do NOT abandon an interactive window with a stale service owner.
+            armed=true
+            MonitorState.standby=true
+            MonitorState.message="HUD cleanup failed; tap Close again"
+            foreground("CoreMetrics · overlay cleanup",
+                "HUD could not be removed; tap Close or revoke overlay permission",true)
+            refreshTile()
+            return
+        }
         refreshTile()
         stopServiceNow()
     }
@@ -269,7 +280,10 @@ class RecordingService:Service() {
                     MonitorState.hudLocked=hud.isLocked()
                     RecorderJournal.event(this,"HUD_LOCK_RECOVERY",restoredLock)
                 }
-                if(status.startsWith("HUD_ADD_FAILED") || status=="HUD_PERMISSION_MISSING"){
+                if(status.startsWith("HUD_ADD_FAILED") ||
+                    status.startsWith("HUD_OWNERSHIP_UNRESOLVED") ||
+                    status.startsWith("HUD_REBIND_FAILED") ||
+                    status=="HUD_PERMISSION_MISSING"){
                     RecorderLease.clear(this)
                     if(task?.isActive!=true)stopServiceNow()
                     return START_NOT_STICKY
@@ -329,6 +343,8 @@ class RecordingService:Service() {
                 }else "HUD_REQUESTED_HIDDEN"
                 syncHudVisibility()
                 if(result.startsWith("HUD_ADD_FAILED") ||
+                    result.startsWith("HUD_OWNERSHIP_UNRESOLVED") ||
+                    result.startsWith("HUD_REBIND_FAILED") ||
                     result=="HUD_PERMISSION_MISSING") {
                     MonitorState.message="HUD cannot be shown: "+result
                 }
@@ -615,6 +631,7 @@ class RecordingService:Service() {
             .getOrElse{"HUD_HIDE_EXCEPTION_"+it.javaClass.simpleName}
         RecorderJournal.event(this,"HUD_REMOVE_ON_DESTROY",
             remove+" "+hud.windowIdentity())
+        hud.unbindCallbacks()
         MonitorState.serviceCreated=false
         MonitorState.standby=false
         MonitorState.hudVisible=false

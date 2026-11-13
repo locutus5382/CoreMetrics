@@ -211,6 +211,13 @@ internal class RecorderHud(private val context:Context) {
         " unlock="+(unlockWindow?.let{System.identityHashCode(it).toString()}?:"none")+
         " unlockAttached="+(unlockWindow?.isAttachedToWindow==true)
 
+    /** Service teardown removes all callbacks even if WindowManager rejects
+     * immediate detach. A future Service can safely rebind this same owner. */
+    fun unbindCallbacks() {
+        onRecord=null;onLock=null;onUnlock=null;onClose=null
+        onOptionsChanged={}
+    }
+
     private fun removeTracked(view:View):Boolean = try {
         wm.removeViewImmediate(view)
         true
@@ -271,8 +278,16 @@ internal class RecorderHud(private val context:Context) {
             // do not strand the user behind an untouchable main HUD.
             val (chip,chipParams)=try { makeUnlockHandle() }
                 catch(e:Exception){return "HUD_UNLOCK_HANDLE_CREATE_FAILED_"+e.javaClass.simpleName}
+            if(unlockWindow!=null) {
+                val existing=unlockWindow!!
+                if(!removeTracked(existing))
+                    return "HUD_LOCK_REFUSED_UNRESOLVED_UNLOCK_CHIP"
+                unlockWindow=null;unlockParams=null
+            }
             try { wm.addView(chip,chipParams) }
             catch(e:Exception){return "HUD_UNLOCK_HANDLE_ADD_FAILED_"+e.javaClass.simpleName}
+            // Track before any later operation can throw.
+            unlockWindow=chip;unlockParams=chipParams
             val oldFlags=p.flags
             val oldAlpha=p.alpha
             val drawerWasOpen=drawerOpen
@@ -294,12 +309,13 @@ internal class RecorderHud(private val context:Context) {
                 // WindowManager update or the appearance update fails.
                 locked=false
                 drawerOpen=drawerWasOpen
-                unlockWindow=null
-                unlockParams=null
+                if(removeTracked(chip)) {
+                    unlockWindow=null
+                    unlockParams=null
+                }
                 p.flags=oldFlags
                 p.alpha=oldAlpha
                 runCatching{wm.updateViewLayout(frame,p)}
-                runCatching{wm.removeViewImmediate(chip)}
                 runCatching{applyAppearance()}
                 return "HUD_LOCK_FAILED_"+e.javaClass.simpleName
             }
@@ -312,10 +328,11 @@ internal class RecorderHud(private val context:Context) {
         return try {
             wm.updateViewLayout(frame,p)
             locked=false
-            unlockWindow?.let { runCatching {wm.removeViewImmediate(it)} }
-            unlockWindow=null;unlockParams=null
+            val chipGone=unlockWindow?.let{removeTracked(it)}?:true
+            if(chipGone){unlockWindow=null;unlockParams=null}
             applyAppearance()
-            "HUD_UNLOCKED_TOUCH_CONTROLS_RESTORED"
+            if(chipGone)"HUD_UNLOCKED_TOUCH_CONTROLS_RESTORED"
+            else "HUD_UNLOCK_CHIP_REMOVE_FAILED_RETAINED"
         }catch(e:Exception){
             p.flags=oldFlags;p.alpha=oldAlpha
             runCatching{wm.updateViewLayout(frame,p)}
@@ -886,8 +903,7 @@ internal class RecorderHud(private val context:Context) {
             recording=false;locked=false;collapsed=false
         }
         if(rootRemoved && chipRemoved){
-            onRecord=null;onLock=null;onUnlock=null;onClose=null
-            onOptionsChanged={}
+            unbindCallbacks()
             return if(frame==null && chip==null)
                 "HUD_NOT_ATTACHED" else "HUD_REMOVED"
         }
