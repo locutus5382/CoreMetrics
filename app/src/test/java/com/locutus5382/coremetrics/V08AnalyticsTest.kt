@@ -46,6 +46,30 @@ class V08AnalyticsTest {
         assertFalse(unknown.conflict)
     }
 
+    @Test fun liveProfileWarningsShareRecordedRules() {
+        val stock="policy3 max 2.80 GHz · policy7 max 3.19 GHz"
+        val medium="policy3 max 2.05 GHz · policy7 max 2.09 GHz"
+        val large="policy3 max 1.79 GHz · policy7 max 1.84 GHz"
+        assertNull(V08Analytics.liveProfileWarning("Stock",stock))
+        assertNotNull(V08Analytics.liveProfileWarning("Stock",medium))
+        assertNotNull(V08Analytics.liveProfileWarning("Stock",large))
+        val warning=V08Analytics.liveProfileWarning("Underclocking",stock)
+        assertTrue(warning!!.contains("GPU-only"))
+        assertNull(V08Analytics.liveProfileWarning("Underclocking",medium))
+        assertNull(V08Analytics.liveProfileWarning("Custom",large))
+        assertNull(V08Analytics.liveProfileWarning("Stock",null))
+    }
+
+    @Test fun warmupTrimKeepsAbsoluteTimestampsAndUnfilteredInput() {
+        val rows=listOf(p(30_000),p(0),p(59_999),p(29_999),p(60_000))
+        val trimmed=V08Analytics.afterWarmUp(rows,30)
+        assertEquals(listOf(30_000L,59_999L,60_000L),
+            trimmed.map{it.timeMs})
+        assertEquals(5,rows.size)
+        assertTrue(V08Analytics.afterWarmUp(listOf(p(0),p(29_999)),30).isEmpty())
+        assertEquals(rows,V08Analytics.afterWarmUp(rows,0))
+    }
+
     @Test fun unknownAndMultipleCeilingsRetainPhases() {
         val stock="policy3 max 2.80 GHz · policy7 max 3.19 GHz"
         val large="policy3 max 1.79 GHz · policy7 max 1.84 GHz"
