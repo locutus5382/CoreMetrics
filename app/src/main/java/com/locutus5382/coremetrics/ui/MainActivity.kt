@@ -9,6 +9,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.app.StatusBarManager
+import android.service.quicksettings.TileService
 import android.graphics.drawable.Icon
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -233,14 +234,8 @@ class MainActivity : ComponentActivity() {
             val statusBar = getSystemService(StatusBarManager::class.java)
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
-                when {
-                    packageName.endsWith(".v093themes") -> "CoreMetrics v0.9.3 Themes • Record"
-                    packageName.endsWith(".v093base") -> "CoreMetrics v0.9.3 Frosted • Record"
-                    packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
-                    packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
-                    else -> "CoreMetrics • Record"
-                },
-                Icon.createWithResource(this, com.locutus5382.coremetrics.R.drawable.ic_coremetrics_notification),
+                "CoreMetrics REC",
+                Icon.createWithResource(this, com.locutus5382.coremetrics.R.drawable.ic_qs_cm_rec_off),
                 mainExecutor
             ) { result ->
                 onResult(when (result) {
@@ -267,11 +262,9 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v093themes"))"CoreMetrics v0.9.3 Themes · HUD"
-                else if(packageName.endsWith(".v093base"))"CoreMetrics v0.9.3 Frosted · HUD"
-                else "CoreMetrics · HUD",
+                "CoreMetrics HUD",
                 Icon.createWithResource(this,
-                    com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
+                    com.locutus5382.coremetrics.R.drawable.ic_qs_cm_off),
                 mainExecutor
             ){ result->
                 onResult(when(result) {
@@ -391,17 +384,12 @@ class MainActivity : ComponentActivity() {
         // SQLite helper survives UI recreation; no close-while-exporting race.
         val database = UiSessionStoreOwner.get(applicationContext)
         setContent {
-            // The normal debug APK and Themes flavor are unified visually.
-            // Only the deliberately fixed Analytics comparison flavor omits
-            // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v093base")
+            // One app, all four finishes. Existing stored preferences stay valid.
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
-                    if(supportsThemeChoice)
-                        prefs.getString("ui_surface_finish","frosted")
-                    else "frosted"))
+                    prefs.getString("ui_surface_finish","frosted")))
             }
-            val appliedFinish=if(supportsThemeChoice)finish else SurfaceFinish.FROSTED
+            val appliedFinish=finish
             var immersive by rememberSaveable {
                 mutableStateOf(prefs.getBoolean("immersive_ui",false))
             }
@@ -418,7 +406,10 @@ class MainActivity : ComponentActivity() {
                     window.insetsController?.show(WindowInsets.Type.systemBars())
                 }
             }
-            var page by rememberSaveable { mutableStateOf("Live") }
+            var page by rememberSaveable {
+                mutableStateOf(if(intent?.action==TileService.ACTION_QS_TILE_PREFERENCES)
+                    "HUD" else "Live")
+            }
             var compareCursor by rememberSaveable { mutableFloatStateOf(.5f) }
             val contentScroll=rememberScrollState()
             val scope=rememberCoroutineScope()
@@ -834,8 +825,15 @@ class MainActivity : ComponentActivity() {
                         lastObservedMonitorActive=
                             next.running||next.starting||next.standby
                         overlayAllowed=Settings.canDrawOverlays(this@MainActivity)
-                        // Idle screens do not need game-rate status polling.
-                        delay(if(lastObservedMonitorActive)1300L else 4500L)
+                        // Only the Live/HUD screens need responsive telemetry.
+                        // Sessions, Compare and Settings avoid unnecessary Binder
+                        // traffic and Compose recompositions during inspection.
+                        val nextPollMs=when {
+                            !lastObservedMonitorActive->8_000L
+                            page=="Live" || page=="HUD"->1_800L
+                            else->4_500L
+                        }
+                        delay(nextPollMs)
                     }
                 }
             }
@@ -1049,7 +1047,7 @@ class MainActivity : ComponentActivity() {
                                 horizontalArrangement=Arrangement.spacedBy(10.dp)
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(if(!supportsThemeChoice || appliedFinish==SurfaceFinish.FROSTED)
+                                    Text(if(appliedFinish==SurfaceFinish.FROSTED)
                                         "COREMETRICS  /  COBALT & SOLAR GLASS"
                                     else "COREMETRICS  /  "+appliedFinish.displayName.uppercase(),
                                         color=iceBlue,
@@ -1058,17 +1056,11 @@ class MainActivity : ComponentActivity() {
                                         style=MaterialTheme.typography.titleLarge,
                                         fontWeight=FontWeight.Bold)
                                 }
-                                if(supportsThemeChoice) {
-                                    CMActionPill("STYLE ↻") {
-                                        val choices=SurfaceFinish.values()
-                                        val next=choices[(finish.ordinal+1)%choices.size]
-                                        finish=next
-                                        prefs.edit().putString("ui_surface_finish",next.key)
-                                            .apply()
-                                    }
-                                }else {
-                                    Text("FROSTED · FIXED",color=coreSecondary,
-                                        style=MaterialTheme.typography.labelSmall)
+                                CMActionPill("STYLE ↻") {
+                                    val choices=SurfaceFinish.values()
+                                    val next=choices[(finish.ordinal+1)%choices.size]
+                                    finish=next
+                                    prefs.edit().putString("ui_surface_finish",next.key).apply()
                                 }
                                 if(page=="Live") {
                                     CMActionPill(if(status.standby||status.running)"HUD"
@@ -1908,38 +1900,22 @@ class MainActivity : ComponentActivity() {
                                                  "Use controller mode, not mouse emulation.",
                                                  color=coreSecondary,
                                                  style=MaterialTheme.typography.bodySmall)
-                                            if(supportsThemeChoice) {
-                                                ThemePicker(
-                                                    selected=appliedFinish,
-                                                    onSelect={ option ->
-                                                        finish=option
-                                                        prefs.edit().putString(
-                                                            "ui_surface_finish",option.key).apply()
-                                                    }
-                                                )
-                                                Text("Visual treatment is static. Frosted "+
-                                                    "retains the original appearance. "+
-                                                    "True Glass uses layered transparency "+
-                                                    "(not a GPU blur shader). Modern Colorful "+
-                                                    "emphasizes bold controls; Technical Cockpit "+
-                                                    "uses compact instrument geometry.",
-                                                    color=coreSecondary,
-                                                    style=MaterialTheme.typography.labelSmall)
-                                                Text("Press animation runs only on interaction. "+
-                                                    "No telemetry, database or in-game HUD "+
-                                                    "changes when switching themes.",
-                                                    color=coreSecondary,
-                                                    style=MaterialTheme.typography.labelSmall)
-                                                HorizontalDivider(color=coreBorder)
-                                            }else {
-                                                Text("APPEARANCE · FROSTED GLASS (FIXED)",
-                                                    color=iceBlue,fontWeight=FontWeight.Bold)
-                                                Text("This Frosted test APK has one fixed finish. "+
-                                                    "Use the separate CoreMetrics Themes APK "+
-                                                    "to select True Glass, Modern Colorful or "+
-                                                    "Technical Cockpit.",
-                                                    color=coreSecondary)
-                                            }
+                                            ThemePicker(
+                                                selected=appliedFinish,
+                                                onSelect={ option ->
+                                                    finish=option
+                                                    prefs.edit().putString(
+                                                        "ui_surface_finish",option.key).apply()
+                                                }
+                                            )
+                                            Text("Frosted is the default. True Glass uses "+
+                                                "layered transparency (no GPU blur shader). "+
+                                                "Modern Colorful and Technical Cockpit are "+
+                                                "optional. Themes do not change telemetry "+
+                                                "or background resource use.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.labelSmall)
+                                            HorizontalDivider(color=coreBorder)
                                             Row(verticalAlignment=Alignment.CenterVertically,
                                                 horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                                 Column(Modifier.weight(1f)) {

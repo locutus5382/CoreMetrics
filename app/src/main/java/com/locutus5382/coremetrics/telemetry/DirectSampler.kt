@@ -45,14 +45,23 @@ class DirectSampler(private val app: Application) {
             ?.bufferedReader()?.use { it.readText().trim().take(16384) }
     } catch (_: Exception) { null }
 
-    private fun thermal(cpu: Boolean): Double? {
-        val items = thermals.filter { sensor ->
-            if (cpu) sensor.type.startsWith("cpu-") || sensor.type.startsWith("cpuss-")
-            else sensor.type.startsWith("gpu-") || sensor.type.startsWith("gpuss-")
+    // Classify discovered thermal sensors only once, instead of filtering
+    // and allocating fresh lists on every sampling interval.
+    private val cpuThermals by lazy {
+        thermals.filter { it.type.startsWith("cpu-") || it.type.startsWith("cpuss-") }
+    }
+    private val gpuThermals by lazy {
+        thermals.filter { it.type.startsWith("gpu-") || it.type.startsWith("gpuss-") }
+    }
+    private fun thermal(cpu:Boolean):Double? {
+        val items=if(cpu)cpuThermals else gpuThermals
+        var highest:Double?=null
+        for(sensor in items) {
+            val value=read(sensor.path)?.toDoubleOrNull()?.div(1000.0)
+                ?.takeIf { it in -20.0..160.0 } ?:continue
+            if(highest==null || value>highest)highest=value
         }
-        return items.mapNotNull { sensor ->
-            read(sensor.path)?.toDoubleOrNull()?.div(1000.0)?.takeIf { it in -20.0..160.0 }
-        }.maxOrNull()
+        return highest
     }
 
     private fun battery(intent: Intent?): Triple<Double?,Int?,Boolean> {
