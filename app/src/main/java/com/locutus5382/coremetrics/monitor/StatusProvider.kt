@@ -17,7 +17,15 @@ class StatusProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         if (method != "status") return null
         val s: Snapshot? = MonitorState.latest
+        // A status-provider query may start the :monitor process without
+        // starting the Service. A fresh lease is pending recovery, NOT idle.
+        val lease=if(!MonitorState.serviceCreated)
+            context?.let{RecorderLease.recover(it)} else null
         return Bundle().apply {
+            putBoolean("serviceAlive",MonitorState.serviceCreated)
+            putBoolean("pendingRecovery",lease!=null)
+            putBoolean("recoveringRecording",lease?.recording==true)
+            putLong("recoverySessionId",lease?.id?:0L)
             putBoolean("running", MonitorState.running)
             putBoolean("starting", MonitorState.starting)
             putBoolean("standby", MonitorState.standby)

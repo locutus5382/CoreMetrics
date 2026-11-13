@@ -10,6 +10,8 @@ import com.locutus5382.coremetrics.analysis.ScorecardModel
 import com.locutus5382.coremetrics.ui.MainActivity
 import com.locutus5382.coremetrics.ui.ScorecardPngRenderer
 import com.locutus5382.coremetrics.ui.SurfaceFinish
+import com.locutus5382.coremetrics.monitor.MonitorHudOwner
+import com.locutus5382.coremetrics.data.UiSessionStoreOwner
 import java.io.ByteArrayOutputStream
 import org.junit.Assert.*
 import org.junit.Test
@@ -70,6 +72,20 @@ class ScorecardRuntimeTest {
         }
     }
 
+    @Test fun activityRecreationKeepsOneReadSideSqliteHelper() {
+        val ctx=ApplicationProvider.getApplicationContext<android.content.Context>()
+        val first=UiSessionStoreOwner.get(ctx)
+        val second=UiSessionStoreOwner.get(ctx)
+        assertSame(first,second)
+    }
+    @Test fun serviceRecreationObtainsSameProcessWindowOwner() {
+        val ctx=ApplicationProvider.getApplicationContext<android.content.Context>()
+        val first=MonitorHudOwner.get(ctx)
+        val second=MonitorHudOwner.get(ctx)
+        assertSame(first,second)
+        // Do not require overlay permission or create any WindowManager view.
+        assertFalse(first.attached())
+    }
     @Test fun documentContractCreatesUserSelectedPngNotArbitraryFile() {
         val intent=ActivityResultContracts.CreateDocument("image/png")
             .createIntent(ApplicationProvider.getApplicationContext(),"CoreMetrics_score.png")

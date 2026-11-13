@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 class RecordingService:Service() {
     companion object {
         const val START="com.locutus5382.coremetrics.START"
+        const val RECOVER="com.locutus5382.coremetrics.RECOVER_LEASE"
         const val STOP="com.locutus5382.coremetrics.STOP"
         const val ARM="com.locutus5382.coremetrics.ARM_HUD"
         const val DISARM="com.locutus5382.coremetrics.DISARM_HUD"
@@ -80,9 +81,13 @@ class RecordingService:Service() {
     override fun onCreate() {
         super.onCreate()
         db=SessionStore(applicationContext)
-        hud=RecorderHud(applicationContext)
+        hud=MonitorHudOwner.get(applicationContext)
         settings=HudOptions.from(this)
-        RecorderJournal.event(this,"SERVICE_CREATED","pid="+android.os.Process.myPid())
+        MonitorState.serviceCreated=true
+        RecorderJournal.event(this,"SERVICE_CREATED",
+            "pkg="+packageName+" pid="+android.os.Process.myPid()+
+                " instance="+System.identityHashCode(this)+
+                " "+hud.windowIdentity())
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL,"CoreMetrics recording / HUD standby",
                 NotificationManager.IMPORTANCE_LOW))
@@ -146,11 +151,24 @@ class RecordingService:Service() {
     private fun disarmNow(){
         armed=false
         MonitorState.standby=false
-        MonitorState.hudState=hud.hide()
-        MonitorState.hudVisible=false
-        MonitorState.hudLocked=false
+        val removal=hud.hide()
+        RecorderJournal.event(this,"HUD_REMOVE",removal+" "+hud.windowIdentity())
+        MonitorState.hudState=removal
+        MonitorState.hudVisible=hud.visible()
+        MonitorState.hudLocked=hud.isLocked()
         MonitorState.clear("Standby closed")
         RecorderLease.clear(this)
+        if(removal.startsWith("HUD_REMOVE_FAILED")){
+            // Keep the foreground service user-accessible for a later retry.
+            // Do NOT abandon an interactive window with a stale service owner.
+            armed=true
+            MonitorState.standby=true
+            MonitorState.message="HUD cleanup failed; tap Close again"
+            foreground("CoreMetrics · overlay cleanup",
+                "HUD could not be removed; tap Close or revoke overlay permission",true)
+            refreshTile()
+            return
+        }
         refreshTile()
         stopServiceNow()
     }
@@ -192,7 +210,8 @@ class RecordingService:Service() {
         MonitorState.hudState=result
         MonitorState.hudLocked=hud.isLocked()
         syncHudVisibility()
-        RecorderJournal.event(this,"HUD_ATTACH",result)
+        RecorderJournal.event(this,"HUD_ATTACH",
+            "pkg="+packageName+" "+result+" "+hud.windowIdentity())
         return result
     }
 
@@ -200,7 +219,14 @@ class RecordingService:Service() {
         // START_STICKY is only a *request* to Android; the OEM can still kill
         // this process. A null restart intent requires a fresh, explicitly
         // user-created lease and (for REC) the SAME active SQLite session ID.
-        val command=if(intent!=null)intent else {
+        // Quick Settings can explicitly request the SAME persisted session
+        // after an LMK kill. It must never allocate a fresh session instead.
+        if(intent?.action==RECOVER &&
+            (task?.isActive==true || MonitorState.starting || armed)) {
+            RecorderJournal.event(this,"RECOVERY_IGNORED","service already active")
+            return continuation(RECOVER)
+        }
+        val command=if(intent!=null && intent.action!=RECOVER)intent else {
             val old=RecorderLease.recover(this)
             if(old==null || (old.recording && !db.canResume(old.id)) ||
                 !RecorderLease.markRecovery(this)) {
@@ -224,6 +250,30 @@ class RecordingService:Service() {
         RecorderJournal.event(this,"SERVICE_COMMAND",command.action?:"null")
         when(command.action){
             ARM -> {
+                // Idempotent while REC is active. A stale app or QS ARM must
+                // never clear/replace a recording lease, even if HUD attach
+                // fails. Route to HUD_SHOW, which only changes overlay state.
+                if(task?.isActive==true || MonitorState.running ||
+                    MonitorState.starting) {
+                    RecorderJournal.event(this,"ARM_DURING_REC",
+                        "redirected to HUD_SHOW")
+                    return onStartCommand(
+                        Intent(this,RecordingService::class.java)
+                            .setAction(HUD_SHOW),flags,startId)
+                }
+                // A stale in-app "Launch standby" tap after LMK must not
+                // overwrite an unfinished recording lease with a new standby
+                // lease. Resume the same user-started session instead.
+                if(task?.isActive!=true && !MonitorState.starting){
+                    val previous=RecorderLease.recover(this)
+                    if(previous?.recording==true && db.canResume(previous.id)){
+                        RecorderJournal.event(this,"ARM_REDIRECTED_TO_RECOVERY",
+                            "existing id="+previous.id)
+                        return onStartCommand(
+                            Intent(this,RecordingService::class.java)
+                                .setAction(RECOVER),flags,startId)
+                    }
+                }
                 if(!notificationsAllowed() || !hud.permissionGranted()){
                     MonitorState.message=if(!hud.permissionGranted())
                         "Allow Display over other apps for standby HUD"
@@ -254,7 +304,10 @@ class RecordingService:Service() {
                     MonitorState.hudLocked=hud.isLocked()
                     RecorderJournal.event(this,"HUD_LOCK_RECOVERY",restoredLock)
                 }
-                if(status.startsWith("HUD_ADD_FAILED") || status=="HUD_PERMISSION_MISSING"){
+                if(status.startsWith("HUD_ADD_FAILED") ||
+                    status.startsWith("HUD_OWNERSHIP_UNRESOLVED") ||
+                    status.startsWith("HUD_REBIND_FAILED") ||
+                    status=="HUD_PERMISSION_MISSING"){
                     RecorderLease.clear(this)
                     if(task?.isActive!=true)stopServiceNow()
                     return START_NOT_STICKY
@@ -297,23 +350,25 @@ class RecordingService:Service() {
                 }
                 userWantsHud=command.action==HUD_SHOW
                 val result=if(userWantsHud) {
-                    if(hud.attached())"HUD_ALREADY_ATTACHED"
-                    else {
-                        val attached=attachHud()
-                        if(hud.attached()) {
-                            armed=true
-                            // A QS REC session may have started without a HUD.
-                            hud.mode(MonitorState.running,MonitorState.startedAt)
-                            MonitorState.latest?.let{
-                                if(MonitorState.running)
-                                    hud.update(it,MonitorState.sampleCount)
-                            }
+                    // Even an already-attached root might belong to a previous
+                    // Service generation. Always rebind callbacks through the
+                    // process-scoped owner; simply returning ATTACHED would
+                    // leave old/unbound REC and close buttons unresponsive.
+                    val attached=attachHud()
+                    if(hud.attached()) {
+                        armed=true
+                        hud.mode(MonitorState.running,MonitorState.startedAt)
+                        MonitorState.latest?.let{
+                            if(MonitorState.running)
+                                hud.update(it,MonitorState.sampleCount)
                         }
-                        attached
                     }
+                    attached
                 }else "HUD_REQUESTED_HIDDEN"
                 syncHudVisibility()
                 if(result.startsWith("HUD_ADD_FAILED") ||
+                    result.startsWith("HUD_OWNERSHIP_UNRESOLVED") ||
+                    result.startsWith("HUD_REBIND_FAILED") ||
                     result=="HUD_PERMISSION_MISSING") {
                     MonitorState.message="HUD cannot be shown: "+result
                 }
@@ -397,6 +452,20 @@ class RecordingService:Service() {
                 if(task?.isActive==true || MonitorState.starting || stopping){
                     RecorderJournal.event(this,"START_IGNORED","already active")
                     return continuation(command.action)
+                }
+                // After LMK a stale QS query may say idle while a fresh
+                // user-started session lease remains. Never replace that
+                // session with a second recording. Use validated recovery.
+                if(!command.getBooleanExtra(RESTORED,false)){
+                    val previous=RecorderLease.recover(this)
+                    if(previous!=null && previous.recording &&
+                        db.canResume(previous.id)){
+                        RecorderJournal.event(this,"START_REDIRECTED_TO_RECOVERY",
+                            "existing id="+previous.id)
+                        return onStartCommand(
+                            Intent(this,RecordingService::class.java)
+                                .setAction(RECOVER),flags,startId)
+                    }
                 }
                 if(!notificationsAllowed()){
                     MonitorState.message="Notifications permission required"
@@ -596,7 +665,14 @@ class RecordingService:Service() {
             " active="+(task?.isActive==true))
         destroying=true
         stopping=true
-        runCatching{hud.hide()}
+        val remove=runCatching{hud.hide()}
+            .getOrElse{"HUD_HIDE_EXCEPTION_"+it.javaClass.simpleName}
+        RecorderJournal.event(this,"HUD_REMOVE_ON_DESTROY",
+            remove+" "+hud.windowIdentity())
+        hud.unbindCallbacks()
+        MonitorState.serviceCreated=false
+        MonitorState.standby=false
+        MonitorState.hudVisible=false
         task?.cancel()
         scope.cancel()
         val active=task

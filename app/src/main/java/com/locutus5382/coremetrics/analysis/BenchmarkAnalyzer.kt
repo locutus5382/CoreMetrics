@@ -205,8 +205,17 @@ object BenchmarkAnalyzer {
         if(labels.isEmpty())reasons+="Observed CPU frequency limits unavailable"
         else reasons+="Observed ceilings are not authenticated tuner identity"
         if(pts.none{it.sfFps!=null})reasons+="Game FPS is unavailable; cannot assess gaming smoothness"
+        // A five-second, gap-free sample set can be 100% intact yet completely
+        // uninformative for thermal/driver A/B comparisons. Do not badge it
+        // as a medium-quality comparative result merely for even cadence.
+        val tooShort=elapsed<60.0 || pts.size<20
+        if(tooShort){
+            score=minOf(score,49)
+            reasons+="Insufficient independent duration/sample count for comparison"
+        }
         score=score.coerceIn(0,100)
         val level=when {
+            tooShort -> "INSUFFICIENT FOR COMPARISON"
             score>=85 -> "GOOD INPUT (observational only)"
             score>=60 -> "LIMITED COMPARISON"
             else -> "INSUFFICIENT / CAUTION"

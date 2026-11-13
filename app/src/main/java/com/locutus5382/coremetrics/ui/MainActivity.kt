@@ -68,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
@@ -75,10 +76,12 @@ import com.locutus5382.coremetrics.analysis.SegmentAnalysis
 import com.locutus5382.coremetrics.analysis.CompareStudioAnalysis
 import com.locutus5382.coremetrics.analysis.ScorecardModel
 import com.locutus5382.coremetrics.analysis.ScorecardExportRequest
+import com.locutus5382.coremetrics.analysis.DocumentWindowRequest
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
 import com.locutus5382.coremetrics.data.SessionStore
+import com.locutus5382.coremetrics.data.UiSessionStoreOwner
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.RecorderJournal
@@ -112,7 +115,9 @@ private data class SegmentExportRequest(
 
 private data class ScreenStatus(
     val running: Boolean = false, val starting: Boolean = false,
-    val standby: Boolean = false,
+    val standby: Boolean = false, val pendingRecovery:Boolean=false,
+    // Initial/cold-start UI must not present IDLE before the first IPC read.
+    val known:Boolean=false,
     val sessionId: Long = 0, val count: Long = 0,
     val message: String = "Idle",
     val cpu: String? = null, val gpu: String? = null,
@@ -228,8 +233,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v092themes") -> "CoreMetrics v0.9.2 Themes • Record"
-                    packageName.endsWith(".v092base") -> "CoreMetrics v0.9.2 Frosted • Record"
+                    packageName.endsWith(".v093themes") -> "CoreMetrics v0.9.3 Themes • Record"
+                    packageName.endsWith(".v093base") -> "CoreMetrics v0.9.3 Frosted • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -261,8 +266,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v092themes"))"CoreMetrics v0.9.2 Themes · HUD"
-                else if(packageName.endsWith(".v092base"))"CoreMetrics v0.9.2 Frosted · HUD"
+                if(packageName.endsWith(".v093themes"))"CoreMetrics v0.9.3 Themes · HUD"
+                else if(packageName.endsWith(".v093base"))"CoreMetrics v0.9.3 Frosted · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -286,11 +291,13 @@ class MainActivity : ComponentActivity() {
     private fun query(): ScreenStatus = try {
         val uri = Uri.parse("content://" + packageName + ".monitor.status")
         val v = contentResolver.call(uri, "status", null, null)
-        if (v == null) ScreenStatus(message = "Recorder status unavailable")
+        if (v == null) ScreenStatus(known=false,message = "Recorder status unavailable")
         else ScreenStatus(
+            known=true,
             running = v.getBoolean("running", false),
             starting = v.getBoolean("starting", false),
             standby = v.getBoolean("standby", false),
+            pendingRecovery=v.getBoolean("pendingRecovery",false),
             sessionId = v.getLong("id", 0), count = v.getLong("count", 0),
             message = v.getString("message") ?: "Idle",
             cpu = v.getString("cpu"), gpu = v.getString("gpu"),
@@ -324,14 +331,13 @@ class MainActivity : ComponentActivity() {
             ) else null,
             lastAt = v.getLong("lastSampleAt", 0)
         )
-    } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
+    } catch (e: Exception) { ScreenStatus(known=false,message = "Recorder unreachable: " + e.javaClass.simpleName) }
 
     // The latest status poll already established whether a user-requested
     // recording/HUD exists. Never synchronously query the :monitor provider from
     // Activity.onStart/onStop: the binder query could block the UI thread and
     // can launch an idle monitor process just to send a visibility signal.
     private var lastObservedMonitorActive=false
-    private var activityStore:SessionStore?=null
     private fun notifyAppVisible(visible:Boolean) {
         if(!lastObservedMonitorActive)return
         runCatching {
@@ -344,7 +350,19 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         appVisible=true
-        notifyAppVisible(true)
+        if(lastObservedMonitorActive)notifyAppVisible(true)
+        else lifecycleScope.launch {
+            // Reconcile on a worker, never synchronously through a Binder
+            // provider in onStart(). Cold Activity recreation must promptly
+            // pause its own HUD rather than cover the app for 4.5 seconds.
+            val state=withContext(Dispatchers.IO){query()}
+            if(appVisible && lifecycle.currentState.isAtLeast(
+                    Lifecycle.State.STARTED) &&
+                (state.running || state.starting || state.standby)){
+                lastObservedMonitorActive=true
+                notifyAppVisible(true)
+            }
+        }
     }
     override fun onStop() {
         appVisible=false
@@ -352,24 +370,16 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        // The Activity owns a read-side helper, separate from the recorder's
-        // SQLite WAL connection in :monitor. Do not leak it across rotations.
-        runCatching{activityStore?.close()}
-        activityStore=null
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
-        val database = SessionStore(applicationContext)
-        activityStore=database
+        // SQLite helper survives UI recreation; no close-while-exporting race.
+        val database = UiSessionStoreOwner.get(applicationContext)
         setContent {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v092base")
+            val supportsThemeChoice=!packageName.endsWith(".v093base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -503,13 +513,15 @@ class MainActivity : ComponentActivity() {
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
-            var exportId by remember { mutableLongStateOf(0L) }
-            var reportAId by remember { mutableLongStateOf(0L) }
-            var reportBId by remember { mutableLongStateOf(0L) }
-            var reportSkipWarmup by remember { mutableStateOf(false) }
-            var segmentTextRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
-            var segmentCsvRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
-            var abWindowExport by remember { mutableStateOf(null as AbWindowExportRequest?) }
+            // Every SAF request survives Activity recreation and is consumed
+            // exactly once on document selection OR cancellation.
+            var exportId by rememberSaveable { mutableLongStateOf(0L) }
+            var reportAId by rememberSaveable { mutableLongStateOf(0L) }
+            var reportBId by rememberSaveable { mutableLongStateOf(0L) }
+            var reportSkipWarmup by rememberSaveable { mutableStateOf(false) }
+            var segmentTextRequest by rememberSaveable { mutableStateOf(null as String?) }
+            var segmentCsvRequest by rememberSaveable { mutableStateOf(null as String?) }
+            var abWindowExport by rememberSaveable { mutableStateOf(null as String?) }
             // Persist pending SAF intent across configuration/Activity recreation.
             var pngRequest by rememberSaveable { mutableStateOf(null as String?) }
             val notifyPermission = rememberLauncherForActivityResult(
@@ -521,11 +533,13 @@ class MainActivity : ComponentActivity() {
             val exportFile = rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/csv")
             ) { uri ->
-                if (uri != null && exportId != 0L) scope.launch {
+                val id=exportId
+                exportId=0L
+                if (uri != null && id != 0L) scope.launch {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
-                                database.exportCsv(exportId, it)
+                                database.exportCsv(id, it)
                             } ?: error("Document cannot be opened")
                         }
                     }
@@ -536,24 +550,28 @@ class MainActivity : ComponentActivity() {
             val reportFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/plain")
             ) { uri ->
-                if(uri!=null && reportAId!=0L)scope.launch {
+                val idA=reportAId
+                val idB=reportBId
+                val warmup=reportSkipWarmup
+                reportAId=0L;reportBId=0L;reportSkipWarmup=false
+                if(uri!=null && idA!=0L)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
                             val list=database.list(200)
-                            val a=list.firstOrNull{it.id==reportAId}
+                            val a=list.firstOrNull{it.id==idA}
                                 ?:error("Report session A is missing")
                             val reportPoints=database.points(a.id)
-                            val analyzedA=BenchmarkAnalyzer.analyze(a,reportPoints,if(reportSkipWarmup)30 else 0)
-                            val content=if(reportBId!=0L && reportBId!=a.id) {
-                                val b=list.firstOrNull{it.id==reportBId}
+                            val analyzedA=BenchmarkAnalyzer.analyze(a,reportPoints,if(warmup)30 else 0)
+                            val content=if(idB!=0L && idB!=a.id) {
+                                val b=list.firstOrNull{it.id==idB}
                                     ?:error("Report session B is missing")
                                 BenchmarkAnalyzer.comparison(analyzedA,
-                                    BenchmarkAnalyzer.analyze(b,database.points(b.id),if(reportSkipWarmup)30 else 0))
+                                    BenchmarkAnalyzer.analyze(b,database.points(b.id),if(warmup)30 else 0))
                             } else BenchmarkAnalyzer.text(analyzedA) +
                                 SessionDiagnosticsAnalyzer.text(
                                     SessionDiagnosticsAnalyzer.analyze(
                                         V08Analytics.afterWarmUp(reportPoints,
-                                            if(reportSkipWarmup)30 else 0),analyzedA),
+                                            if(warmup)30 else 0),analyzedA),
                                     reportPoints.firstOrNull()?.timeMs)
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
                                 it.write(content)
@@ -567,7 +585,8 @@ class MainActivity : ComponentActivity() {
             val segmentTextFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/plain")
             ) { uri ->
-                val request=segmentTextRequest
+                val request=DocumentWindowRequest.parseSegment(segmentTextRequest)
+                segmentTextRequest=null
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
@@ -594,7 +613,8 @@ class MainActivity : ComponentActivity() {
             val segmentCsvFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/csv")
             ) { uri ->
-                val request=segmentCsvRequest
+                val request=DocumentWindowRequest.parseSegment(segmentCsvRequest)
+                segmentCsvRequest=null
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
@@ -622,14 +642,15 @@ class MainActivity : ComponentActivity() {
             val abWindowTextFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/plain")
             ) { uri ->
-                val request=abWindowExport
+                val request=DocumentWindowRequest.parseAb(abWindowExport)
+                abWindowExport=null
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
                             val list=database.list(200)
-                            val sa=list.firstOrNull{it.id==request.sessionAId}
+                            val sa=list.firstOrNull{it.id==request.firstId}
                                 ?:error("Session A has been removed")
-                            val sb=list.firstOrNull{it.id==request.sessionBId}
+                            val sb=list.firstOrNull{it.id==request.secondId}
                                 ?:error("Session B has been removed")
                             val pa=database.points(sa.id)
                             val pb=database.points(sb.id)
@@ -638,7 +659,7 @@ class MainActivity : ComponentActivity() {
                             }
                             val analysis=CompareStudioAnalysis.analyze(
                                 sa,pa,sb,pb,CompareStudioAnalysis.Window(
-                                    request.startElapsedMs,request.endElapsedMs))
+                                    request.startMs,request.endMs))
                             val text=CompareStudioAnalysis.report(analysis)
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
                                 it.write(text)
@@ -857,6 +878,18 @@ class MainActivity : ComponentActivity() {
                     message="Allow notifications, then tap Launch standby again."
                     return
                 }
+                if(!status.known || status.pendingRecovery){
+                    runCatching{
+                        startForegroundService(Intent(this@MainActivity,
+                            RecordingService::class.java)
+                            .setAction(RecordingService.RECOVER))
+                    }.fold(onSuccess={
+                        message="Trying to recover a previously started session"
+                    },onFailure={
+                        message="Recovery request failed: "+it.javaClass.simpleName
+                    })
+                    return
+                }
                 // Commit metadata before :monitor process sees the HUD click.
                 prefs.edit().putString("label",label.trim())
                     .putString("configuration",configuration)
@@ -899,7 +932,7 @@ class MainActivity : ComponentActivity() {
                     Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
             val displayColorScheme=if(appliedFinish==SurfaceFinish.FROSTED)
-                // Exact pre-v0.9.2 Frosted Material3 colors and defaults.
+                // Exact pre-v0.9.3 Frosted Material3 colors and defaults.
                 darkColorScheme(primary=iceBlue,onPrimary=cobaltNavy,
                     secondary=coreCyan,surface=cobaltNavy,
                     background=cobaltNavy,onSurface=coreText)
@@ -977,8 +1010,11 @@ class MainActivity : ComponentActivity() {
                             Text(if(status.running) "● REC"
                                 else if(status.starting) "START"
                                 else if(status.standby) "READY"
+                                else if(status.pendingRecovery) "RECOVER"
+                                else if(!status.known) "UNKNOWN"
                                 else "IDLE",color=if(status.running) solarOrange
-                                    else if(status.standby) solarGold else muted,
+                                    else if(status.standby || status.pendingRecovery)
+                                        solarGold else muted,
                                 style=MaterialTheme.typography.labelSmall,
                                 fontWeight=FontWeight.Bold)
                         }
@@ -1031,6 +1067,8 @@ class MainActivity : ComponentActivity() {
                                     Text(if(status.running) "● REC  " + status.count + " samples"
                                         else if(status.starting) "◌ STARTING"
                                         else if(status.standby) "◌ HUD READY · tap REC"
+                                        else if(status.pendingRecovery) "◌ RECOVER EXISTING SESSION"
+                                        else if(!status.known) "◌ RECORDER STATUS UNKNOWN"
                                         else status.message.take(52),
                                         color=if(status.running) coreMint else coreSecondary,
                                         style=MaterialTheme.typography.labelMedium)
@@ -1046,7 +1084,8 @@ class MainActivity : ComponentActivity() {
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
                                         if(!status.running && !status.starting &&
-                                            !status.standby) {
+                                            !status.standby && !status.pendingRecovery &&
+                                            status.known) {
                                             GlassPanel {
                                                 Text("READY FOR YOUR NEXT SESSION",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
@@ -1182,6 +1221,11 @@ class MainActivity : ComponentActivity() {
                                                             if (status.running || status.starting) {
                                                                 startService(svc.setAction(RecordingService.STOP))
                                                                 message = "Stop requested"
+                                                            } else if(!status.known || status.pendingRecovery) {
+                                                                startForegroundService(
+                                                                    svc.setAction(RecordingService.RECOVER))
+                                                                lastObservedMonitorActive=true
+                                                                message="Trying to recover the existing recorder"
                                                             } else {
                                                                 startForegroundService(svc.setAction(RecordingService.START)
                                                                     .putExtra(RecordingService.LABEL,label.trim())
@@ -1195,8 +1239,13 @@ class MainActivity : ComponentActivity() {
                                                         }
                                                     }
                                                 }) {
-                                                    Text(if (status.running || status.starting)
-                                                        "STOP AND SAVE" else "START RECORDING")
+                                                    Text(if(status.running || status.starting)
+                                                        "STOP AND SAVE"
+                                                        else if(status.pendingRecovery)
+                                                            "RECOVER EXISTING SESSION"
+                                                        else if(!status.known)
+                                                            "CHECK RECORDER STATUS"
+                                                        else "START RECORDING")
                                                 }
                                                 OutlinedButton(onClick = { page = "Sessions" }) {
                                                     Text("Sessions")
@@ -1266,14 +1315,16 @@ class MainActivity : ComponentActivity() {
                                                     source=detailPoints,
                                                     initialSkipWarmup=skipWarmUp,
                                                     onExportText={ range ->
-                                                        segmentTextRequest=SegmentExportRequest(
-                                                            r.session.id,range.startMs,range.endMs)
+                                                        segmentTextRequest=DocumentWindowRequest.segment(
+                                                            DocumentWindowRequest.Segment(
+                                                                r.session.id,range.startMs,range.endMs))
                                                         segmentTextFile.launch("CoreMetrics_Segment_"+
                                                             r.session.id+"_"+range.startMs+"_"+range.endMs+".txt")
                                                     },
                                                     onExportCsv={ range ->
-                                                        segmentCsvRequest=SegmentExportRequest(
-                                                            r.session.id,range.startMs,range.endMs)
+                                                        segmentCsvRequest=DocumentWindowRequest.segment(
+                                                            DocumentWindowRequest.Segment(
+                                                                r.session.id,range.startMs,range.endMs))
                                                         segmentCsvFile.launch("CoreMetrics_Segment_"+
                                                             r.session.id+"_"+range.startMs+"_"+range.endMs+".csv")
                                                     },
@@ -1437,12 +1488,18 @@ class MainActivity : ComponentActivity() {
                                                 Switch(activeOnly,onCheckedChange={activeOnly=it})
                                             }
                                             Text("Select session A · D-pad focus + A", color = cyan)
+                                            Text("Stock is a CPU-limit profile, NOT the graphics driver. "+
+                                                "Use Sessions → Edit metadata to tag T30 or StevenMXZ "+
+                                                "for each recording before comparing.",
+                                                color=solarGold,
+                                                style=MaterialTheme.typography.bodySmall)
                                             Row(Modifier.horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 sessionList.take(14).forEach { s ->
                                                     FilterChip(selected = firstId == s.id,
                                                         onClick = { firstId = s.id },
-                                                        label = { Text("Session " + s.id + " · " + s.configuration) })
+                                                        label = { Text("Session " + s.id + " · " + s.configuration+
+                                                            " · driver: "+(s.graphicsDriver?:"untagged")) })
                                                 }
                                             }
                                             Text("Select session B · D-pad focus + A", color = cyan)
@@ -1451,7 +1508,8 @@ class MainActivity : ComponentActivity() {
                                                 sessionList.take(14).forEach { s ->
                                                     FilterChip(selected = secondId == s.id,
                                                         onClick = { secondId = s.id },
-                                                        label = { Text("Session " + s.id + " · " + s.configuration) })
+                                                        label = { Text("Session " + s.id + " · " + s.configuration+
+                                                            " · driver: "+(s.graphicsDriver?:"untagged")) })
                                                 }
                                             }
                                             if(firstId>0L && secondId>0L && firstId!=secondId) {
@@ -1528,9 +1586,10 @@ class MainActivity : ComponentActivity() {
                                                     cursorFraction=compareCursor,
                                                     onCursorFraction={compareCursor=it},
                                                     onExport={window ->
-                                                        abWindowExport=AbWindowExportRequest(
-                                                            firstId,secondId,
-                                                            window.startElapsedMs,window.endElapsedMs)
+                                                        abWindowExport=DocumentWindowRequest.ab(
+                                                            DocumentWindowRequest.Ab(
+                                                                firstId,secondId,
+                                                                window.startElapsedMs,window.endElapsedMs))
                                                         abWindowTextFile.launch(
                                                             "CoreMetrics_AB_Window_"+firstId+"_"+secondId+
                                                                 "_"+window.startElapsedMs+"_"+window.endElapsedMs+".txt")

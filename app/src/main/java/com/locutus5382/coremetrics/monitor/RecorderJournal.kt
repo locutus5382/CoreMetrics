@@ -20,15 +20,15 @@ object RecorderJournal {
     @Synchronized fun event(context: Context, name: String, details: String = "") {
         runCatching {
             val f = file(context)
-            if (f.exists() && f.length() > 32_000) {
-                f.writeText(f.readLines().takeLast(75).joinToString("\n") + "\n")
+            if (f.exists() && f.length() > 64_000) {
+                f.writeText(f.readLines().takeLast(160).joinToString("\n") + "\n")
             }
             f.appendText(System.currentTimeMillis().toString() + " | " +
                 name.replace('|','/') + " | " + details.take(160).replace('\n',' ') + "\n")
         }
     }
     fun read(context: Context): String = runCatching {
-        file(context).takeIf { it.exists() }?.readLines()?.takeLast(80)
+        file(context).takeIf { it.exists() }?.readLines()?.takeLast(160)
             ?.joinToString("\n") ?: "No lifecycle events yet"
     }.getOrDefault("Journal unavailable")
 

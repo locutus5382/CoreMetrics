@@ -204,6 +204,28 @@ internal class RecorderHud(private val context:Context) {
         }
 
     fun permissionGranted()=Settings.canDrawOverlays(context)
+    /** Record only identity/ownership, never game labels or sample data. */
+    fun windowIdentity():String =
+        "root="+(root?.let{System.identityHashCode(it).toString()}?:"none")+
+        " attached="+attached()+
+        " unlock="+(unlockWindow?.let{System.identityHashCode(it).toString()}?:"none")+
+        " unlockAttached="+(unlockWindow?.isAttachedToWindow==true)
+
+    /** Service teardown removes all callbacks even if WindowManager rejects
+     * immediate detach. A future Service can safely rebind this same owner. */
+    fun unbindCallbacks() {
+        onRecord=null;onLock=null;onUnlock=null;onClose=null
+        onOptionsChanged={}
+    }
+
+    private fun removeTracked(view:View):Boolean = try {
+        wm.removeViewImmediate(view)
+        true
+    }catch(_:Exception){
+        // Do not discard a still-attached window after a failed removal.
+        !view.isAttachedToWindow && view.parent==null
+    }
+
     fun attached()=root?.isAttachedToWindow==true
     fun visible()=attached() && root?.visibility==View.VISIBLE
     fun isLocked()=locked
@@ -256,8 +278,16 @@ internal class RecorderHud(private val context:Context) {
             // do not strand the user behind an untouchable main HUD.
             val (chip,chipParams)=try { makeUnlockHandle() }
                 catch(e:Exception){return "HUD_UNLOCK_HANDLE_CREATE_FAILED_"+e.javaClass.simpleName}
+            if(unlockWindow!=null) {
+                val existing=unlockWindow!!
+                if(!removeTracked(existing))
+                    return "HUD_LOCK_REFUSED_UNRESOLVED_UNLOCK_CHIP"
+                unlockWindow=null;unlockParams=null
+            }
             try { wm.addView(chip,chipParams) }
             catch(e:Exception){return "HUD_UNLOCK_HANDLE_ADD_FAILED_"+e.javaClass.simpleName}
+            // Track before any later operation can throw.
+            unlockWindow=chip;unlockParams=chipParams
             val oldFlags=p.flags
             val oldAlpha=p.alpha
             val drawerWasOpen=drawerOpen
@@ -279,12 +309,13 @@ internal class RecorderHud(private val context:Context) {
                 // WindowManager update or the appearance update fails.
                 locked=false
                 drawerOpen=drawerWasOpen
-                unlockWindow=null
-                unlockParams=null
+                if(removeTracked(chip)) {
+                    unlockWindow=null
+                    unlockParams=null
+                }
                 p.flags=oldFlags
                 p.alpha=oldAlpha
                 runCatching{wm.updateViewLayout(frame,p)}
-                runCatching{wm.removeViewImmediate(chip)}
                 runCatching{applyAppearance()}
                 return "HUD_LOCK_FAILED_"+e.javaClass.simpleName
             }
@@ -297,10 +328,11 @@ internal class RecorderHud(private val context:Context) {
         return try {
             wm.updateViewLayout(frame,p)
             locked=false
-            unlockWindow?.let { runCatching {wm.removeViewImmediate(it)} }
-            unlockWindow=null;unlockParams=null
+            val chipGone=unlockWindow?.let{removeTracked(it)}?:true
+            if(chipGone){unlockWindow=null;unlockParams=null}
             applyAppearance()
-            "HUD_UNLOCKED_TOUCH_CONTROLS_RESTORED"
+            if(chipGone)"HUD_UNLOCKED_TOUCH_CONTROLS_RESTORED"
+            else "HUD_UNLOCK_CHIP_REMOVE_FAILED_RETAINED"
         }catch(e:Exception){
             p.flags=oldFlags;p.alpha=oldAlpha
             runCatching{wm.updateViewLayout(frame,p)}
@@ -459,13 +491,35 @@ internal class RecorderHud(private val context:Context) {
         onUnlockClick:()->Unit,onDismissClick:()->Unit,
         onOptionsChanged:(HudOptions)->Unit = {}):String {
         if(!permissionGranted())return "HUD_PERMISSION_MISSING"
+        // Never construct another WindowManager view while a prior view or
+        // unlock chip is still tracked. This survives Service recreation within
+        // the same :monitor PID via MonitorHudOwner.
+        if(attached()) {
+            // Service onDestroy cancels animation callbacks. Reattaching
+            // callbacks to a still-attached view must revive them as well.
+            disposed=false
+            opts=options
+            onRecord=onRecordClick;onLock=onLockClick
+            onUnlock=onUnlockClick;onClose=onDismissClick
+            this.onOptionsChanged=onOptionsChanged
+            return try {
+                // Do NOT force the previous root visible while rebinding.
+                // The Service applies app-foreground/user-preference visibility
+                // immediately after show(), without flashing over CoreMetrics.
+                applyAppearance()
+                syncBlink()
+                "HUD_ALREADY_ATTACHED"
+            }catch(e:Exception){"HUD_REBIND_FAILED_"+e.javaClass.simpleName}
+        }
+        if(root!=null || unlockWindow!=null) {
+            val cleaned=hide()
+            if(root!=null || unlockWindow!=null)
+                return "HUD_OWNERSHIP_UNRESOLVED_"+cleaned
+        }
         opts=options
-        onRecord=onRecordClick
-        onLock=onLockClick
-        onUnlock=onUnlockClick
-        onClose=onDismissClick
+        onRecord=onRecordClick;onLock=onLockClick
+        onUnlock=onUnlockClick;onClose=onDismissClick
         this.onOptionsChanged=onOptionsChanged
-        if(attached()){setVisible(true);applyAppearance();return "HUD_ALREADY_ATTACHED"}
         disposed=false
         locked=false;collapsed=false;drawerOpen=false
         drawerSwitches.clear()
@@ -610,8 +664,10 @@ internal class RecorderHud(private val context:Context) {
             }
             "HUD_ATTACHED"
         }catch(e:Exception){
-            root=null;params=null;pill=null;drawer=null
-            "HUD_ADD_FAILED_"+e.javaClass.simpleName
+            // addView might have succeeded before appearance/positioning
+            // failed. Do not forget its WindowManager handle.
+            val cleaned=hide()
+            "HUD_ADD_FAILED_"+e.javaClass.simpleName+" cleanup="+cleaned
         }
     }
 
@@ -775,7 +831,9 @@ internal class RecorderHud(private val context:Context) {
     private fun renderTelemetry() {
         val view=mainText ?:return
         if(!recording) {
-            view.text="COREMETRICS · READY\nNo sensor sampling until REC"
+            view.text=if(context.packageName.contains(".v093"))
+                "COREMETRICS v0.9.3 · READY\nNo sensor sampling until REC"
+            else "COREMETRICS · READY\nNo sensor sampling until REC"
             return
         }
         val s=latest
@@ -835,24 +893,33 @@ internal class RecorderHud(private val context:Context) {
         disposed=true
         ui.removeCallbacks(blink)
         metricLevels.clear()
-        // Prevent an orphan touch-stealing chip after STOP or process cleanup.
-        unlockWindow?.let { runCatching {wm.removeViewImmediate(it)} }
-        unlockWindow=null;unlockParams=null
-        val frame=root ?:return "HUD_NOT_ATTACHED"
-        return try {
-            wm.removeViewImmediate(frame)
-            root=null;pill=null;drawer=null;dockTab=null
-            params=null;mainText=null;recText=null;recDot=null
+
+        // Remove BOTH windows. A failed remove retains the actual view handle
+        // for a subsequent cleanup attempt; it cannot become an orphan merely
+        // because this Java/Kotlin Service object was recreated.
+        val chip=unlockWindow
+        val chipRemoved=chip==null || removeTracked(chip)
+        if(chipRemoved){unlockWindow=null;unlockParams=null}
+
+        val frame=root
+        val rootRemoved=frame==null || removeTracked(frame)
+        if(rootRemoved){
+            root=null;params=null;pill=null;drawer=null;dockTab=null
+            dockVisual=null;mainText=null;recText=null;recDot=null
+            recControl=null;lockControl=null;drawerControl=null
+            closeControl=null;minimizeControl=null
             drawerSwitches.clear()
-            opacityLabel=null;drawerRecControl=null;minimizeControl=null
+            opacityLabel=null;drawerRecControl=null
+            latest=null;thermal.reset();thermalValue=null
             recording=false;locked=false;collapsed=false
-            "HUD_REMOVED"
-        }catch(e:Exception){
-            if(!frame.isAttachedToWindow) {
-                root=null;params=null;drawerSwitches.clear()
-                "HUD_REMOVED_AFTER_EXCEPTION"
-            }else "HUD_REMOVE_FAILED_"+e.javaClass.simpleName
         }
+        if(rootRemoved && chipRemoved){
+            unbindCallbacks()
+            return if(frame==null && chip==null)
+                "HUD_NOT_ATTACHED" else "HUD_REMOVED"
+        }
+        return if(!rootRemoved)"HUD_REMOVE_FAILED_ROOT_RETAINED"
+            else "HUD_REMOVE_FAILED_UNLOCK_RETAINED"
     }
 
 }
