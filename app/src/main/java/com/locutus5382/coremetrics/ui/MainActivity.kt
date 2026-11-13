@@ -71,6 +71,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
+import com.locutus5382.coremetrics.analysis.SegmentAnalysis
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -96,6 +97,10 @@ private val white = Color(0xFFF0F5FA)
 private val muted = Color(0xFFA8C4D1)
 private val glow = Color(0xFF18445A)
 private val pages = listOf("Live", "Sessions", "Compare", "HUD", "Settings")
+
+private data class SegmentExportRequest(
+    val sessionId:Long,val startMs:Long,val endMs:Long
+)
 
 private data class ScreenStatus(
     val running: Boolean = false, val starting: Boolean = false,
@@ -321,7 +326,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v086base")
+            val supportsThemeChoice=!packageName.endsWith(".v087base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -453,6 +458,8 @@ class MainActivity : ComponentActivity() {
             var reportAId by remember { mutableLongStateOf(0L) }
             var reportBId by remember { mutableLongStateOf(0L) }
             var reportSkipWarmup by remember { mutableStateOf(false) }
+            var segmentTextRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
+            var segmentCsvRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -503,6 +510,61 @@ class MainActivity : ComponentActivity() {
                     }
                     message=outcome.fold(onSuccess={"Report exported"},
                         onFailure={"Report failed: "+(it.message?:it.javaClass.simpleName)})
+                }
+            }
+            val segmentTextFile=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("text/plain")
+            ) { uri ->
+                val request=segmentTextRequest
+                if(uri!=null && request!=null)scope.launch {
+                    val outcome=withContext(Dispatchers.IO) {
+                        runCatching {
+                            val session=database.list(200).firstOrNull{it.id==request.sessionId}
+                                ?:error("Source session no longer exists")
+                            val source=database.points(request.sessionId)
+                            require(source.size>=session.count) {
+                                "The source exceeds the first 12,000 loaded samples"
+                            }
+                            val selected=SegmentAnalysis.create(session,source,
+                                SegmentAnalysis.Range(request.startMs,request.endMs))
+                            val content=SegmentAnalysis.textReport(selected)
+                            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
+                                it.write(content)
+                            } ?: error("Cannot open segment report destination")
+                        }
+                    }
+                    message=outcome.fold(
+                        onSuccess={"Selected-segment report exported"},
+                        onFailure={"Segment report failed: "+
+                            (it.message?:it.javaClass.simpleName)})
+                }
+            }
+            val segmentCsvFile=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("text/csv")
+            ) { uri ->
+                val request=segmentCsvRequest
+                if(uri!=null && request!=null)scope.launch {
+                    val outcome=withContext(Dispatchers.IO) {
+                        runCatching {
+                            val session=database.list(200).firstOrNull{it.id==request.sessionId}
+                                ?:error("Source session no longer exists")
+                            val source=database.points(request.sessionId)
+                            require(source.size>=session.count) {
+                                "The source exceeds the first 12,000 loaded samples"
+                            }
+                            val selected=SegmentAnalysis.create(session,source,
+                                SegmentAnalysis.Range(request.startMs,request.endMs))
+                            require(selected.validForReport){"Selected range has insufficient samples"}
+                            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
+                                database.exportCsvRange(request.sessionId,
+                                    request.startMs,request.endMs,it)
+                            } ?: error("Cannot open segment CSV destination")
+                        }
+                    }
+                    message=outcome.fold(
+                        onSuccess={"Selected-segment CSV exported"},
+                        onFailure={"Segment CSV failed: "+
+                            (it.message?:it.javaClass.simpleName)})
                 }
             }
             val importFile=rememberLauncherForActivityResult(
@@ -988,34 +1050,47 @@ class MainActivity : ComponentActivity() {
                                                  style=MaterialTheme.typography.labelSmall)
                                              if (sessionList.isEmpty()) Text("No sessions yet.", color = muted)
                                             detailReport?.takeIf{detailedId>0L}?.let{r ->
-                                                val eligibleDetail=remember(detailPoints,skipWarmUp) {
-                                                    V08Analytics.afterWarmUp(
-                                                        detailPoints,if(skipWarmUp)30 else 0)
-                                                }
-                                                SessionQuickOverview(r)
-                                                SessionDiagnosticsPanel(eligibleDetail,r,
-                                                    referenceStartMs=detailPoints.firstOrNull()?.timeMs)
-                                                OutlinedButton(onClick={
-                                                    detailTechnical=!detailTechnical
-                                                }) {
-                                                    Text(if(detailTechnical)
-                                                        "Hide technical diagnostics"
-                                                        else "Show energy provenance, CPU limits and core chart")
-                                                }
-                                                if(detailTechnical) {
-                                                Row(Modifier.fillMaxWidth(),
-                                                    horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                                    EnergyRatePanel(r.energy,Modifier.weight(1f))
-                                                    ObservedProfilePanel(
-                                                        r.session.configuration,eligibleDetail,
-                                                        modifier=Modifier.weight(1f),
-                                                        referenceStartMs=
-                                                            detailPoints.firstOrNull()?.timeMs)
-                                                }
-                                                CoreWinnerPanel(eligibleDetail,Modifier.fillMaxWidth())
-                                                SessionMetricTimeline(eligibleDetail,
-                                                    label="CLASSIC SIGNAL EXPLORER · INCLUDES RAM",
-                                                    referenceStartMs=detailPoints.firstOrNull()?.timeMs)
+                                                SessionAnalysisStudio(
+                                                    session=r.session,
+                                                    source=detailPoints,
+                                                    initialSkipWarmup=skipWarmUp,
+                                                    onExportText={ range ->
+                                                        segmentTextRequest=SegmentExportRequest(
+                                                            r.session.id,range.startMs,range.endMs)
+                                                        segmentTextFile.launch("CoreMetrics_Segment_"+
+                                                            r.session.id+"_"+range.startMs+"_"+range.endMs+".txt")
+                                                    },
+                                                    onExportCsv={ range ->
+                                                        segmentCsvRequest=SegmentExportRequest(
+                                                            r.session.id,range.startMs,range.endMs)
+                                                        segmentCsvFile.launch("CoreMetrics_Segment_"+
+                                                            r.session.id+"_"+range.startMs+"_"+range.endMs+".csv")
+                                                    }
+                                                ) { selected ->
+                                                    OutlinedButton(onClick={
+                                                        detailTechnical=!detailTechnical
+                                                    }) {
+                                                        Text(if(detailTechnical)
+                                                            "Hide detailed evidence"
+                                                            else "Show energy provenance, CPU limits and classic timeline")
+                                                    }
+                                                    if(detailTechnical) {
+                                                        Row(Modifier.fillMaxWidth(),
+                                                            horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                            EnergyRatePanel(selected.benchmark.energy,
+                                                                Modifier.weight(1f))
+                                                            ObservedProfilePanel(
+                                                                r.session.configuration,
+                                                                selected.points,
+                                                                modifier=Modifier.weight(1f),
+                                                                referenceStartMs=detailPoints.firstOrNull()?.timeMs)
+                                                        }
+                                                        CoreWinnerPanel(selected.points,
+                                                            Modifier.fillMaxWidth())
+                                                        SessionMetricTimeline(selected.points,
+                                                            label="CLASSIC SIGNAL EXPLORER · SELECTED RANGE",
+                                                            referenceStartMs=detailPoints.firstOrNull()?.timeMs)
+                                                    }
                                                 }
                                                 OutlinedButton(onClick={
                                                     detailedId=0L
