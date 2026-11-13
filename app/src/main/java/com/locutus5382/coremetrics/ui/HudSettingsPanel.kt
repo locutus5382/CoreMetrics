@@ -41,7 +41,7 @@ internal fun HudSettingsPanel(
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("FLOATING HUD STUDIO",color=iceBlue,
             style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
-        Text("HUD tile toggles standby; REC tile starts/stops the session. "+
+        Text("HUD tile toggles visibility without stopping an active session; REC remains a rescue tile during testing. "+
             "Use only one CoreMetrics variant at a time. "+
             "Launch standby, load Eden, then tap REC. Drag the glass pill to within " +
             "16dp of either edge to dock into a 12dp visual tab with a 44dp tap area. " +
@@ -136,7 +136,7 @@ internal fun HudSettingsPanel(
                     label={Text(name)})
             }
         }
-        if(options.showFps)Text("FPS source currently unavailable; the HUD displays —.",
+        if(options.showFps)Text("FPS source is unavailable; the HUD suppresses unverified frame values.",
             color=solarGold,style=MaterialTheme.typography.bodySmall)
         Text("HUD SHAPE",color=iceBlue,style=MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
