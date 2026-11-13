@@ -72,12 +72,22 @@ internal fun SessionAnalysisStudio(
         applied=asRange(a,b)
         preset=asPreset
     }
-    val bundle by produceState<SegmentAnalysis.Bundle?>(
-        initialValue=null,session,source,applied
+    val computation by produceState<AnalysisComputation<SegmentAnalysis.Bundle>>(
+        initialValue=AnalysisComputation.Loading,session,source,applied
     ) {
         value=withContext(Dispatchers.Default) {
-            runCatching{SegmentAnalysis.create(session,source,applied)}.getOrNull()
+            try {
+                AnalysisComputation.Ready(SegmentAnalysis.create(session,source,applied))
+            } catch(e:kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch(e:Exception) {
+                AnalysisComputation.Failed(e.message ?: "Unable to analyze this window")
+            }
         }
+    }
+    val bundle=when(val result=computation) {
+        is AnalysisComputation.Ready -> result.result
+        else -> null
     }
     val loadedFully=session.count<=source.size
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -138,8 +148,15 @@ internal fun SessionAnalysisStudio(
                 },enabled=draftEnd<total) {Text("End +5s")}
             }
             val current=bundle
-            if(current==null)LinearProgressIndicator(Modifier.fillMaxWidth())
-            else {
+            if(current==null) {
+                when(val status=computation) {
+                    is AnalysisComputation.Failed ->
+                        Text("Cannot analyze this selection: "+status.message,
+                            color=solarOrange,
+                            style=MaterialTheme.typography.bodySmall)
+                    else -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            } else {
                 val a=(applied.startMs-origin)/1000.0
                 val b=(applied.endMs-origin)/1000.0
                 Text("Analyzing "+format(a)+"–"+format(b)+" s · "+
