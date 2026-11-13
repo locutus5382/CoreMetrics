@@ -28,9 +28,9 @@ android {
             initWith(getByName("debug"))
             applicationIdSuffix = ".v085base"
             versionNameSuffix = "-analytics"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8.5 Analytics"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8.5 Analytics Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8.5 Analytics · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.8.5 Frosted"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.8.5 Frosted Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.8.5 Frosted · HUD"
         }
         create("v07test") {
             initWith(getByName("debug"))

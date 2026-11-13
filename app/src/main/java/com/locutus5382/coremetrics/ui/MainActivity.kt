@@ -1541,9 +1541,9 @@ class MainActivity : ComponentActivity() {
                                                     style=MaterialTheme.typography.labelSmall)
                                                 HorizontalDivider(color=coreBorder)
                                             }else {
-                                                Text("APPEARANCE · FROSTED (FIXED)",
+                                                Text("APPEARANCE · FROSTED GLASS (FIXED)",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
-                                                Text("This Analytics-only APK has one fixed finish. "+
+                                                Text("This Frosted test APK has one fixed finish. "+
                                                     "Use the separate CoreMetrics Themes APK "+
                                                     "for the visible THEME button, Crystal Aero and "+
                                                     "Solar Pulse / Cobalt Matrix.",
