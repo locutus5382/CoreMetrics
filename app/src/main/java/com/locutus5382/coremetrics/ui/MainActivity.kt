@@ -320,7 +320,7 @@ class MainActivity : ComponentActivity() {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
             // theme changes, preserving side-by-side A/B UI tests.
-            val supportsThemeChoice=!packageName.endsWith(".v084base")
+            val supportsThemeChoice=!packageName.endsWith(".v085base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -645,17 +645,28 @@ class MainActivity : ComponentActivity() {
             val rootBackground=when(appliedFinish) {
                 SurfaceFinish.FROSTED -> Brush.linearGradient(listOf(
                     cobaltNavy,Color(0xFF09173A),Color(0xFF10265C),cobaltNavy))
-                SurfaceFinish.LIQUID -> Brush.linearGradient(listOf(
-                    Color(0xFF030815),Color(0xFF0A1A3A),
-                    Color(0xFF121B39),Color(0xFF030815)))
-                SurfaceFinish.TACTICAL -> Brush.linearGradient(listOf(
-                    Color(0xFF04060C),Color(0xFF04060C)))
+                SurfaceFinish.CRYSTAL_AERO -> Brush.linearGradient(listOf(
+                    Color(0xFF030B1D),Color(0xFF123C68),Color(0xFF0C2858),
+                    Color(0xFF0C132F),Color(0xFF030815)))
+                SurfaceFinish.SOLAR_PULSE -> Brush.linearGradient(listOf(
+                    cobaltNavy,Color(0xFF07192F),Color(0xFF081D43),cobaltNavy))
+                SurfaceFinish.COBALT_MATRIX -> Brush.linearGradient(listOf(
+                    Color(0xFF030814),Color(0xFF071426),Color(0xFF030814)))
             }
-            MaterialTheme(colorScheme = darkColorScheme(primary = iceBlue,
-                surface=if(appliedFinish==SurfaceFinish.TACTICAL)
-                    Color(0xFF121620) else cobaltNavy,
-                background=if(appliedFinish==SurfaceFinish.TACTICAL)
-                    Color(0xFF04060C) else cobaltNavy,
+            MaterialTheme(colorScheme=darkColorScheme(
+                primary=when(appliedFinish){
+                    SurfaceFinish.SOLAR_PULSE->solarOrange
+                    SurfaceFinish.COBALT_MATRIX->coreCyan
+                    else->iceBlue
+                },
+                onPrimary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
+                    Color.White else cobaltNavy,
+                secondary=if(appliedFinish==SurfaceFinish.SOLAR_PULSE)
+                    cobalt else coreCyan,
+                surface=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
+                    Color(0xFF081226) else cobaltNavy,
+                background=if(appliedFinish==SurfaceFinish.COBALT_MATRIX)
+                    Color(0xFF030814) else cobaltNavy,
                 onSurface=coreText)) {
                 Box(Modifier.fillMaxSize().background(rootBackground)) {
                     PureGlassBackdrop()
@@ -712,32 +723,22 @@ class MainActivity : ComponentActivity() {
                                         fontWeight=FontWeight.Bold)
                                 }
                                 if(supportsThemeChoice) {
-                                    OutlinedButton(onClick={
+                                    CMActionPill("THEME · "+appliedFinish.displayName+" ↻") {
                                         val choices=SurfaceFinish.values()
                                         val next=choices[(finish.ordinal+1)%choices.size]
                                         finish=next
                                         prefs.edit().putString("ui_surface_finish",next.key)
                                             .apply()
-                                    }) {
-                                        Text("THEME · "+appliedFinish.displayName+" ↻",
-                                            color=iceBlue,
-                                            style=MaterialTheme.typography.labelMedium)
                                     }
                                 }else {
                                     Text("FROSTED · FIXED",color=coreSecondary,
                                         style=MaterialTheme.typography.labelSmall)
                                 }
                                 if(page=="Live") {
-                                    Button(onClick={
+                                    CMActionPill(if(status.standby||status.running)"HUD"
+                                        else "ARM HUD",primary=true) {
                                         if(status.standby||status.running)page="HUD"
                                         else armHud()
-                                    },contentPadding=PaddingValues(
-                                        horizontal=10.dp,vertical=6.dp),
-                                        colors=ButtonDefaults.buttonColors(
-                                            containerColor=solarOrange)) {
-                                        Text(if(status.standby||status.running)"HUD"
-                                            else "ARM HUD",
-                                            style=MaterialTheme.typography.labelMedium)
                                     }
                                 }
                                 Box(
@@ -1500,7 +1501,8 @@ class MainActivity : ComponentActivity() {
                                     }
                                     else -> {
                                         GlassPanel {
-                                            Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
+                                            Text("Settings & privacy",color=iceBlue,
+                                                style = MaterialTheme.typography.titleMedium)
                                              Text("CONTROLLER · L1/R1 (or L2/R2) switches tabs; "+
                                                  "D-pad/hat and right joystick move focus; "+
                                                  "A/DPAD CENTER selects focused controls. "+
@@ -1533,7 +1535,7 @@ class MainActivity : ComponentActivity() {
                                                 Text("Only application screens change. "+
                                                     "The in-game native floating HUD, its "+
                                                     "touch-lock and all telemetry remain unchanged. "+
-                                                    "No blur/animated shaders are used.",
+                                                    "No idle animation or expensive background blur is used.",
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                                 HorizontalDivider(color=coreBorder)
@@ -1542,8 +1544,8 @@ class MainActivity : ComponentActivity() {
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
                                                 Text("This Analytics-only APK has one fixed finish. "+
                                                     "Use the separate CoreMetrics Themes APK "+
-                                                    "for the visible THEME button, Liquid and "+
-                                                    "Tactical Flat.",
+                                                    "for the visible THEME button, Crystal Aero and "+
+                                                    "Solar Pulse / Cobalt Matrix.",
                                                     color=coreSecondary)
                                             }
                                             Row(verticalAlignment=Alignment.CenterVertically,
@@ -1751,7 +1753,7 @@ private fun CompactRailAction(
     modifier:Modifier=Modifier,onClick:()->Unit
 ) {
     val shape=RoundedCornerShape(11.dp)
-    val isTactical=LocalSurfaceFinish.current==SurfaceFinish.TACTICAL
+    val isTactical=LocalSurfaceFinish.current==SurfaceFinish.COBALT_MATRIX
     var hasFocus by remember {mutableStateOf(false)}
     Column(
         modifier.fillMaxWidth().height(49.dp)
@@ -1763,7 +1765,7 @@ private fun CompactRailAction(
             .border(if(hasFocus)2.dp else 1.dp,
                 if(hasFocus)solarGold else if(selected)coreCyan.copy(alpha=0.7f)
                     else coreBorder.copy(alpha=0.38f),shape)
-            .clickable(role=Role.Button,onClick=onClick)
+            .cmInteractive(cornerRadiusDp=11,accent=solarGold,onClick=onClick)
             .padding(vertical=4.dp),
         horizontalAlignment=Alignment.CenterHorizontally,
         verticalArrangement=Arrangement.Center
