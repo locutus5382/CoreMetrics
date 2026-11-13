@@ -12,6 +12,8 @@ This release responds to observed duplicate READY+REC HUD overlays, failed Quick
 ## Single-HUD ownership / lifecycle (P0)
 - [ ] Start HUD Standby once, then click QS HUD, HUD_SHOW, lock/unlock/dock, and open/close the application repeatedly. One CoreMetrics overlay maximum (plus its **separate locked-unlock chip** when locked). No independent duplicate REC/STOP control.
 - [ ] Rapidly tap both Quick Settings tiles while standby and while recording; no second active session, no duplicate HUD and no unintentional STOP from the HUD tile.
+- [ ] Deliberately issue ARM while REC is active (e.g., stale Activity tap). It must act only as HUD_SHOW, must not reset the active lease/session ID, and a permission/attach failure must not terminate recording.
+- [ ] Simulate same-process Service recreation with an existing attached HUD if possible; REC, lock and close callbacks must be rebound and the recording indicator must resume blinking.
 - [ ] If the StatusProvider query fails, the tile offers **Try recover**: tap once. Only an existing validated lease may resume, never create a new session; without a lease it must decline safely.
 - [ ] Close/disarm; journal should report HUD_REMOVE (or a truthful failed-removal state); try standby again. No old view remains interactive.
 - [ ] Open CoreMetrics from Eden; its own overlay disappears promptly and does not cover STYLE/buttons. Return to game; overlay returns only if user visibility preference is enabled.

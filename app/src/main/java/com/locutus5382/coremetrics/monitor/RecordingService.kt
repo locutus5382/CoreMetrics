@@ -250,6 +250,17 @@ class RecordingService:Service() {
         RecorderJournal.event(this,"SERVICE_COMMAND",command.action?:"null")
         when(command.action){
             ARM -> {
+                // Idempotent while REC is active. A stale app or QS ARM must
+                // never clear/replace a recording lease, even if HUD attach
+                // fails. Route to HUD_SHOW, which only changes overlay state.
+                if(task?.isActive==true || MonitorState.running ||
+                    MonitorState.starting) {
+                    RecorderJournal.event(this,"ARM_DURING_REC",
+                        "redirected to HUD_SHOW")
+                    return onStartCommand(
+                        Intent(this,RecordingService::class.java)
+                            .setAction(HUD_SHOW),flags,startId)
+                }
                 // A stale in-app "Launch standby" tap after LMK must not
                 // overwrite an unfinished recording lease with a new standby
                 // lease. Resume the same user-started session instead.

@@ -495,6 +495,9 @@ internal class RecorderHud(private val context:Context) {
         // unlock chip is still tracked. This survives Service recreation within
         // the same :monitor PID via MonitorHudOwner.
         if(attached()) {
+            // Service onDestroy cancels animation callbacks. Reattaching
+            // callbacks to a still-attached view must revive them as well.
+            disposed=false
             opts=options
             onRecord=onRecordClick;onLock=onLockClick
             onUnlock=onUnlockClick;onClose=onDismissClick
@@ -502,6 +505,7 @@ internal class RecorderHud(private val context:Context) {
             return try {
                 setVisible(true)
                 applyAppearance()
+                syncBlink()
                 "HUD_ALREADY_ATTACHED"
             }catch(e:Exception){"HUD_REBIND_FAILED_"+e.javaClass.simpleName}
         }
