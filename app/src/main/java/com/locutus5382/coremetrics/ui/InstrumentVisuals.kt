@@ -42,8 +42,10 @@ internal fun InstrumentKpi(
     title: String, value: String?, detail: String,
     color: Color = coreCyan, modifier: Modifier = Modifier
 ) {
-    Column(modifier.pureGlass(15)
-        .padding(horizontal=12.dp,vertical=11.dp)) {
+    val finish=LocalSurfaceFinish.current
+    val panel=if(finish==SurfaceFinish.FROSTED)
+        modifier.pureGlass(15) else modifier.cmMetricSurface(accent=color)
+    Column(panel.padding(horizontal=12.dp,vertical=11.dp)) {
         Text(title.uppercase(),color=coreSecondary,
             style=MaterialTheme.typography.labelSmall,letterSpacing=0.7.sp)
         Spacer(Modifier.height(5.dp))
@@ -82,13 +84,22 @@ internal fun LiveScope(points: List<LiveTracePoint>) {
 
 @Composable
 private fun ScopeTrack(points: List<LiveTracePoint>, metric: Int) {
-    Canvas(Modifier.fillMaxWidth().height(75.dp).background(Color(0x6C070E17),
-        RoundedCornerShape(9.dp))) {
+    val finish=LocalSurfaceFinish.current
+    val frame=when(finish) {
+        SurfaceFinish.FROSTED->Color(0x6C070E17)
+        SurfaceFinish.CRYSTAL_AERO->Color(0x580A2446)
+        SurfaceFinish.SOLAR_PULSE->Color(0xC0102342)
+        SurfaceFinish.COBALT_MATRIX->Color(0xFF071321)
+    }
+    Canvas(Modifier.fillMaxWidth().height(75.dp).background(frame,
+        RoundedCornerShape(if(finish==SurfaceFinish.COBALT_MATRIX)4.dp else 9.dp))) {
         val w=size.width
         val h=size.height
         for (i in 1..3) {
             val y=h*i/4f
-            drawLine(Color(0x44516A81),Offset(0f,y),Offset(w,y),1f)
+            drawLine(if(finish==SurfaceFinish.COBALT_MATRIX)
+                coreCyan.copy(alpha=.22f) else Color(0x44516A81),
+                Offset(0f,y),Offset(w,y),1f)
         }
         val t0=points.firstOrNull()?.timeMs ?: 0L
         val period=(points.lastOrNull()?.timeMs ?: t0)-t0
