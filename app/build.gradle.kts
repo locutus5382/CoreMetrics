@@ -9,28 +9,28 @@ android {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.9.0-png-scorecards-alpha"
+        versionCode = 20
+        versionName = "0.9.1-integrity-stabilization-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics Record"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM · HUD"
     }
     buildTypes {
-        create("v090themes") {
+        create("v091themes") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v090themes"
+            applicationIdSuffix = ".v091themes"
             versionNameSuffix = "-themes"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.0 Themes"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.0 Themes Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.0 Themes · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.1 Themes"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.1 Themes Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.1 Themes · HUD"
         }
-        create("v090base") {
+        create("v091base") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".v090base"
+            applicationIdSuffix = ".v091base"
             versionNameSuffix = "-analytics"
-            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.0 Frosted"
-            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.0 Frosted Record"
-            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.0 Frosted · HUD"
+            manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics v0.9.1 Frosted"
+            manifestPlaceholders["coremetricsTileLabel"] = "CM v0.9.1 Frosted Record"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "CM v0.9.1 Frosted · HUD"
         }
         create("v07test") {
             initWith(getByName("debug"))

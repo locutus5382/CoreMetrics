@@ -98,7 +98,7 @@ object SegmentAnalysis {
         val s=bundle.session;val r=bundle.range
         val from=(r.startMs-bundle.sourceOriginMs)/1000.0
         val to=(r.endMs-bundle.sourceOriginMs)/1000.0
-        appendLine("COREMETRICS v0.8.7 | SELECTED SESSION SEGMENT")
+        appendLine("COREMETRICS v0.9.1 | SELECTED SESSION SEGMENT")
         appendLine("Original session ID: ${s.id}; status: ${s.status}")
         appendLine("Session: ${s.label}; game note: ${s.note ?: "unavailable"}")
         appendLine("Configuration: ${s.configuration}")
