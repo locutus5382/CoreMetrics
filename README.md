@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.8.7 Single-Session Analysis Studio test branch, stacked on v0.8.6. Two separately installable v0.8.6 test builds retain the fixed original Frosted Glass or the existing optional themes. No physical Odin 2 Portal validation yet; not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
+**Status:** v0.8.8 A/B Diagnostic Comparison Studio test branch, stacked on v0.8.7. Two separately installable v0.8.6 test builds retain the fixed original Frosted Glass or the existing optional themes. No physical Odin 2 Portal validation yet; not merged into main or approved for Google Play. Source visible for development review only. Copyright (c) 2026 Aleksandar Dukovski. All rights reserved.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,22 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.8.8 — A/B Diagnostic Comparison Studio (device-test draft)
+
+**Development:** feature/coremetrics-v088-ab-comparison-studio stacks on v0.8.7 draft PR #18, without changing earlier branches or main.
+
+**Two independent test builds:** CoreMetrics-v0.8.8-frosted, package com.locutus5382.coremetrics.v088base (app-v088base.apk), and CoreMetrics-v0.8.8-themes, package com.locutus5382.coremetrics.v088themes (app-v088themes.apk). Frosted stays locked to the familiar original visual style, themes APK retains existing optional finishes. Separate databases and preferences; transfer prior runs via CSV.
+
+**Compare A/B Scorecard:** Compact single-card comparison of CPU/GPU temperature medians and P95, time-weighted verified discharge W, median CPU/GPU loads, and observed P3/P7 cap groups; every difference is strictly **B − A**. Original game notes, status, drivers, rendering scale, temperature starting points, power provenance, load differences, gaps, and sampling coverage feed **transparent evidence warnings**, not a single winner score. "CONDITIONS UNVERIFIED" is not proof of equivalent scenes.
+
+**Synchronized elapsed-time crop:** Default shared overlap, optional skip-first-30-seconds, custom Material 3 RangeSlider, controller-friendly 5s adjustments. All A/B statistics and report exports use the same shared selected elapsed time measured **from each original recording's first sample**, never the first post-filter point. Show a dimmed range on the existing comparison chart with separate chart cursor. Optional full-recording display shows unequal tails for visual context only; unmatched tails NEVER contribute to A/B deltas. The existing GPU >=15% heuristic filters chart traces ONLY and cannot bias scorecard statistics.
+
+**Export selected A/B report:** New independent SAF TXT export with source session IDs and original status, metadata, selected elapsed-time bounds, sample timestamps/count, A/B medians and P95, power coverage and time-weighted discharge, frequency ceilings and explicit comparability limitations; append existing detailed report for each cropped run. Require at least 6 recorded samples spanning 20 seconds per run; prohibit exports from partly loaded >12k-sample histories. No CSV schema changes or database migration.
+
+**Scope intentionally excluded:** no game-time sampling changes, no privileged FPS claim, no causal profile verdict, no event markers, no automated findings, no theme redesign or PNG share card.
+
+**Odin acceptance:** docs/PORTAL_V088_ACCEPTANCE.md. Validate on actual handheld before merge.
 
 ## v0.8.7 — Single-Session Analysis Studio (device-test draft)
 
