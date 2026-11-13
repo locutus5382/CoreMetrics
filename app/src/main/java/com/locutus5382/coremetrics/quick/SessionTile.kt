@@ -3,27 +3,19 @@ package com.locutus5382.coremetrics.quick
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
 import com.locutus5382.coremetrics.monitor.RecordingService
+import com.locutus5382.coremetrics.R
+import android.graphics.drawable.Icon
 
 /** Distinct QS function: user-started REC, STOP or validated recovery. */
 class SessionTile:TileService(){
-    private fun status():QuickTileStatePolicy.Mode=try{
-        val b=contentResolver.call(
-            Uri.parse("content://"+packageName+".monitor.status"),
-            "status",null,null)
-        QuickTileStatePolicy.mode(
-            reachable=b!=null,
-            serviceAlive=b?.getBoolean("serviceAlive",false)==true,
-            pendingRecovery=b?.getBoolean("pendingRecovery",false)==true,
-            running=b?.getBoolean("running",false)==true,
-            starting=b?.getBoolean("starting",false)==true,
-            standby=b?.getBoolean("standby",false)==true)
-    }catch(_:Exception){QuickTileStatePolicy.Mode.UNKNOWN}
+    private fun status():QuickTileStatePolicy.Mode=try {
+        QuickTileSnapshot.read(this).mode
+    } catch(_:Exception) { QuickTileStatePolicy.Mode.UNKNOWN }
 
     override fun onStartListening(){super.onStartListening();refresh()}
     override fun onClick(){
@@ -74,16 +66,24 @@ class SessionTile:TileService(){
     }
     private fun refresh(){
         val mode=status()
+        val secondary=when(mode){
+            QuickTileStatePolicy.Mode.RECORDING->"Recording · Tap STOP"
+            QuickTileStatePolicy.Mode.STARTING->"Starting…"
+            QuickTileStatePolicy.Mode.RECOVERABLE->"Recover session"
+            QuickTileStatePolicy.Mode.STANDBY->"Ready · Tap REC"
+            QuickTileStatePolicy.Mode.UNKNOWN->"Status unknown · Recover"
+            QuickTileStatePolicy.Mode.IDLE->"Tap to record"
+        }
         qsTile?.apply{
-            label=when(mode){
-                QuickTileStatePolicy.Mode.RECORDING->"● CM93 REC · STOP"
-                QuickTileStatePolicy.Mode.STARTING->"CM93 REC · Starting"
-                QuickTileStatePolicy.Mode.RECOVERABLE->"CM93 REC · Recover"
-                QuickTileStatePolicy.Mode.STANDBY->"CM93 REC · Ready"
-                QuickTileStatePolicy.Mode.UNKNOWN->"CM93 REC · Try recover"
-                else->"CM93 REC · Start"
-            }
-            this.state=if(mode==QuickTileStatePolicy.Mode.RECORDING ||
+            label="CoreMetrics REC"
+            subtitle=secondary
+            contentDescription="CoreMetrics recorder, "+secondary
+            stateDescription=secondary
+            icon=Icon.createWithResource(this@SessionTile,
+                if(mode==QuickTileStatePolicy.Mode.RECORDING ||
+                    mode==QuickTileStatePolicy.Mode.STARTING)
+                    R.drawable.ic_qs_cm_rec_on else R.drawable.ic_qs_cm_rec_off)
+            state=if(mode==QuickTileStatePolicy.Mode.RECORDING ||
                 mode==QuickTileStatePolicy.Mode.STARTING)
                 Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             updateTile()
