@@ -326,20 +326,20 @@ class RecordingService:Service() {
                 }
                 userWantsHud=command.action==HUD_SHOW
                 val result=if(userWantsHud) {
-                    if(hud.attached())"HUD_ALREADY_ATTACHED"
-                    else {
-                        val attached=attachHud()
-                        if(hud.attached()) {
-                            armed=true
-                            // A QS REC session may have started without a HUD.
-                            hud.mode(MonitorState.running,MonitorState.startedAt)
-                            MonitorState.latest?.let{
-                                if(MonitorState.running)
-                                    hud.update(it,MonitorState.sampleCount)
-                            }
+                    // Even an already-attached root might belong to a previous
+                    // Service generation. Always rebind callbacks through the
+                    // process-scoped owner; simply returning ATTACHED would
+                    // leave old/unbound REC and close buttons unresponsive.
+                    val attached=attachHud()
+                    if(hud.attached()) {
+                        armed=true
+                        hud.mode(MonitorState.running,MonitorState.startedAt)
+                        MonitorState.latest?.let{
+                            if(MonitorState.running)
+                                hud.update(it,MonitorState.sampleCount)
                         }
-                        attached
                     }
+                    attached
                 }else "HUD_REQUESTED_HIDDEN"
                 syncHudVisibility()
                 if(result.startsWith("HUD_ADD_FAILED") ||
