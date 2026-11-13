@@ -47,6 +47,8 @@ class RecordingService:Service() {
         const val HUD_CONFIG="com.locutus5382.coremetrics.HUD_CONFIG"
         const val HUD_LOCK="com.locutus5382.coremetrics.HUD_LOCK"
         const val HUD_UNLOCK="com.locutus5382.coremetrics.HUD_UNLOCK"
+        const val HUD_SHOW="com.locutus5382.coremetrics.HUD_SHOW"
+        const val HUD_HIDE="com.locutus5382.coremetrics.HUD_HIDE"
         const val LABEL="label"
         const val CONFIG="configuration"
         const val INTERVAL="interval"
@@ -112,6 +114,7 @@ class RecordingService:Service() {
         armed=false
         MonitorState.standby=false
         MonitorState.hudState=hud.hide()
+        MonitorState.hudVisible=false
         MonitorState.hudLocked=false
         MonitorState.clear("Standby closed")
         RecorderLease.clear(this)
@@ -154,6 +157,7 @@ class RecordingService:Service() {
                 MonitorState.hudOptionRevision++
             })
         MonitorState.hudState=result
+        MonitorState.hudVisible=hud.visible()
         MonitorState.hudLocked=hud.isLocked()
         RecorderJournal.event(this,"HUD_ATTACH",result)
         return result
@@ -222,6 +226,41 @@ class RecordingService:Service() {
                 refreshTile()
                 return START_STICKY
             }
+            HUD_SHOW, HUD_HIDE -> {
+                // Do not start or stop telemetry when the HUD is hidden.
+                // Hiding an idle standby fully releases the FGS to save RAM.
+                if(command.action==HUD_HIDE && !MonitorState.running &&
+                    !MonitorState.starting) {
+                    disarmNow()
+                    return START_NOT_STICKY
+                }
+                if(!armed && !MonitorState.running && !MonitorState.starting) {
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+                val result=if(command.action==HUD_SHOW) {
+                    if(hud.attached()) hud.setVisible(true)
+                    else attachHud()
+                } else hud.setVisible(false)
+                if(result.startsWith("HUD_ADD_FAILED") ||
+                    result=="HUD_PERMISSION_MISSING") {
+                    MonitorState.message="HUD cannot be shown: "+result
+                }
+                MonitorState.hudVisible=hud.visible()
+                MonitorState.hudState=if(MonitorState.hudVisible)
+                    "HUD_VISIBLE" else "HUD_HIDDEN"
+                RecorderJournal.event(this,"HUD_VISIBILITY",
+                    MonitorState.hudState+" recording="+MonitorState.running)
+                refreshTile()
+                getSystemService(NotificationManager::class.java).notify(
+                    NOTIFICATION_ID,notification(
+                        if(MonitorState.running) "● REC · CoreMetrics" else
+                            "CoreMetrics · standby",
+                        if(MonitorState.hudVisible)"HUD visible" else
+                            "HUD hidden · recording continues",
+                        !MonitorState.running))
+                return START_NOT_STICKY
+            }
             HUD_LOCK, HUD_UNLOCK -> {
                 if(!armed && task?.isActive!=true) {
                     stopSelf(startId)
@@ -249,6 +288,7 @@ class RecordingService:Service() {
                 if(hud.attached()){
                     hud.configure(settings)
                     MonitorState.hudState="HUD_CONFIGURED"
+                    MonitorState.hudVisible=hud.visible()
                 }
                 return START_NOT_STICKY
             }
@@ -374,7 +414,7 @@ class RecordingService:Service() {
                             withContext(Dispatchers.IO){db.add(id,s)}
                             MonitorState.latest=s
                             MonitorState.sampleCount++
-                            if(armed && hud.attached())withContext(Dispatchers.Main.immediate){
+                            if(armed && hud.visible())withContext(Dispatchers.Main.immediate){
                                 runCatching{hud.update(s,MonitorState.sampleCount)}
                                     .onFailure{RecorderJournal.event(this@RecordingService,
                                         "HUD_UPDATE_ERROR",it.javaClass.simpleName)}
@@ -419,7 +459,7 @@ class RecordingService:Service() {
                             withContext(Dispatchers.Main.immediate){
                                 task=null
                                 stopping=false
-                                if(armed && !disarmAfterStop){
+                                if(armed && hud.visible() && !disarmAfterStop){
                                     standby()
                                 }else{
                                     disarmAfterStop=false
@@ -450,7 +490,14 @@ class RecordingService:Service() {
             .addAction(Notification.Action.Builder(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 if(standby) "Close standby" else "Stop and save",exit).build())
-        if(hud.isLocked()) {
+        if(MonitorState.running && !hud.visible()) {
+            val show=PendingIntent.getService(this,203,
+                Intent(this,RecordingService::class.java).setAction(HUD_SHOW),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            builder.addAction(Notification.Action.Builder(
+                android.R.drawable.ic_menu_view,"Show HUD",show).build())
+        }
+        if(hud.isLocked() && hud.visible()) {
             val unlock=PendingIntent.getService(this,202,
                 Intent(this,RecordingService::class.java).setAction(HUD_UNLOCK),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

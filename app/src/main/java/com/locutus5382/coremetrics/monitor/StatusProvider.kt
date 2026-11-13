@@ -26,6 +26,7 @@ class StatusProvider : ContentProvider() {
             putLong("count", MonitorState.sampleCount)
             putString("message", MonitorState.message)
             putString("hudStatus", MonitorState.hudState)
+            putBoolean("hudVisible",MonitorState.hudVisible)
             putBoolean("hudLocked", MonitorState.hudLocked)
             putLong("hudOptionRevision",MonitorState.hudOptionRevision)
             MonitorState.hudOptions?.let { h ->
@@ -41,7 +42,8 @@ class StatusProvider : ContentProvider() {
                 putBoolean("hudOptRam",h.showRam)
                 putBoolean("hudOptPower",h.showPower)
                 putBoolean("hudOptFps",h.showFps)
-                putBoolean("hudOptSparkline",h.showSparkline)
+                putBoolean("hudOptSparkline",false)
+                putBoolean("hudOptAdaptive",h.adaptiveColors)
             }
             putString("cpu", s?.cpuTempC?.let { "%.1f°C".format(java.util.Locale.US,it) })
             putString("gpu", s?.gpuTempC?.let { "%.1f°C".format(java.util.Locale.US,it) })
