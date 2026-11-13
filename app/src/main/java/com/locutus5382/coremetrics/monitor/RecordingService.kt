@@ -250,6 +250,19 @@ class RecordingService:Service() {
         RecorderJournal.event(this,"SERVICE_COMMAND",command.action?:"null")
         when(command.action){
             ARM -> {
+                // A stale in-app "Launch standby" tap after LMK must not
+                // overwrite an unfinished recording lease with a new standby
+                // lease. Resume the same user-started session instead.
+                if(task?.isActive!=true && !MonitorState.starting){
+                    val previous=RecorderLease.recover(this)
+                    if(previous?.recording==true && db.canResume(previous.id)){
+                        RecorderJournal.event(this,"ARM_REDIRECTED_TO_RECOVERY",
+                            "existing id="+previous.id)
+                        return onStartCommand(
+                            Intent(this,RecordingService::class.java)
+                                .setAction(RECOVER),flags,startId)
+                    }
+                }
                 if(!notificationsAllowed() || !hud.permissionGranted()){
                     MonitorState.message=if(!hud.permissionGranted())
                         "Allow Display over other apps for standby HUD"
