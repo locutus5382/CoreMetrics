@@ -80,7 +80,7 @@ class SessionTile:TileService(){
                 QuickTileStatePolicy.Mode.STARTING->"CM93 REC · Starting"
                 QuickTileStatePolicy.Mode.RECOVERABLE->"CM93 REC · Recover"
                 QuickTileStatePolicy.Mode.STANDBY->"CM93 REC · Ready"
-                QuickTileStatePolicy.Mode.UNKNOWN->"CM93 REC · Unknown"
+                QuickTileStatePolicy.Mode.UNKNOWN->"CM93 REC · Try recover"
                 else->"CM93 REC · Start"
             }
             this.state=if(mode==QuickTileStatePolicy.Mode.RECORDING ||

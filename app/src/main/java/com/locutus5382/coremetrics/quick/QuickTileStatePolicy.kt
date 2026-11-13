@@ -19,11 +19,14 @@ internal object QuickTileStatePolicy {
         Mode.RECORDING->RecordAction.STOP
         Mode.RECOVERABLE->RecordAction.RECOVER
         Mode.IDLE,Mode.STANDBY->RecordAction.START
-        Mode.STARTING,Mode.UNKNOWN->RecordAction.WAIT
+        // Query failure permits ONLY an explicit attempt to recover a
+        // validated pre-existing lease, never an unrelated new START.
+        Mode.UNKNOWN->RecordAction.RECOVER
+        Mode.STARTING->RecordAction.WAIT
     }
     fun hud(mode:Mode,visible:Boolean)=when(mode){
-        Mode.UNKNOWN,Mode.STARTING->HudAction.WAIT
-        Mode.RECOVERABLE->HudAction.RECOVER
+        Mode.UNKNOWN,Mode.RECOVERABLE->HudAction.RECOVER
+        Mode.STARTING->HudAction.WAIT
         Mode.IDLE->HudAction.ARM
         Mode.RECORDING->if(visible)HudAction.HIDE else HudAction.SHOW
         Mode.STANDBY->if(visible)HudAction.CLOSE else HudAction.SHOW

@@ -17,7 +17,7 @@ The old journal does not discriminate A–D. The new journal includes package, P
 
 ## Implemented containment
 - Process-global HUD registry: one owner across Service recreations in one PID, callback rebinding, tracked handles retained on removal failure, no second attached root if cleanup unresolved.
-- Tri-state tiles: UNKNOWN/RECOVERABLE cannot initiate a fresh unrelated recording. Explicit RECOVER validates an existing lease and reuses its session ID. START guard converts a fresh in-flight stale request to recovery.
+- Tri-state tiles: UNKNOWN/RECOVERABLE cannot initiate a fresh unrelated recording. UNKNOWN offers an explicit Try recover action, which is rejected without an existing validated lease; RECOVER reuses its session ID. START guard converts a fresh stale request to recovery.
 - More responsive async foreground visibility handshake; no synchronous binder in onStart.
 - All SAF exports preserve pending selection over Activity recreation; A/B driver labeling and PNG color consistency; honest short-duration quality ratings.
 

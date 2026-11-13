@@ -8,8 +8,10 @@ class QuickTileStatePolicyTest {
     @Test fun unknownCannotStartAnotherSessionOrHud(){
         val unknown=P.mode(false,false,false,false,false,false)
         assertEquals(P.Mode.UNKNOWN,unknown)
-        assertEquals(P.RecordAction.WAIT,P.recorder(unknown))
-        assertEquals(P.HudAction.WAIT,P.hud(unknown,false))
+        assertEquals(P.RecordAction.RECOVER,P.recorder(unknown))
+        assertEquals(P.HudAction.RECOVER,P.hud(unknown,false))
+        assertNotEquals(P.RecordAction.START,P.recorder(unknown))
+        assertNotEquals(P.HudAction.ARM,P.hud(unknown,false))
     }
     @Test fun freshLeaseRequiresExplicitSameSessionRecovery(){
         val saved=P.mode(true,false,true,false,false,false)

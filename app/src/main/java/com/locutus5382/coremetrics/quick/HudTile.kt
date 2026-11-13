@@ -88,7 +88,7 @@ class HudTile:TileService(){
         val current=status()
         qsTile?.apply{
             label=when(current.mode){
-                QuickTileStatePolicy.Mode.UNKNOWN->"CM93 HUD · Unknown"
+                QuickTileStatePolicy.Mode.UNKNOWN->"CM93 HUD · Try recover"
                 QuickTileStatePolicy.Mode.RECOVERABLE->"CM93 HUD · Recover"
                 QuickTileStatePolicy.Mode.STARTING->"CM93 HUD · Starting"
                 QuickTileStatePolicy.Mode.RECORDING->
