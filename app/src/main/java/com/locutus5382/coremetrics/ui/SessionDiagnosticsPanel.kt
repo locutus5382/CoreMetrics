@@ -36,18 +36,19 @@ import kotlin.math.max
 internal fun SessionDiagnosticsPanel(
     points: List<SessionStore.Point>,
     report: BenchmarkAnalyzer.Report,
-    referenceStartMs: Long? = null
+    referenceStartMs: Long? = null,
+    precomputed: SessionDiagnosticsAnalyzer.Result? = null
 ) {
     val analysis by produceState<SessionDiagnosticsAnalyzer.Result?>(
-        initialValue = null, points, report
+        initialValue = precomputed, points, report, precomputed
     ) {
-        value = withContext(Dispatchers.Default) {
+        value = precomputed ?: withContext(Dispatchers.Default) {
             SessionDiagnosticsAnalyzer.analyze(points,report)
         }
     }
     Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("ADVANCED SESSION DIAGNOSTICS · v0.8.6",
+        Text("ADVANCED SESSION DIAGNOSTICS · SELECTED WINDOW",
             color = iceBlue,fontWeight = FontWeight.Bold)
         Text("Offline evidence from the recorded session · no extra game-time polling.",
             color = coreSecondary,style = MaterialTheme.typography.labelSmall)

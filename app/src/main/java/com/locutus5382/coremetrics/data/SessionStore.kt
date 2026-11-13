@@ -374,7 +374,19 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     /** Caller opens the Storage Access Framework URI; avoid Binder-sized EXTRA_TEXT. */
-    fun exportCsv(id: Long, writer: Writer) {
+    fun exportCsv(id: Long, writer: Writer) =
+        exportCsvInternal(id,writer,null,null)
+
+    /** Importable CSV preserving the exact original schema and timestamps.
+     * The selection is inclusive and only pre-existing database rows are read.
+     */
+    fun exportCsvRange(id:Long,startMs:Long,endMs:Long,writer:Writer) {
+        require(startMs<endMs) { "Selection must have a positive duration" }
+        exportCsvInternal(id,writer,startMs,endMs)
+    }
+
+    private fun exportCsvInternal(id:Long,writer:Writer,
+        startMs:Long?,endMs:Long?) {
         val session = list(200).firstOrNull { it.id == id }
             ?: error("Session was not found")
         val headers = listOf("session_id","game_label","configuration","status",
@@ -391,8 +403,13 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             busiest_pct,busiest_core,gpu_pct,gpu_mhz,ram_gib,cpu_clocks,app_package,
             battery_net_w,battery_ua,battery_mv,battery_source,battery_status,
             sf_layer_fps,sf_frame_ms,sf_status,observed_cpu_limits
-            FROM samples WHERE session_id=? ORDER BY time_ms""",
-            arrayOf(id.toString())
+            FROM samples WHERE session_id=?
+            """ + if(startMs!=null && endMs!=null)
+                "AND time_ms>=? AND time_ms<=? ORDER BY time_ms LIMIT 12000"
+            else "ORDER BY time_ms",
+            if(startMs!=null && endMs!=null)
+                arrayOf(id.toString(),startMs.toString(),endMs.toString())
+            else arrayOf(id.toString())
         ).use { c ->
             while (c.moveToNext()) {
                 val values = listOf(id.toString(),session.note?.takeIf{it.isNotBlank()} ?: session.label,session.configuration,session.status) +
