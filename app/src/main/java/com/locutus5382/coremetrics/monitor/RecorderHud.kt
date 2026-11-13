@@ -1,6 +1,7 @@
 package com.locutus5382.coremetrics.monitor
 
 import android.content.Context
+import android.app.ActivityManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -149,6 +150,17 @@ internal class RecorderHud(private val context:Context) {
     private var latest:Snapshot?=null
     private val thermal=ThermalTrendFilter()
     private var thermalValue:ThermalTrendFilter.Reading?=null
+    private var cpuSeverity=0
+    private var gpuSeverity=0
+    private var cpuLoadHigh=0
+    private var gpuLoadHigh=0
+    private val ramThresholds:Pair<Double,Double>?=runCatching{
+        val info=ActivityManager.MemoryInfo()
+        context.getSystemService(ActivityManager::class.java).getMemoryInfo(info)
+        if(info.totalMem<=0L || info.threshold<=0L)null
+        else info.totalMem/1_073_741_824.0 to
+            info.threshold/1_073_741_824.0
+    }.getOrNull()
     private var recording=false
     private var startedAtMs=0L
     private var blinkOn=true
@@ -728,6 +740,8 @@ internal class RecorderHud(private val context:Context) {
         startedAtMs=startedMs
         if(!isRecording) {
             latest=null;thermal.reset();thermalValue=null
+            cpuSeverity=0;gpuSeverity=0
+            cpuLoadHigh=0;gpuLoadHigh=0
 
         }
         applyAppearance()
@@ -738,6 +752,12 @@ internal class RecorderHud(private val context:Context) {
         if(!recording || !attached())return
         latest=s
         thermalValue=thermal.update(s.timeMs,s.cpuTempC)
+        cpuSeverity=MetricWarning.hystereticTemperature(cpuSeverity,
+            thermalValue?.smoothedC,65.0,80.0)
+        gpuSeverity=MetricWarning.hystereticTemperature(gpuSeverity,
+            s.gpuTempC,65.0,80.0)
+        cpuLoadHigh=if((s.cpuPercent?:0)>=90)cpuLoadHigh+1 else 0
+        gpuLoadHigh=if((s.gpuPercent?:0)>=90)gpuLoadHigh+1 else 0
         val thermalColor=when(thermalValue?.direction) {
             ThermalTrendFilter.Direction.RISING -> Color.rgb(255,107,0)
             ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
@@ -802,15 +822,27 @@ internal class RecorderHud(private val context:Context) {
                     position,end,android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             mark("CPU "+fmt(thermalValue?.smoothedC,"°C"),
-                MetricWarning.temperature(thermalValue?.smoothedC,65.0,80.0))
+                cpuSeverity)
             mark("GPU "+fmt(s.gpuTempC,"°C"),
-                MetricWarning.temperature(s.gpuTempC,65.0,80.0))
+                gpuSeverity)
             // Utilization is not a safety violation: yellow only, sustained
             // high load must never become a fake red "danger" indicator.
-            if(opts.showCpuLoad && (s.cpuPercent?:0)>=90)
+            if(opts.showCpuLoad && cpuLoadHigh>=2)
                 mark("CPU "+s.cpuPercent+"%",1)
-            if(opts.showGpuLoad && (s.gpuPercent?:0)>=90)
+            if(opts.showGpuLoad && gpuLoadHigh>=2)
                 mark("GPU "+s.gpuPercent+"%",1)
+            val (total,threshold)=ramThresholds ?: (0.0 to 0.0)
+            if(opts.showRam && total>0.0 && threshold>0.0) {
+                val used=s.ramGiB
+                val remaining=used?.let{total-it}
+                val ramSeverity=when {
+                    remaining==null || !remaining.isFinite()->0
+                    remaining<=threshold ->2
+                    remaining<=threshold*2.0->1
+                    else->0
+                }
+                mark("RAM "+fmt(used," GiB"),ramSeverity)
+            }
             view.text=styled
         }
     }
