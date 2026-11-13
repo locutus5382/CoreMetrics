@@ -85,7 +85,7 @@ internal fun CoreWinnerPanel(
             }
         }
         Text("${distribution.observations} valid 2–5 s winner samples; "+
-            "${distribution.ignored} unavailable. This is NOT CPU core residency.",
+            "${distribution.ignored} unavailable or tied. This is NOT CPU core residency.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
     }
 }
