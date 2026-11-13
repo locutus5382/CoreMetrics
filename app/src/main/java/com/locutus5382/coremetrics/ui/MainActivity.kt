@@ -75,6 +75,7 @@ import com.locutus5382.coremetrics.analysis.SegmentAnalysis
 import com.locutus5382.coremetrics.analysis.CompareStudioAnalysis
 import com.locutus5382.coremetrics.analysis.ScorecardModel
 import com.locutus5382.coremetrics.analysis.ScorecardExportRequest
+import com.locutus5382.coremetrics.analysis.DocumentWindowRequest
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -503,13 +504,15 @@ class MainActivity : ComponentActivity() {
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
-            var exportId by remember { mutableLongStateOf(0L) }
-            var reportAId by remember { mutableLongStateOf(0L) }
-            var reportBId by remember { mutableLongStateOf(0L) }
-            var reportSkipWarmup by remember { mutableStateOf(false) }
-            var segmentTextRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
-            var segmentCsvRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
-            var abWindowExport by remember { mutableStateOf(null as AbWindowExportRequest?) }
+            // Every SAF request survives Activity recreation and is consumed
+            // exactly once on document selection OR cancellation.
+            var exportId by rememberSaveable { mutableLongStateOf(0L) }
+            var reportAId by rememberSaveable { mutableLongStateOf(0L) }
+            var reportBId by rememberSaveable { mutableLongStateOf(0L) }
+            var reportSkipWarmup by rememberSaveable { mutableStateOf(false) }
+            var segmentTextRequest by rememberSaveable { mutableStateOf(null as String?) }
+            var segmentCsvRequest by rememberSaveable { mutableStateOf(null as String?) }
+            var abWindowExport by rememberSaveable { mutableStateOf(null as String?) }
             // Persist pending SAF intent across configuration/Activity recreation.
             var pngRequest by rememberSaveable { mutableStateOf(null as String?) }
             val notifyPermission = rememberLauncherForActivityResult(
@@ -521,11 +524,13 @@ class MainActivity : ComponentActivity() {
             val exportFile = rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/csv")
             ) { uri ->
-                if (uri != null && exportId != 0L) scope.launch {
+                val id=exportId
+                exportId=0L
+                if (uri != null && id != 0L) scope.launch {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
-                                database.exportCsv(exportId, it)
+                                database.exportCsv(id, it)
                             } ?: error("Document cannot be opened")
                         }
                     }
@@ -536,24 +541,28 @@ class MainActivity : ComponentActivity() {
             val reportFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/plain")
             ) { uri ->
-                if(uri!=null && reportAId!=0L)scope.launch {
+                val idA=reportAId
+                val idB=reportBId
+                val warmup=reportSkipWarmup
+                reportAId=0L;reportBId=0L;reportSkipWarmup=false
+                if(uri!=null && idA!=0L)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
                             val list=database.list(200)
-                            val a=list.firstOrNull{it.id==reportAId}
+                            val a=list.firstOrNull{it.id==idA}
                                 ?:error("Report session A is missing")
                             val reportPoints=database.points(a.id)
-                            val analyzedA=BenchmarkAnalyzer.analyze(a,reportPoints,if(reportSkipWarmup)30 else 0)
-                            val content=if(reportBId!=0L && reportBId!=a.id) {
-                                val b=list.firstOrNull{it.id==reportBId}
+                            val analyzedA=BenchmarkAnalyzer.analyze(a,reportPoints,if(warmup)30 else 0)
+                            val content=if(idB!=0L && idB!=a.id) {
+                                val b=list.firstOrNull{it.id==idB}
                                     ?:error("Report session B is missing")
                                 BenchmarkAnalyzer.comparison(analyzedA,
-                                    BenchmarkAnalyzer.analyze(b,database.points(b.id),if(reportSkipWarmup)30 else 0))
+                                    BenchmarkAnalyzer.analyze(b,database.points(b.id),if(warmup)30 else 0))
                             } else BenchmarkAnalyzer.text(analyzedA) +
                                 SessionDiagnosticsAnalyzer.text(
                                     SessionDiagnosticsAnalyzer.analyze(
                                         V08Analytics.afterWarmUp(reportPoints,
-                                            if(reportSkipWarmup)30 else 0),analyzedA),
+                                            if(warmup)30 else 0),analyzedA),
                                     reportPoints.firstOrNull()?.timeMs)
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
                                 it.write(content)
@@ -567,7 +576,8 @@ class MainActivity : ComponentActivity() {
             val segmentTextFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/plain")
             ) { uri ->
-                val request=segmentTextRequest
+                val request=DocumentWindowRequest.parseSegment(segmentTextRequest)
+                segmentTextRequest=null
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
@@ -594,7 +604,8 @@ class MainActivity : ComponentActivity() {
             val segmentCsvFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/csv")
             ) { uri ->
-                val request=segmentCsvRequest
+                val request=DocumentWindowRequest.parseSegment(segmentCsvRequest)
+                segmentCsvRequest=null
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
@@ -622,14 +633,15 @@ class MainActivity : ComponentActivity() {
             val abWindowTextFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("text/plain")
             ) { uri ->
-                val request=abWindowExport
+                val request=DocumentWindowRequest.parseAb(abWindowExport)
+                abWindowExport=null
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
                         runCatching {
                             val list=database.list(200)
-                            val sa=list.firstOrNull{it.id==request.sessionAId}
+                            val sa=list.firstOrNull{it.id==request.firstId}
                                 ?:error("Session A has been removed")
-                            val sb=list.firstOrNull{it.id==request.sessionBId}
+                            val sb=list.firstOrNull{it.id==request.secondId}
                                 ?:error("Session B has been removed")
                             val pa=database.points(sa.id)
                             val pb=database.points(sb.id)
@@ -638,7 +650,7 @@ class MainActivity : ComponentActivity() {
                             }
                             val analysis=CompareStudioAnalysis.analyze(
                                 sa,pa,sb,pb,CompareStudioAnalysis.Window(
-                                    request.startElapsedMs,request.endElapsedMs))
+                                    request.startMs,request.endMs))
                             val text=CompareStudioAnalysis.report(analysis)
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
                                 it.write(text)
@@ -1266,14 +1278,16 @@ class MainActivity : ComponentActivity() {
                                                     source=detailPoints,
                                                     initialSkipWarmup=skipWarmUp,
                                                     onExportText={ range ->
-                                                        segmentTextRequest=SegmentExportRequest(
-                                                            r.session.id,range.startMs,range.endMs)
+                                                        segmentTextRequest=DocumentWindowRequest.segment(
+                                                            DocumentWindowRequest.Segment(
+                                                                r.session.id,range.startMs,range.endMs))
                                                         segmentTextFile.launch("CoreMetrics_Segment_"+
                                                             r.session.id+"_"+range.startMs+"_"+range.endMs+".txt")
                                                     },
                                                     onExportCsv={ range ->
-                                                        segmentCsvRequest=SegmentExportRequest(
-                                                            r.session.id,range.startMs,range.endMs)
+                                                        segmentCsvRequest=DocumentWindowRequest.segment(
+                                                            DocumentWindowRequest.Segment(
+                                                                r.session.id,range.startMs,range.endMs))
                                                         segmentCsvFile.launch("CoreMetrics_Segment_"+
                                                             r.session.id+"_"+range.startMs+"_"+range.endMs+".csv")
                                                     },
@@ -1528,9 +1542,10 @@ class MainActivity : ComponentActivity() {
                                                     cursorFraction=compareCursor,
                                                     onCursorFraction={compareCursor=it},
                                                     onExport={window ->
-                                                        abWindowExport=AbWindowExportRequest(
-                                                            firstId,secondId,
-                                                            window.startElapsedMs,window.endElapsedMs)
+                                                        abWindowExport=DocumentWindowRequest.ab(
+                                                            DocumentWindowRequest.Ab(
+                                                                firstId,secondId,
+                                                                window.startElapsedMs,window.endElapsedMs))
                                                         abWindowTextFile.launch(
                                                             "CoreMetrics_AB_Window_"+firstId+"_"+secondId+
                                                                 "_"+window.startElapsedMs+"_"+window.endElapsedMs+".txt")
