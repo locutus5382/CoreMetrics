@@ -33,6 +33,13 @@ internal fun CompareStudioPanel(
     cursorFraction:Float,onCursorFraction:(Float)->Unit,
     onExport:(CompareStudioAnalysis.Window)->Unit
 ) {
+    if(pointsA.size<sessionA.count || pointsB.size<sessionB.count) {
+        Text("A/B analysis unavailable: a source exceeds the 12,000-sample "+
+            "in-memory limit. Partial recordings must not be presented "+
+            "as complete comparisons.",color=solarOrange,
+            style=MaterialTheme.typography.bodySmall)
+        return
+    }
     val shared=remember(pointsA,pointsB) {
         CompareStudioAnalysis.sharedDuration(pointsA,pointsB)
     }
