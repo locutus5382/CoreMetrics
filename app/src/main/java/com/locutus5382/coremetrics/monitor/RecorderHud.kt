@@ -679,12 +679,12 @@ internal class RecorderHud(private val context:Context) {
         refreshDrawerControls()
         val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
         mainText?.textSize=12f*scale
-        // Keep the compact pill on ONE line; a 460dp cap alone would hide
-        // the lock/settings controls, so the weighted label ellipsizes safely.
+        // All enabled metrics stay visible in short lines, with REC, gear,
+        // dock and unlock controls remaining fixed-size touch targets.
         mainText?.maxWidth=dp(460f*scale)
-        mainText?.setSingleLine(opts.layout!="pro")
-        mainText?.ellipsize=if(opts.layout!="pro")
-            android.text.TextUtils.TruncateAt.END else null
+        mainText?.setSingleLine(false)
+        mainText?.maxLines=5
+        mainText?.ellipsize=null
         recText?.textSize=11f*scale
         // The unlocked main control and separate locked recovery chip share the
         // same vector linework, without an OS-dependent emoji glyph.
@@ -811,8 +811,8 @@ internal class RecorderHud(private val context:Context) {
         val builder=SpannableStringBuilder()
         if(items.isEmpty())builder.append("REC · telemetry")
         else items.forEachIndexed{index,pair->
-            if(index>0)builder.append(if(opts.layout=="pro" && index%3==0)
-                "\\n" else " · ")
+            if(index>0)builder.append(
+                if(items.size>2 && index%2==0)"\n" else " · ")
             val begin=builder.length
             builder.append(pair.first)
             if(pair.second!=HudSeverity.Level.NORMAL)

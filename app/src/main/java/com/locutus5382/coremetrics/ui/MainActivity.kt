@@ -324,6 +324,28 @@ class MainActivity : ComponentActivity() {
         )
     } catch (e: Exception) { ScreenStatus(message = "Recorder unreachable: " + e.javaClass.simpleName) }
 
+    /** Send activity visibility only to an already-running user-started monitor. */
+    private fun notifyAppVisible(visible:Boolean) {
+        val state=query()
+        if(!state.running && !state.starting && !state.standby)return
+        runCatching{
+            startService(Intent(this,RecordingService::class.java).setAction(
+                if(visible)RecordingService.APP_FOREGROUND
+                else RecordingService.APP_BACKGROUND))
+        }
+    }
+    private var appVisible=false
+    override fun onStart() {
+        super.onStart()
+        appVisible=true
+        notifyAppVisible(true)
+    }
+    override fun onStop() {
+        appVisible=false
+        notifyAppVisible(false)
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
@@ -408,6 +430,11 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {firstNavFocus.requestFocus()}
 
             var status by remember { mutableStateOf(ScreenStatus()) }
+            // REC may be initiated from this already-visible Activity.
+            LaunchedEffect(status.running,status.starting,status.standby) {
+                if(appVisible && (status.running||status.starting||status.standby))
+                    notifyAppVisible(true)
+            }
             var overlayAllowed by remember {
                 mutableStateOf(Settings.canDrawOverlays(this@MainActivity))
             }
@@ -1588,6 +1615,13 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                     "HUD" -> {
+                                        if(status.running || status.standby || status.starting)
+                                            Text("Floating HUD pauses over CoreMetrics "+
+                                                "so it does not obscure controls. "+
+                                                "It returns in your game if enabled. "+
+                                                "REC continues while this screen is open.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
                                         HudSettingsPanel(
                                             options=hudOptions,
                                             isArmed=status.standby || status.running,
