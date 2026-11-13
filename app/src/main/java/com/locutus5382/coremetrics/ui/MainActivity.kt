@@ -1237,7 +1237,7 @@ class MainActivity : ComponentActivity() {
                                              Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
-                                                 Text("Start A/B selection at 30s (technical evidence too)",
+                                                 Text("Default crop: skip first 30s (legacy details too)",
                                                      Modifier.weight(1f),color=coreText,
                                                      style=MaterialTheme.typography.bodySmall)
                                                  Switch(skipWarmUp,
@@ -1358,10 +1358,18 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick={
                                                 compareTechnical=!compareTechnical
                                             }) {
-                                                Text(if(compareTechnical)"Hide technical evidence"
-                                                    else "Show full evidence, regimes and diagnostics")
+                                                Text(if(compareTechnical)"Hide legacy technical evidence"
+                                                    else "Show legacy full-run diagnostics and regimes")
                                             }
                                             if(compareTechnical) {
+                                            Text("LEGACY TECHNICAL VIEW: These panels and "+
+                                                "their original full-run report use source "+
+                                                "chronology (optionally excluding first 30s), "+
+                                                "not the A/B scorecard's custom crop. Use "+
+                                                "Export selected A/B report above for "+
+                                                "range-matched data.",
+                                                color=solarOrange,
+                                                style=MaterialTheme.typography.bodySmall)
                                             analysisA?.let { r ->
                                                 Row(Modifier.fillMaxWidth(),
                                                     horizontalArrangement=Arrangement.spacedBy(10.dp)) {
