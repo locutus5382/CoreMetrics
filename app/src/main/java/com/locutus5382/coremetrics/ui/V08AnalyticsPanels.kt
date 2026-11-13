@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -22,9 +23,14 @@ import java.util.Locale
 /** No database or polling in composable charts; render persisted points only. */
 @Composable
 internal fun ObservedProfilePanel(
-    selected:String,points:List<SessionStore.Point>,modifier:Modifier=Modifier
+    selected:String,points:List<SessionStore.Point>,modifier:Modifier=Modifier,
+    referenceStartMs:Long?=null
 ) {
-    val profile=V08Analytics.profile(selected,points)
+    val profile=remember(selected,points) {
+        V08Analytics.profile(selected,points)
+    }
+    // Warm-up exclusion must not silently reset elapsed time to zero.
+    val timeOrigin=referenceStartMs ?: points.firstOrNull()?.timeMs ?: 0L
     Column(modifier.pureGlass(12).padding(12.dp),
         verticalArrangement=Arrangement.spacedBy(5.dp)) {
         Text("SELECTED vs OBSERVED",color=iceBlue,fontWeight=FontWeight.Bold)
@@ -34,8 +40,8 @@ internal fun ObservedProfilePanel(
             Text("Observed phase ${index+1}: ${phase.description}",
                 color=if(profile.conflict)solarOrange else coreCyan,
                 style=MaterialTheme.typography.bodySmall)
-            val offset=(phase.startMs-points.first().timeMs)/1000.0
-            val end=(phase.endMs-points.first().timeMs)/1000.0
+            val offset=(phase.startMs-timeOrigin)/1000.0
+            val end=(phase.endMs-timeOrigin)/1000.0
             Text(String.format(Locale.US,"%.0f–%.0f s · %d samples",
                 offset,end,phase.sampleCount),
                 color=coreSecondary,style=MaterialTheme.typography.labelSmall)
@@ -51,7 +57,7 @@ internal fun ObservedProfilePanel(
 internal fun CoreWinnerPanel(
     points:List<SessionStore.Point>,modifier:Modifier=Modifier
 ) {
-    val distribution=V08Analytics.busiestCores(points)
+    val distribution=remember(points) {V08Analytics.busiestCores(points)}
     Column(modifier.pureGlass(12).padding(12.dp),
         verticalArrangement=Arrangement.spacedBy(5.dp)) {
         Text("BUSIEST CORE DISTRIBUTION",color=iceBlue,fontWeight=FontWeight.Bold)
@@ -89,15 +95,19 @@ internal fun LinkedSessionsTimeline(
     first:SessionStore.Session,firstPoints:List<SessionStore.Point>,
     second:SessionStore.Session,secondPoints:List<SessionStore.Point>
 ) {
-    val summary=V08Analytics.linkedTimeline(first,firstPoints,second,secondPoints)
+    val summary=remember(first,firstPoints,second,secondPoints) {
+        V08Analytics.linkedTimeline(first,firstPoints,second,secondPoints)
+    }
     if(summary==null) {
         Text("Both recordings require measured points to display a linked timeline.",
             color=coreSecondary)
         return
     }
-    val ordered=listOf(first to firstPoints,second to secondPoints)
-        .sortedBy{it.second.minOf{p->p.timeMs}}
-    val dateFmt=SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.getDefault())
+    val ordered=remember(first,firstPoints,second,secondPoints) {
+        listOf(first to firstPoints,second to secondPoints)
+            .sortedBy{it.second.minOf{p->p.timeMs}}
+    }
+    val dateFmt=remember {SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.getDefault())}
     Column(Modifier.fillMaxWidth().pureGlass(14).padding(12.dp),
         verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text("LINKED RECORDINGS · ACTUAL WALL-CLOCK TIME",
