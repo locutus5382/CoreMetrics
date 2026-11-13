@@ -645,6 +645,22 @@ class MainActivity : ComponentActivity() {
                                         style=MaterialTheme.typography.titleLarge,
                                         fontWeight=FontWeight.Bold)
                                 }
+                                if(supportsThemeChoice) {
+                                    OutlinedButton(onClick={
+                                        val choices=SurfaceFinish.values()
+                                        val next=choices[(finish.ordinal+1)%choices.size]
+                                        finish=next
+                                        prefs.edit().putString("ui_surface_finish",next.key)
+                                            .apply()
+                                    }) {
+                                        Text("THEME · "+appliedFinish.displayName+" ↻",
+                                            color=iceBlue,
+                                            style=MaterialTheme.typography.labelMedium)
+                                    }
+                                }else {
+                                    Text("FROSTED · FIXED",color=coreSecondary,
+                                        style=MaterialTheme.typography.labelSmall)
+                                }
                                 Box(
                                     Modifier.clip(RoundedCornerShape(9.dp))
                                         .background(if(status.running) Color(0xBB19473F)
@@ -1312,13 +1328,15 @@ class MainActivity : ComponentActivity() {
                                     else -> {
                                         GlassPanel {
                                             Text("Settings & privacy", style = MaterialTheme.typography.titleMedium)
-                                             Text("CONTROLLER · L1/R1 switches tabs; D-pad navigates "+
-                                                 "session chips and adjusts the focused A/B slider; "+
-                                                 "A selects. Touch and controller can be mixed.",
+                                             Text("CONTROLLER · L1/R1 (or L2/R2) switches tabs; "+
+                                                 "D-pad/hat and right joystick move focus; "+
+                                                 "A/DPAD CENTER selects focused controls. "+
+                                                 "With the A/B slider focused, left/right scrubs. "+
+                                                 "Use controller mode, not mouse emulation.",
                                                  color=coreSecondary,
                                                  style=MaterialTheme.typography.bodySmall)
                                             if(supportsThemeChoice) {
-                                                Text("APP APPEARANCE · OPTIONAL FINISHES",
+                                                Text("APP APPEARANCE · TAP TO APPLY",
                                                     color=iceBlue,
                                                     style=MaterialTheme.typography.titleSmall)
                                                 Row(Modifier.horizontalScroll(rememberScrollState()),
@@ -1334,6 +1352,8 @@ class MainActivity : ComponentActivity() {
                                                             },label={Text(option.displayName)})
                                                     }
                                                 }
+                                                Text("CURRENT: "+appliedFinish.displayName,
+                                                    color=coreMint,fontWeight=FontWeight.Bold)
                                                 Text(appliedFinish.description,
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.bodySmall)
@@ -1344,6 +1364,14 @@ class MainActivity : ComponentActivity() {
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                                 HorizontalDivider(color=coreBorder)
+                                            }else {
+                                                Text("APPEARANCE · FROSTED (FIXED)",
+                                                    color=iceBlue,fontWeight=FontWeight.Bold)
+                                                Text("This Analytics-only APK has one fixed finish. "+
+                                                    "Use the separate CoreMetrics Themes APK "+
+                                                    "for the visible THEME button, Liquid and "+
+                                                    "Tactical Flat.",
+                                                    color=coreSecondary)
                                             }
                                             Text("Recording is always user-started, offline, and read-only.",
                                                 color = muted)
