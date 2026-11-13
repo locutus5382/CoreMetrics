@@ -24,10 +24,7 @@ class HudTile:TileService() {
     private fun state():State=try {
         val b=contentResolver.call(Uri.parse(
             "content://"+packageName+".monitor.status"),"status",null,null)
-        val status=b?.getString("hudStatus").orEmpty()
-        val visible=status=="HUD_ATTACHED" ||
-            status=="HUD_ALREADY_ATTACHED" || status=="HUD_CONFIGURED" ||
-            status.startsWith("HUD_LOCKED") || status.startsWith("HUD_UNLOCKED")
+        val visible=b?.getBoolean("hudVisible",false)==true
         State(b?.getBoolean("running",false)==true ||
             b?.getBoolean("starting",false)==true,
             b?.getBoolean("standby",false)==true,visible)
@@ -41,9 +38,9 @@ class HudTile:TileService() {
     private fun toggle(){
         val current=state()
         if(current.recording){
-            Toast.makeText(this,
-                "Recording active · use the REC tile to stop and save",
-                Toast.LENGTH_LONG).show()
+            startService(Intent(this,RecordingService::class.java)
+                .setAction(if(current.hudVisible)
+                    RecordingService.HUD_HIDE else RecordingService.HUD_SHOW))
             refresh();return
         }
         if(current.standby){
@@ -89,13 +86,13 @@ class HudTile:TileService() {
         qsTile?.apply {
             label=when {
                 current.recording && current.hudVisible->"CM HUD · REC"
-                current.recording->"REC · HUD OFF"
+                current.recording->"CM HUD · HIDDEN REC"
                 current.standby->"CM HUD · ON"
                 else->"CM HUD · OFF"
             }
             icon=android.graphics.drawable.Icon.createWithResource(
                 this@HudTile,R.drawable.ic_coremetrics_hud_tile)
-            this.state=if(current.hudVisible||current.standby)
+            this.state=if(current.hudVisible)
                 Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             updateTile()
         }

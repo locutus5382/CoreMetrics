@@ -163,6 +163,7 @@ internal class RecorderHud(private val context:Context) {
     private var blinkOn=true
     private var locked=false
     private var collapsed=false
+    private var temporarilyHidden=false
     private var dockRight=true
     private var drawerOpen=false
     private var expandedX=0
@@ -211,6 +212,18 @@ internal class RecorderHud(private val context:Context) {
 
     fun permissionGranted()=Settings.canDrawOverlays(context)
     fun attached()=root?.isAttachedToWindow==true
+    fun isVisible()=attached() && !temporarilyHidden
+    /** Hide is visual only. The recorder, sample cadence and lock state
+     * survive. INVISIBLE removes all HUD and unlock-chip touch interception. */
+    fun setVisible(visible:Boolean):String {
+        val frame=root?:return "HUD_NOT_ATTACHED"
+        if(!attached())return "HUD_NOT_ATTACHED"
+        temporarilyHidden=!visible
+        frame.visibility=if(visible)View.VISIBLE else View.INVISIBLE
+        unlockWindow?.visibility=if(visible)View.VISIBLE else View.INVISIBLE
+        if(visible){renderTelemetry();renderAction()}
+        return if(visible)"HUD_VISIBLE" else "HUD_HIDDEN"
+    }
     fun isLocked()=locked
 
     /** Positions the independent unlock handle exactly above the original lock.
@@ -463,6 +476,7 @@ internal class RecorderHud(private val context:Context) {
         this.onOptionsChanged=onOptionsChanged
         if(attached()){applyAppearance();return "HUD_ALREADY_ATTACHED"}
         disposed=false
+        temporarilyHidden=false
         locked=false;collapsed=false;drawerOpen=false
         graphs.clear();graphCells.clear();drawerSwitches.clear()
         graphSwitch=null;opacityLabel=null;drawerRecControl=null
@@ -712,7 +726,7 @@ internal class RecorderHud(private val context:Context) {
         startedAtMs=startedMs
         if(!isRecording) {
             latest=null;thermal.reset();thermalValue=null
-            graphs.values.forEach{it.clear()}
+
         }
         applyAppearance()
         syncBlink()
@@ -729,8 +743,7 @@ internal class RecorderHud(private val context:Context) {
         }
         (dockVisual?.background as? GradientDrawable)?.setColor(thermalColor)
         renderTelemetry()
-        // Updating text and graph Canvas does NOT require a WindowManager
-        // relayout; keep the sampling path cheap during emulator gameplay.
+        // No extra display sampling or WindowManager relayout.
     }
 
     private fun renderTelemetry() {
@@ -822,7 +835,7 @@ internal class RecorderHud(private val context:Context) {
             params=null;mainText=null;recText=null;recDot=null
             graphs.clear();graphCells.clear();drawerSwitches.clear()
             graphSwitch=null;opacityLabel=null;drawerRecControl=null
-            recording=false;locked=false;collapsed=false
+            recording=false;locked=false;collapsed=false;temporarilyHidden=false
             "HUD_REMOVED"
         }catch(e:Exception){
             if(!frame.isAttachedToWindow) {

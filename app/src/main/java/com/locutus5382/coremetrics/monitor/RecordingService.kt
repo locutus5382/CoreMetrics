@@ -46,6 +46,8 @@ class RecordingService:Service() {
         const val DISARM="com.locutus5382.coremetrics.DISARM_HUD"
         const val HUD_CONFIG="com.locutus5382.coremetrics.HUD_CONFIG"
         const val HUD_LOCK="com.locutus5382.coremetrics.HUD_LOCK"
+        const val HUD_SHOW="com.locutus5382.coremetrics.HUD_SHOW"
+        const val HUD_HIDE="com.locutus5382.coremetrics.HUD_HIDE"
         const val HUD_UNLOCK="com.locutus5382.coremetrics.HUD_UNLOCK"
         const val LABEL="label"
         const val CONFIG="configuration"
@@ -112,6 +114,7 @@ class RecordingService:Service() {
         armed=false
         MonitorState.standby=false
         MonitorState.hudState=hud.hide()
+        MonitorState.hudVisible=false
         MonitorState.hudLocked=false
         MonitorState.clear("Standby closed")
         RecorderLease.clear(this)
@@ -154,6 +157,7 @@ class RecordingService:Service() {
                 MonitorState.hudOptionRevision++
             })
         MonitorState.hudState=result
+        MonitorState.hudVisible=hud.isVisible()
         MonitorState.hudLocked=hud.isLocked()
         RecorderJournal.event(this,"HUD_ATTACH",result)
         return result
@@ -222,6 +226,27 @@ class RecordingService:Service() {
                 refreshTile()
                 return START_STICKY
             }
+            HUD_SHOW, HUD_HIDE -> {
+                if(!armed && task?.isActive!=true) {
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+                val show=command.action==HUD_SHOW
+                if(!hud.attached() && show && hud.permissionGranted()){
+                    settings=HudOptions.from(this)
+                    attachHud()
+                    hud.mode(MonitorState.running,MonitorState.startedAt)
+                    MonitorState.latest?.let { sample ->
+                        if(MonitorState.running)hud.update(sample,MonitorState.sampleCount)
+                    }
+                }
+                val result=hud.setVisible(show)
+                MonitorState.hudVisible=hud.isVisible()
+                MonitorState.hudState=result
+                RecorderJournal.event(this,"HUD_VISIBILITY",result)
+                refreshTile()
+                return START_NOT_STICKY
+            }
             HUD_LOCK, HUD_UNLOCK -> {
                 if(!armed && task?.isActive!=true) {
                     stopSelf(startId)
@@ -249,6 +274,7 @@ class RecordingService:Service() {
                 if(hud.attached()){
                     hud.configure(settings)
                     MonitorState.hudState="HUD_CONFIGURED"
+                    MonitorState.hudVisible=hud.isVisible()
                 }
                 return START_NOT_STICKY
             }

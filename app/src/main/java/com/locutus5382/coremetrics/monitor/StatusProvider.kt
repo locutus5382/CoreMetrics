@@ -27,6 +27,7 @@ class StatusProvider : ContentProvider() {
             putString("message", MonitorState.message)
             putString("hudStatus", MonitorState.hudState)
             putBoolean("hudLocked", MonitorState.hudLocked)
+            putBoolean("hudVisible",MonitorState.hudVisible)
             putLong("hudOptionRevision",MonitorState.hudOptionRevision)
             MonitorState.hudOptions?.let { h ->
                 putFloat("hudOptOpacity",h.opacity)
