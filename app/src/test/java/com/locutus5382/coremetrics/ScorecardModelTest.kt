@@ -77,9 +77,9 @@ class ScorecardModelTest {
         assertEquals(60_000L,card.graphStartMs)
         assertEquals(180_000L,card.graphDurationMs)
         val cpu=card.rows.first{it.label=="CPU temp P50"}
-        assertEquals("46.0 C",cpu.left)
-        assertEquals("50.0 C",cpu.right)
-        assertEquals("+4.0 C",cpu.delta)
+        assertEquals("46.0 °C",cpu.left)
+        assertEquals("50.0 °C",cpu.right)
+        assertEquals("+4.0 °C",cpu.delta)
         val power=card.rows.first{it.label=="Mean battery discharge"}
         assertEquals("+1.00 W",power.delta)
         assertTrue(card.footnotes.any{it.contains("not")||it.contains("NOT")})

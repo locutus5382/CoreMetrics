@@ -263,12 +263,13 @@ object SessionDiagnosticsAnalyzer {
     fun text(result: Result, originMs: Long? = null): String = buildString {
         appendLine()
         appendLine("ADVANCED SINGLE-SESSION DIAGNOSTICS (RECORDED SAMPLE WINDOW)")
+        fun fmt(v:Double?,digits:Int=2):String =
+            v?.takeIf{it.isFinite()}?.let{
+                String.format(Locale.US,"%."+digits+"f",it)
+            } ?: "n/a"
         val origin = originMs ?: result.distributions.firstOrNull()
             ?.readings?.firstOrNull()?.timeMs ?: 0L
         for (stat in result.distributions) {
-            fun fmt(v: Double?): String = v?.let {
-                String.format(Locale.US,"%.2f",it)
-            } ?: "n/a"
             append(stat.metric.title).append(": median ")
                 .append(fmt(stat.median)).append(", P95 ")
                 .append(fmt(stat.p95)).append(", peak ")
@@ -283,16 +284,18 @@ object SessionDiagnosticsAnalyzer {
             " (" + result.observedCapReadings + " valid cap snapshots)")
         appendLine("Busiest-core load >=85%: " +
             String.format(Locale.US,"%.1f%%",result.busiestCorePressure.highSharePct) +
-            " of " + result.busiestCorePressure.observedSeconds + " valid seconds")
+            " of " + fmt(result.busiestCorePressure.observedSeconds,1) + " valid seconds")
         appendLine("GPU load >=85%: " +
             String.format(Locale.US,"%.1f%%",result.gpuPressure.highSharePct) +
-            " of " + result.gpuPressure.observedSeconds + " valid seconds")
+            " of " + fmt(result.gpuPressure.observedSeconds,1) + " valid seconds")
         appendLine("CPU initial / final slopes (°C/min): " +
-            result.initialCpuSlopeCPerMin + " / " + result.finalCpuSlopeCPerMin)
+            fmt(result.initialCpuSlopeCPerMin) + " / " +
+            fmt(result.finalCpuSlopeCPerMin))
         appendLine("Mean CPU-sensor minus battery-temperature delta (°C): " +
-            result.meanCpuBatteryDeltaC)
+            fmt(result.meanCpuBatteryDeltaC))
         appendLine("Estimated remaining / full hours: " +
-            result.remainingHours + " / " + result.fullChargeHours)
+            fmt(result.remainingHours) + " / " +
+            fmt(result.fullChargeHours))
         appendLine("Power estimate: " + result.runtimeNote)
         appendLine("Caveat: clock changes do not prove thermal throttling; high core " +
             "utilization does not prove a frame bottleneck. Temperature sensors " +

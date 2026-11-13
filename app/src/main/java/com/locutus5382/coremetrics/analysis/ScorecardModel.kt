@@ -51,11 +51,11 @@ object ScorecardModel {
         val originalFirst=bundle.points.first().timeMs
         val rows=listOf(
             ValueRow("CPU temperature P50 / P95",
-                formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_TEMP).median," C")+
-                " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_TEMP).p95," C")),
+                formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_TEMP).median," °C")+
+                " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_TEMP).p95," °C")),
             ValueRow("GPU temperature P50 / P95",
-                formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP).median," C")+
-                " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP).p95," C")),
+                formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP).median," °C")+
+                " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP).p95," °C")),
             ValueRow("CPU / GPU load P50",
                 formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.CPU_LOAD).median,"%")+
                 " / "+formatted(result.distribution(SessionDiagnosticsAnalyzer.Metric.GPU_LOAD).median,"%")),
@@ -119,7 +119,7 @@ object ScorecardModel {
         val rows=metrics.map{(name,metric)->
             val p95=name.endsWith("P95")
             val unit=if(metric==SessionDiagnosticsAnalyzer.Metric.CPU_LOAD||
-                metric==SessionDiagnosticsAnalyzer.Metric.GPU_LOAD)"%" else " C"
+                metric==SessionDiagnosticsAnalyzer.Metric.GPU_LOAD)"%" else " °C"
             val left=if(p95)a.p95(metric) else a.median(metric)
             val right=if(p95)b.p95(metric) else b.median(metric)
             ValueRow(name,formatted(left,unit),formatted(right,unit),
