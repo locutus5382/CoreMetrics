@@ -115,7 +115,10 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                 session.count+" samples)?",color=MaterialTheme.colorScheme.error)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick={confirmDelete=false}){Text("Cancel")}
-                Button(onClick={onDelete()}){Text("Confirm delete #"+session.id)}
+                Button(onClick={
+                    confirmDelete=false
+                    onDelete()
+                }){Text("Confirm delete #"+session.id)}
             }
         }else{
             OutlinedButton(onClick={confirmDelete=true}){Text("Delete session…")}

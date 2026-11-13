@@ -98,7 +98,7 @@ object ScorecardModel {
                 "Battery watts are terminal discharge measurements, not CPU/GPU chip power.",
                 "Within ±2°C of median is not thermal equilibrium. Gaps are not interpolated."
             ),
-            sourceDescription="CoreMetrics v0.9.6 · Local/offline · Original data unchanged"
+            sourceDescription="CoreMetrics v"+ExportVersion.VERSION+" · Local/offline · Original data unchanged"
         )
     }
 
@@ -170,7 +170,7 @@ object ScorecardModel {
             ),graphStartMs=result.window.startElapsedMs,
             graphEndMs=result.window.endElapsedMs,
             footnotes=notes,
-            sourceDescription="CoreMetrics v0.9.6 · Observational comparison, not measured FPS"
+            sourceDescription="CoreMetrics v"+ExportVersion.VERSION+" · Observational comparison, not measured FPS"
         )
     }
 }
