@@ -647,9 +647,10 @@ class MainActivity : ComponentActivity() {
                 val request=ScorecardExportRequest.decode(pngRequest)
                 pngRequest=null
                 if(uri!=null && request!=null)scope.launch {
-                    val outcome=withContext(Dispatchers.IO) {
-                        runCatching {
-                            val sessions=database.list(200)
+                    val outcome=try {
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                val sessions=database.list(200)
                             val a=sessions.firstOrNull {it.id==request.firstId}
                                 ?:error("Source session no longer exists")
                             val pointsA=database.points(a.id)
@@ -678,7 +679,16 @@ class MainActivity : ComponentActivity() {
                                 ScorecardPngRenderer.write(
                                     spec,SurfaceFinish.parse(request.styleKey),out)
                             }?:error("Cannot open PNG destination")
+                            }
                         }
+                    } catch(e:kotlin.coroutines.cancellation.CancellationException) {
+                        // Activity rotation or cancellation can happen while the
+                        // document provider already owns a partially written URI.
+                        // Cleanup must run even when the UI coroutine is cancelled.
+                        withContext(kotlinx.coroutines.NonCancellable+Dispatchers.IO) {
+                            runCatching {contentResolver.delete(uri,null,null)}
+                        }
+                        throw e
                     }
                     // SAF document may already exist even if encode/write fails.
                     // Best effort: remove only the just-created selected URI.
