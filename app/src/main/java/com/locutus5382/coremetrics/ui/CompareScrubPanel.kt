@@ -65,10 +65,12 @@ private fun f(value:Double?):String =
     value?.let { String.format(Locale.US,"%.1f",it) } ?: "—"
 
 @Composable
-internal fun CompareScrubPanel(a:List<SessionStore.Point>,b:List<SessionStore.Point>) {
+internal fun CompareScrubPanel(
+    a:List<SessionStore.Point>,b:List<SessionStore.Point>,
+    fraction:Float,onFractionChange:(Float)->Unit
+) {
     if(a.isEmpty() || b.isEmpty())return
     var metric by remember { mutableStateOf(Metric.CPU_TEMP) }
-    var fraction by remember { mutableFloatStateOf(0.5f) }
     val duration=max(a.last().timeMs-a.first().timeMs,
         b.last().timeMs-b.first().timeMs).coerceAtLeast(1L)
     val elapsed=(duration*fraction).toLong()
@@ -102,15 +104,15 @@ internal fun CompareScrubPanel(a:List<SessionStore.Point>,b:List<SessionStore.Po
         Canvas(Modifier.fillMaxWidth().height(188.dp)
             .pointerInput(Unit) {
                 detectTapGestures { point ->
-                    fraction=(point.x/size.width.coerceAtLeast(1)).coerceIn(0f,1f)
+                    onFractionChange((point.x/size.width.coerceAtLeast(1)).coerceIn(0f,1f))
                 }
             }
             .pointerInput(Unit) {
                 detectDragGestures(onDragStart={point ->
-                    fraction=(point.x/size.width.coerceAtLeast(1)).coerceIn(0f,1f)
+                    onFractionChange((point.x/size.width.coerceAtLeast(1)).coerceIn(0f,1f))
                 },onDrag={change,_ ->
-                    fraction=(change.position.x/size.width.coerceAtLeast(1))
-                        .coerceIn(0f,1f)
+                    onFractionChange((change.position.x/size.width.coerceAtLeast(1))
+                        .coerceIn(0f,1f))
                     change.consume()
                 })
             }
@@ -156,7 +158,7 @@ internal fun CompareScrubPanel(a:List<SessionStore.Point>,b:List<SessionStore.Po
         }
         if(!available)Text("This metric was not measured in either session.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
-        Slider(value=fraction,onValueChange={fraction=it},valueRange=0f..1f)
+        Slider(value=fraction,onValueChange=onFractionChange,valueRange=0f..1f)
         Text("Cursor: "+(elapsed/1000)+" s · tap/drag chart or use slider with controller",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {

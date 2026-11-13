@@ -17,6 +17,8 @@ import android.provider.Settings
 import android.view.KeyEvent
 import android.view.InputDevice
 import android.view.MotionEvent
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -117,7 +119,11 @@ class MainActivity : ComponentActivity() {
     /** Hardware shoulder navigation even after touch focus is lost. */
     private var controllerTabAction:((Int)->Unit)?=null
     private var controllerFocusAction:((Int)->Boolean)?=null
+    private var controllerScrollAction:((Float)->Unit)?=null
+    private var controllerScrubAction:((Float)->Unit)?=null
+    private var controllerIsCompare:(()->Boolean)?=null
     private var lastAnalogMoveMs=0L
+    private var lastAnalogFocusMs=0L
     override fun dispatchKeyEvent(event:KeyEvent):Boolean {
         if(event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) {
             val delta=when(event.keyCode) {
@@ -154,26 +160,44 @@ class MainActivity : ComponentActivity() {
     override fun onGenericMotionEvent(event:MotionEvent):Boolean {
         if(event.action==MotionEvent.ACTION_MOVE &&
             (event.source and InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK) {
-            // Portal: right stick commonly maps to Z/RZ; certain controller
-            // modes use RX/RY. D-pad hats may also arrive as motion axes.
+            val now=SystemClock.uptimeMillis()
             val hatX=event.getAxisValue(MotionEvent.AXIS_HAT_X)
             val hatY=event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            // Hardware right stick: Z (horizontal) + RZ (vertical).
+            // Fallback for controller firmwares exposing RX/RY instead.
             val z=event.getAxisValue(MotionEvent.AXIS_Z)
             val rz=event.getAxisValue(MotionEvent.AXIS_RZ)
             val rx=event.getAxisValue(MotionEvent.AXIS_RX)
             val ry=event.getAxisValue(MotionEvent.AXIS_RY)
-            val x=if(kotlin.math.abs(hatX)>.55f)hatX
-                else if(kotlin.math.abs(z)>.58f)z else rx
-            val y=if(kotlin.math.abs(hatY)>.55f)hatY
-                else if(kotlin.math.abs(rz)>.58f)rz else ry
-            val dir=if(kotlin.math.abs(x)<.60f && kotlin.math.abs(y)<.60f)0
-                else if(kotlin.math.abs(x)>kotlin.math.abs(y))
-                    if(x<0f)1 else 2
-                else if(y<0f)3 else 4
-            val now=SystemClock.uptimeMillis()
-            if(dir!=0 && now-lastAnalogMoveMs>=190L) {
-                lastAnalogMoveMs=now
+            if((kotlin.math.abs(hatX)>.55f ||
+                    kotlin.math.abs(hatY)>.55f) &&
+                    now-lastAnalogFocusMs>=180L) {
+                lastAnalogFocusMs=now
+                val dir=if(kotlin.math.abs(hatX)>kotlin.math.abs(hatY))
+                    if(hatX<0f)1 else 2
+                else if(hatY<0f)3 else 4
                 if(controllerFocusAction?.invoke(dir)==true)return true
+            }
+            val x=if(kotlin.math.abs(z)>.18f)z else rx
+            val y=if(kotlin.math.abs(rz)>.18f)rz else ry
+            // Only scroll a *visible Activity*. The game/HUD never receives
+            // fabricated touch events, and no sampler is started here.
+            if(kotlin.math.abs(y)>.18f && now-lastAnalogMoveMs>=55L) {
+                lastAnalogMoveMs=now
+                controllerScrollAction?.let{it(y);return true}
+            }
+            if(kotlin.math.abs(x)>.18f) {
+                if(controllerIsCompare?.invoke()==true &&
+                    now-lastAnalogMoveMs>=55L) {
+                    lastAnalogMoveMs=now
+                    controllerScrubAction?.let{it(x);return true}
+                } else if(controllerIsCompare?.invoke()!=true &&
+                    kotlin.math.abs(x)>.60f &&
+                    now-lastAnalogFocusMs>=180L) {
+                    lastAnalogFocusMs=now
+                    if(controllerFocusAction?.invoke(if(x<0f)1 else 2)==true)
+                        return true
+                }
             }
         }
         return super.onGenericMotionEvent(event)
@@ -189,8 +213,8 @@ class MainActivity : ComponentActivity() {
             statusBar?.requestAddTileService(
                 ComponentName(this, SessionTile::class.java),
                 when {
-                    packageName.endsWith(".v083themes") -> "CoreMetrics v0.8.3 Themes • Record"
-                    packageName.endsWith(".v083base") -> "CoreMetrics v0.8.3 Analytics • Record"
+                    packageName.endsWith(".v084themes") -> "CoreMetrics v0.8.4 Themes • Record"
+                    packageName.endsWith(".v084base") -> "CoreMetrics v0.8.4 Analytics • Record"
                     packageName.endsWith(".v07test") -> "CoreMetrics v0.7 • Record"
                     packageName.endsWith(".preview") -> "CoreMetrics Preview • Record"
                     else -> "CoreMetrics • Record"
@@ -222,8 +246,8 @@ class MainActivity : ComponentActivity() {
             val bar=getSystemService(StatusBarManager::class.java)
             bar?.requestAddTileService(
                 ComponentName(this,HudTile::class.java),
-                if(packageName.endsWith(".v083themes"))"CoreMetrics v0.8.3 Themes · HUD"
-                else if(packageName.endsWith(".v083base"))"CoreMetrics v0.8.3 Analytics · HUD"
+                if(packageName.endsWith(".v084themes"))"CoreMetrics v0.8.4 Themes · HUD"
+                else if(packageName.endsWith(".v084base"))"CoreMetrics v0.8.4 Analytics · HUD"
                 else "CoreMetrics · HUD",
                 Icon.createWithResource(this,
                     com.locutus5382.coremetrics.R.drawable.ic_coremetrics_hud_tile),
@@ -290,7 +314,10 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
         val database = SessionStore(applicationContext)
         setContent {
-            val supportsThemeChoice=packageName.endsWith(".v083themes")
+            // The normal debug APK and Themes flavor are unified visually.
+            // Only the deliberately fixed Analytics comparison flavor omits
+            // theme changes, preserving side-by-side A/B UI tests.
+            val supportsThemeChoice=!packageName.endsWith(".v084base")
             var finish by remember {
                 mutableStateOf(SurfaceFinish.parse(
                     if(supportsThemeChoice)
@@ -298,7 +325,26 @@ class MainActivity : ComponentActivity() {
                     else "frosted"))
             }
             val appliedFinish=if(supportsThemeChoice)finish else SurfaceFinish.FROSTED
+            var immersive by rememberSaveable {
+                mutableStateOf(prefs.getBoolean("immersive_ui",false))
+            }
+            LaunchedEffect(immersive) {
+                val controller=window.insetsController
+                if(immersive) {
+                    controller?.systemBarsBehavior=
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    controller?.hide(WindowInsets.Type.systemBars())
+                } else controller?.show(WindowInsets.Type.systemBars())
+            }
+            DisposableEffect(Unit) {
+                onDispose {
+                    window.insetsController?.show(WindowInsets.Type.systemBars())
+                }
+            }
             var page by rememberSaveable { mutableStateOf("Live") }
+            var compareCursor by rememberSaveable { mutableFloatStateOf(.5f) }
+            val contentScroll=rememberScrollState()
+            val scope=rememberCoroutineScope()
             // Device-reported capacity, read once for the display gauge.
             // Do not hard-code a Portal-specific (or decimal GB) memory ceiling.
             val ramTotalGiB=remember {
@@ -309,6 +355,7 @@ class MainActivity : ComponentActivity() {
                 }.getOrNull()
             }
             val firstNavFocus=remember {FocusRequester()}
+            LaunchedEffect(page) {contentScroll.scrollTo(0)}
             val focusManager=LocalFocusManager.current
             SideEffect {
                 controllerTabAction={ delta ->
@@ -322,11 +369,23 @@ class MainActivity : ComponentActivity() {
                         else -> FocusDirection.Down
                     })
                 }
+                controllerIsCompare={page=="Compare"}
+                controllerScrollAction={value ->
+                    val target=(contentScroll.value+value*60f).toInt()
+                        .coerceIn(0,contentScroll.maxValue)
+                    scope.launch{contentScroll.scrollTo(target)}
+                }
+                controllerScrubAction={value ->
+                    compareCursor=(compareCursor+value*.025f).coerceIn(0f,1f)
+                }
             }
             DisposableEffect(Unit) {
                 onDispose {
                     controllerTabAction=null
                     controllerFocusAction=null
+                    controllerScrollAction=null
+                    controllerScrubAction=null
+                    controllerIsCompare=null
                 }
             }
             // Focus a real clickable control, not the previous non-clickable
@@ -387,7 +446,6 @@ class MainActivity : ComponentActivity() {
             var reportAId by remember { mutableLongStateOf(0L) }
             var reportBId by remember { mutableLongStateOf(0L) }
             var reportSkipWarmup by remember { mutableStateOf(false) }
-            val scope = rememberCoroutineScope()
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -661,6 +719,19 @@ class MainActivity : ComponentActivity() {
                                     Text("FROSTED · FIXED",color=coreSecondary,
                                         style=MaterialTheme.typography.labelSmall)
                                 }
+                                if(page=="Live") {
+                                    Button(onClick={
+                                        if(status.standby||status.running)page="HUD"
+                                        else armHud()
+                                    },contentPadding=PaddingValues(
+                                        horizontal=10.dp,vertical=6.dp),
+                                        colors=ButtonDefaults.buttonColors(
+                                            containerColor=solarOrange)) {
+                                        Text(if(status.standby||status.running)"HUD"
+                                            else "ARM HUD",
+                                            style=MaterialTheme.typography.labelMedium)
+                                    }
+                                }
                                 Box(
                                     Modifier.clip(RoundedCornerShape(9.dp))
                                         .background(if(status.running) Color(0xBB19473F)
@@ -678,34 +749,24 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Spacer(Modifier.height(9.dp))
-                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                            Column(Modifier.weight(1f).verticalScroll(contentScroll),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 when (page) {
                                     "Live" -> {
-                                        Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
-                                            Button(onClick={ if(status.standby || status.running) {
-                                                page="HUD"
-                                            } else armHud() },
-                                                colors=ButtonDefaults.buttonColors(
-                                                    containerColor=solarOrange)) {
-                                                Text(if(status.standby) "HUD READY"
-                                                    else if(status.running) "● REC"
-                                                    else "LAUNCH HUD STANDBY")
-                                            }
-                                            OutlinedButton(onClick={page="HUD"}) {
-                                                Text("Customize HUD")
-                                            }
-                                            OutlinedButton(onClick={
-                                                requestQuickSettingsTile { message=it }
-                                            }) { Text("Add QS tile") }
-                                        }
-                                        Text("LOW-MEMORY DEVICE TIP · The Portal can terminate "+
-                                            "CoreMetrics when Eden loads. For a more reliable run, "+
-                                            "start Eden first, open Quick Settings, activate the "+
-                                            "CoreMetrics HUD tile, then press REC. No recorder "+
-                                            "can guarantee survival of Android low-memory kills.",
+                                        Text("Eden first → Quick Settings → CM HUD → REC. " +
+                                            "Standby performs no hardware sampling.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
+                                        val powerState=when {
+                                            status.powerStatus?.startsWith("DISCHARGING")==true ->
+                                                "Discharging"
+                                            status.powerStatus?.startsWith(
+                                                "CHARGING_OR_EXTERNAL_POWER")==true ||
+                                            status.powerStatus?.startsWith("FULL")==true ->
+                                                "Plugged in"
+                                            status.powerStatus==null -> null
+                                            else -> "Unknown"
+                                        }
                                         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
                                             val cpuDisplay=cpuEma?.let {
                                                 String.format(Locale.US,"%.1f°C",it)
@@ -713,15 +774,20 @@ class MainActivity : ComponentActivity() {
                                             PureGlassGauge("CPU",cpuDisplay,
                                                 (((cpuDisplay?.removeSuffix("°C")
                                                     ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
-                                                solarOrange,Modifier.weight(1f))
+                                                solarOrange,Modifier.weight(1f),
+                                                subtitle=status.cpuLoad?.let{"Load $it%"}
+                                                    ?:"Load unavailable")
                                             PureGlassGauge("GPU",status.gpu,
                                                 (((status.gpu?.removeSuffix("°C")
                                                     ?.toDoubleOrNull() ?: 25.0)-25.0)/65.0).toFloat(),
-                                                solarGold,Modifier.weight(1f))
+                                                solarGold,Modifier.weight(1f),
+                                                subtitle=status.gpuLoad?.let{"Load $it%"}
+                                                    ?:"Load unavailable")
                                             PureGlassGauge("Battery W",status.power,
                                                 ((status.power?.removeSuffix(" W")
                                                     ?.toDoubleOrNull() ?: 0.0)/12.0).toFloat(),
-                                                solarGold,Modifier.weight(1f))
+                                                solarGold,Modifier.weight(1f),
+                                                subtitle=powerState?:"Battery state unavailable")
                                             val usedRamGiB=status.ram
                                                 ?.removeSuffix(" GiB")?.toDoubleOrNull()
                                             PureGlassGauge("RAM GiB",usedRamGiB?.let{
@@ -730,7 +796,10 @@ class MainActivity : ComponentActivity() {
                                                 ramTotalGiB>0.0)
                                                 (usedRamGiB/ramTotalGiB).toFloat()
                                             else 0f,
-                                                iceBlue,Modifier.weight(1f))
+                                                iceBlue,Modifier.weight(1f),
+                                                subtitle=ramTotalGiB?.let{
+                                                    String.format(Locale.US,"of %.1f GiB",it)
+                                                }?:"System RAM")
                                         }
                                         Text("CPU EMA · raw peak " +
                                             (cpuPeak?.let { fmt(it)+"°C" } ?: "—") +
@@ -741,33 +810,19 @@ class MainActivity : ComponentActivity() {
                                                 else -> "—"
                                             },color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
-                                         Text("RAM ring uses Android-reported total system memory; " +
-                                            "other rings use display-only reference scales, not safety limits.",
+                                        Text("Gauge arcs are reference scales, not safety limits.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
+                                        if(status.lastAt>0) {
+                                            Text("Last sample: "+
+                                                java.text.DateFormat.getTimeInstance(
+                                                    java.text.DateFormat.MEDIUM)
+                                                    .format(java.util.Date(status.lastAt)),
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.labelSmall)
+                                        }
                                         LiveScope(liveTrace)
                                         PerCoreLoadMatrix(status.coreLoads)
-                                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                            MetricCard("CPU load",status.cpuLoad?.plus("%"),
-                                                "All cores",Modifier.weight(1f))
-                                            MetricCard("GPU load",status.gpuLoad?.plus("%"),
-                                                "Adreno KGSL",Modifier.weight(1f))
-                                            MetricCard("Prime / busiest",status.peakCore?.plus("%"),
-                                                "Observed single core",Modifier.weight(1f))
-                                            val powerState=when {
-                                                status.powerStatus?.startsWith("DISCHARGING")==true ->
-                                                    "Discharging"
-                                                status.powerStatus?.startsWith(
-                                                    "CHARGING_OR_EXTERNAL_POWER")==true ->
-                                                    "Plugged in"
-                                                status.powerStatus?.startsWith("FULL")==true ->
-                                                    "Plugged in"
-                                                status.powerStatus==null -> null
-                                                else -> "Unknown"
-                                            }
-                                            MetricCard("Battery status",powerState,
-                                                "Android battery state",Modifier.weight(1f))
-                                        }
                                         GlassPanel {
                                             Text("RECORDING CONTROL  ·  ONE USER-STARTED SESSION",
                                                 color = coreCyan, style = MaterialTheme.typography.titleMedium)
@@ -833,14 +888,7 @@ class MainActivity : ComponentActivity() {
                                                 }) { Text("Add QS tile") }
                                             }
                                         }
-                                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                            MetricCard("Peak core", status.peakCore?.plus("%"),
-                                                "Highest sampled core", Modifier.weight(1f))
-                                            MetricCard("RAM used", status.ram,
-                                                "System total − available", Modifier.weight(1f))
-                                            MetricCard("Last sample", if (status.lastAt > 0)
-                                                time(status.lastAt) else null, "Device-local time", Modifier.weight(1f))
-                                        }
+
                                         GlassPanel {
                                             Text("ACTUAL CPU CLOCKS", color = coreCyan)
                                             Text(status.clock ?: "Unavailable", color = white)
@@ -923,10 +971,10 @@ class MainActivity : ComponentActivity() {
                                                      s.endedAt-s.startedAt>=15_000L
                                              }.forEach { s ->
                                                 HorizontalDivider(color = Color(0x335F91A7))
-                                                Row(Modifier.horizontalScroll(rememberScrollState()),
+                                                Row(Modifier.fillMaxWidth(),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Column(Modifier.widthIn(min=155.dp)) {
+                                                    Column(Modifier.weight(1f)) {
                                                         Text("Session " + s.id + " · " + s.configuration, color = white,
                                                             fontWeight = FontWeight.Bold)
                                                         Text(time(s.startedAt) + " · " + s.count + " samples · " + s.status,
@@ -942,24 +990,27 @@ class MainActivity : ComponentActivity() {
                                                             color=coreSecondary,
                                                             style=MaterialTheme.typography.labelSmall)
                                                     }
-                                                    OutlinedButton(onClick = {
+                                                    Row(horizontalArrangement=Arrangement.spacedBy(4.dp),
+                                                        verticalAlignment=Alignment.CenterVertically) {
+                                                    OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick = {
                                                         exportId = s.id
                                                         exportFile.launch("CoreMetrics_" + s.id + ".csv")
                                                     }) { Text("CSV") }
-                                                    OutlinedButton(onClick={
+                                                    OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         detailedId=s.id;page="Sessions"
                                                     }){Text("Analyze")}
-                                                    OutlinedButton(onClick={
+                                                    OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         metadataEditorId=if(metadataEditorId==s.id)
                                                             0L else s.id
                                                     },enabled=!status.running && !status.starting){
                                                         Text("Tags")
                                                     }
-                                                    OutlinedButton(onClick={
+                                                    OutlinedButton(contentPadding=PaddingValues(horizontal=8.dp,vertical=5.dp),onClick={
                                                         reportAId=s.id;reportBId=0L
                                                         reportFile.launch("CoreMetrics_Report_"+
                                                             s.id+".txt")
                                                     }){Text("Report")}
+                                                    }
                                                 }
                                                 if(metadataEditorId==s.id) {
                                                     SessionMetadataEditor(session=s,
@@ -1311,7 +1362,9 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 Text("CPU temperature · elapsed time · A cyan, B amber",
                                                     color=coreSecondary)
-                                                CompareScrubPanel(viewA,viewB)
+                                                CompareScrubPanel(viewA,viewB,
+                                                    fraction=compareCursor,
+                                                    onFractionChange={compareCursor=it})
                                                 Text("Frame rate remains unavailable if SurfaceFlinger layer access fails. " +
                                                     "Time alignment uses first selected sample, not synchronized in-game events.",
                                                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
@@ -1392,6 +1445,24 @@ class MainActivity : ComponentActivity() {
                                                     "Tactical Flat.",
                                                     color=coreSecondary)
                                             }
+                                            Row(verticalAlignment=Alignment.CenterVertically,
+                                                horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text("OPTIONAL IMMERSIVE LANDSCAPE",
+                                                        color=iceBlue,fontWeight=FontWeight.Bold)
+                                                    Text("Hide system bars on this screen. "+
+                                                        "Swipe from the edge to reveal navigation. "+
+                                                        "Off by default.",
+                                                        color=coreSecondary,
+                                                        style=MaterialTheme.typography.bodySmall)
+                                                }
+                                                Switch(checked=immersive,onCheckedChange={enabled->
+                                                    immersive=enabled
+                                                    prefs.edit().putBoolean("immersive_ui",enabled)
+                                                        .apply()
+                                                })
+                                            }
+                                            HorizontalDivider(color=coreBorder)
                                             Text("Recording is always user-started, offline, and read-only.",
                                                 color = muted)
                                             Text("Optional Android Usage Access", color = white)

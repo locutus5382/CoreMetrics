@@ -127,8 +127,7 @@ internal fun HudSettingsPanel(
             Triple("CPU %",options.showCpuLoad,options.copy(showCpuLoad=!options.showCpuLoad)),
             Triple("GPU %",options.showGpuLoad,options.copy(showGpuLoad=!options.showGpuLoad)),
             Triple("RAM",options.showRam,options.copy(showRam=!options.showRam)),
-            Triple("Battery W",options.showPower,options.copy(showPower=!options.showPower)),
-            Triple("FPS",options.showFps,options.copy(showFps=!options.showFps))
+            Triple("Battery W",options.showPower,options.copy(showPower=!options.showPower))
         )
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(8.dp)) {

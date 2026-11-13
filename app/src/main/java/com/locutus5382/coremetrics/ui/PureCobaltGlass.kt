@@ -90,7 +90,7 @@ internal fun Modifier.pureGlass(radius:Int=18):Modifier {
 @Composable
 internal fun PureGlassGauge(
     title:String,value:String?,progress:Float,
-    accent:Color,modifier:Modifier=Modifier
+    accent:Color,modifier:Modifier=Modifier,subtitle:String?=null
 ) {
     val finish=LocalSurfaceFinish.current
     val displayAccent=if(finish==SurfaceFinish.TACTICAL)when(title) {
@@ -100,7 +100,7 @@ internal fun PureGlassGauge(
         else -> accent
     } else accent
     Box(modifier.pureGlass(18).padding(8.dp),contentAlignment=Alignment.Center) {
-        Box(Modifier.fillMaxWidth().height(103.dp),contentAlignment=Alignment.Center) {
+        Box(Modifier.fillMaxWidth().height(114.dp),contentAlignment=Alignment.Center) {
             Canvas(Modifier.size(94.dp)) {
                 val stroke=4.dp.toPx()
                 drawArc(color=Color.White.copy(alpha=.15f),
@@ -126,6 +126,9 @@ internal fun PureGlassGauge(
                     maxLines=1)
                 Text(title.uppercase(),color=iceBlue.copy(alpha=.8f),
                     style=MaterialTheme.typography.labelSmall,maxLines=1)
+                subtitle?.let {
+                    Text(it,color=coreSecondary,fontSize=10.sp,maxLines=1)
+                }
             }
         }
     }

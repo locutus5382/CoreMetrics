@@ -35,7 +35,7 @@ internal class FlatLockChipDrawable(private val locked:Boolean):Drawable() {
         canvas.scale(bounds.width()/48f,bounds.height()/48f)
 
         // HUD-style single-layer frosted chip: no bulky raised button shadow.
-        rect.set(1.25f,1.25f,46.75f,46.75f)
+        rect.set(3.0f,7.0f,45.0f,41.0f)
         paint.style=Paint.Style.FILL
         paint.color=rgba(Color.rgb(8,23,45),209)
         canvas.drawRoundRect(rect,10f,10f,paint)
@@ -46,7 +46,7 @@ internal class FlatLockChipDrawable(private val locked:Boolean):Drawable() {
 
         // Restrained luminous upper hairline; matches cobalt glass HUD border.
         paint.color=rgba(Color.rgb(199,236,255),104)
-        canvas.drawLine(12f,5.3f,36f,5.3f,paint)
+        canvas.drawLine(13f,9.8f,35f,9.8f,paint)
 
         // Crisp geometric lock body (not a platform-dependent emoji).
         paint.style=Paint.Style.FILL
