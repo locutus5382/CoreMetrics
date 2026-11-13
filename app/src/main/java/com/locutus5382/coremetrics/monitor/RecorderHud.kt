@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -127,6 +128,9 @@ internal class RecorderHud(private val context:Context) {
     private val wm=context.getSystemService(WindowManager::class.java)
     private val ui=Handler(Looper.getMainLooper())
     private var root:LinearLayout?=null
+    // Short attachment latency is not a lost WindowManager owner. A genuinely
+    // detached tracked view can be cleaned only after this grace period.
+    private var lastAddRequestedAt=0L
     private var pill:LinearLayout?=null
     private var drawer:LinearLayout?=null
     private var dockTab:LinearLayout?=null
@@ -491,9 +495,18 @@ internal class RecorderHud(private val context:Context) {
         onUnlockClick:()->Unit,onDismissClick:()->Unit,
         onOptionsChanged:(HudOptions)->Unit = {}):String {
         if(!permissionGranted())return "HUD_PERMISSION_MISSING"
-        // Never construct another WindowManager view while a prior view or
-        // unlock chip is still tracked. This survives Service recreation within
-        // the same :monitor PID via MonitorHudOwner.
+        // Never create a second view during attachment; a tracked root wins.
+        // If Android detached it completely (neither parent nor attachment)
+        // well after addView, reclaim the stale handles before any retry.
+        // This avoids a permanently inert HUD after a failed/window teardown.
+        val previousRoot=root
+        if(previousRoot!=null && !previousRoot.isAttachedToWindow &&
+            previousRoot.parent==null &&
+            SystemClock.elapsedRealtime()-lastAddRequestedAt>2_500L) {
+            val removed=hide()
+            if(root!=null || unlockWindow!=null)
+                return "HUD_OWNERSHIP_UNRESOLVED_"+removed
+        }
         if(root!=null) {
             // WindowManager.addView() may not yet mark the view as attached.
             // A tracked root is already owned: NEVER allocate another window
@@ -654,6 +667,7 @@ internal class RecorderHud(private val context:Context) {
             }
         }
         return try {
+            lastAddRequestedAt=SystemClock.elapsedRealtime()
             wm.addView(frame,p)
             applyAppearance()
             // Actual pill width is measured after attach. Keep the initial HUD
@@ -907,7 +921,8 @@ internal class RecorderHud(private val context:Context) {
         val frame=root
         val rootRemoved=frame==null || removeTracked(frame)
         if(rootRemoved){
-            root=null;params=null;pill=null;drawer=null;dockTab=null
+            root=null;lastAddRequestedAt=0L
+            params=null;pill=null;drawer=null;dockTab=null
             dockVisual=null;mainText=null;recText=null;recDot=null
             recControl=null;lockControl=null;drawerControl=null
             closeControl=null;minimizeControl=null
