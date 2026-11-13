@@ -63,6 +63,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
+import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
@@ -772,16 +773,12 @@ class MainActivity : ComponentActivity() {
                                             Text("OBSERVED LIMITS  ·  not proof of tuner identity",
                                                 color = muted,style=MaterialTheme.typography.labelSmall)
                                             Text(status.observedLimits ?: "Unavailable",color=white)
-                                            if(configuration.contains("Stock",true) &&
-                                                status.observedLimits?.contains(
-                                                    "policy3 max 1.79 GHz")==true &&
-                                                status.observedLimits?.contains(
-                                                    "policy7 max 1.84 GHz")==true) {
-                                                Text("CHECK PROFILE: Stock was selected, but " +
-                                                    "observed P3/P7 ceilings match the previously " +
-                                                    "identified Large UC caps. Tuner identity remains " +
-                                                    "unverified.",
-                                                    color=solarOrange,
+                                            val liveWarning=remember(configuration,status.observedLimits) {
+                                                V08Analytics.liveProfileWarning(
+                                                    configuration,status.observedLimits)
+                                            }
+                                            liveWarning?.let { warning ->
+                                                Text(warning,color=solarOrange,
                                                     style=MaterialTheme.typography.bodySmall)
                                             }
                                             Text("BATTERY ELECTRICAL MEASUREMENT",color=muted)
@@ -824,13 +821,18 @@ class MainActivity : ComponentActivity() {
                                                  style=MaterialTheme.typography.labelSmall)
                                              if (sessionList.isEmpty()) Text("No sessions yet.", color = muted)
                                             detailReport?.takeIf{detailedId>0L}?.let{r ->
+                                                val eligibleDetail=remember(detailPoints,skipWarmUp) {
+                                                    V08Analytics.afterWarmUp(
+                                                        detailPoints,if(skipWarmUp)30 else 0)
+                                                }
                                                 Text("Session "+detailedId+" · "+
                                                     r.quality.category+" · "+
                                                     r.quality.score+"/100",
                                                     color=iceBlue,fontWeight=FontWeight.Bold)
                                                 EnergyRatePanel(r.energy)
-                                                ObservedProfilePanel(r.session.configuration,detailPoints)
-                                                CoreWinnerPanel(detailPoints)
+                                                ObservedProfilePanel(r.session.configuration,eligibleDetail,
+                                                    referenceStartMs=detailPoints.firstOrNull()?.timeMs)
+                                                CoreWinnerPanel(eligibleDetail)
                                                 OutlinedButton(onClick={
                                                     detailedId=0L
                                                     detailReport=null;detailPoints=emptyList()
@@ -1005,6 +1007,16 @@ class MainActivity : ComponentActivity() {
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                             }
+                                            // Use identical warm-up windows for Session A/B analytics.
+                                            // Linked-session timestamps remain untouched.
+                                            val eligibleA=remember(firstPoints,skipWarmUp) {
+                                                V08Analytics.afterWarmUp(firstPoints,
+                                                    if(skipWarmUp)30 else 0)
+                                            }
+                                            val eligibleB=remember(secondPoints,skipWarmUp) {
+                                                V08Analytics.afterWarmUp(secondPoints,
+                                                    if(skipWarmUp)30 else 0)
+                                            }
                                             val analysisA=remember(firstPoints,firstId,sessionList,skipWarmUp) {
                                                 sessionList.firstOrNull{it.id==firstId}
                                                     ?.takeIf{firstPoints.isNotEmpty()}
@@ -1016,8 +1028,9 @@ class MainActivity : ComponentActivity() {
                                                     ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
                                             }
                                             analysisA?.let { r ->
-                                                ObservedProfilePanel(r.session.configuration,firstPoints)
-                                                CoreWinnerPanel(firstPoints)
+                                                ObservedProfilePanel(r.session.configuration,eligibleA,
+                                                    referenceStartMs=firstPoints.firstOrNull()?.timeMs)
+                                                CoreWinnerPanel(eligibleA)
                                                 EnergyRatePanel(r.energy)
                                                 HorizontalDivider(color=coreBorder)
                                                 Text("BENCHMARK RELIABILITY · "+r.quality.score+
@@ -1097,26 +1110,16 @@ class MainActivity : ComponentActivity() {
                                                         firstId+"_"+secondId+".txt")
                                                 }){Text("Export A/B report")}
                                             }
-                                            val eligibleA=remember(firstPoints,skipWarmUp) {
-                                                if(skipWarmUp && firstPoints.isNotEmpty())
-                                                    firstPoints.filter {
-                                                        it.timeMs-firstPoints.first().timeMs>=30_000L
-                                                    }
-                                                else firstPoints
+                                            val viewA=remember(eligibleA,activeOnly) {
+                                                if(activeOnly)eligibleA.filter {
+                                                    (it.gpuLoad ?: 0.0)>=15.0
+                                                }else eligibleA
                                             }
-                                            val eligibleB=remember(secondPoints,skipWarmUp) {
-                                                if(skipWarmUp && secondPoints.isNotEmpty())
-                                                    secondPoints.filter {
-                                                        it.timeMs-secondPoints.first().timeMs>=30_000L
-                                                    }
-                                                else secondPoints
+                                            val viewB=remember(eligibleB,activeOnly) {
+                                                if(activeOnly)eligibleB.filter {
+                                                    (it.gpuLoad ?: 0.0)>=15.0
+                                                }else eligibleB
                                             }
-                                             val viewA = if(activeOnly) eligibleA.filter {
-                                                (it.gpuLoad ?: 0.0) >= 15.0
-                                            } else eligibleA
-                                            val viewB = if(activeOnly) eligibleB.filter {
-                                                (it.gpuLoad ?: 0.0) >= 15.0
-                                            } else eligibleB
                                             // Segment the original chronology *within the
                                             // selected analysis window* before the GPU-load
                                             // gameplay filter. Keep real sample timestamps.
@@ -1179,7 +1182,7 @@ class MainActivity : ComponentActivity() {
                                                 if(regimes.size>1) {
                                                     Text("CPU temperature · phase colors · transition markers",
                                                         color=coreSecondary)
-                                                    RegimeTimeline(firstPoints,regimes)
+                                                    RegimeTimeline(eligibleA,regimes)
                                                 }
                                                 Text("Battery-terminal net discharge power; playtime is a " +
                                                     "nominal-capacity projection, not measured runtime. " +
@@ -1192,27 +1195,23 @@ class MainActivity : ComponentActivity() {
                                                     viewB.size + " measured points",
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
-                                                val meanCpuA=viewA.mapNotNull { it.cpu }.takeIf {
-                                                    it.isNotEmpty() }?.average()
-                                                val meanCpuB=viewB.mapNotNull { it.cpu }.takeIf {
-                                                    it.isNotEmpty() }?.average()
-                                                val meanGpuA=viewA.mapNotNull { it.gpu }.takeIf {
-                                                    it.isNotEmpty() }?.average()
-                                                val meanGpuB=viewB.mapNotNull { it.gpu }.takeIf {
-                                                    it.isNotEmpty() }?.average()
-                                                val meanWattA=viewA.mapNotNull { it.batteryWatts }.takeIf {
-                                                    it.isNotEmpty() }?.average()
-                                                val meanWattB=viewB.mapNotNull { it.batteryWatts }.takeIf {
-                                                    it.isNotEmpty() }?.average()
+                                                val meansA=remember(viewA) {V08Analytics.sampleAverages(viewA)}
+                                                val meansB=remember(viewB) {V08Analytics.sampleAverages(viewB)}
+                                                val meanCpuA=meansA.cpuC
+                                                val meanCpuB=meansB.cpuC
+                                                val meanGpuA=meansA.gpuC
+                                                val meanGpuB=meansB.gpuC
+                                                val meanWattA=meansA.dischargeW
+                                                val meanWattB=meansB.dischargeW
                                                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                                     InstrumentKpi("Δ mean CPU",
                                                         if(meanCpuA!=null && meanCpuB!=null)
                                                             fmt(meanCpuB-meanCpuA)+"°C" else null,
                                                         "B − A",coreCyan,Modifier.weight(1f))
                                                     InstrumentKpi("Δ peak CPU",
-                                                        if(viewA.any { it.cpu!=null } && viewB.any { it.cpu!=null })
-                                                            fmt(viewB.mapNotNull{it.cpu}.max() -
-                                                                viewA.mapNotNull{it.cpu}.max())+"°C" else null,
+                                                        if(meansA.peakCpuC!=null && meansB.peakCpuC!=null)
+                                                            fmt(meansB.peakCpuC-meansA.peakCpuC)+"°C"
+                                                        else null,
                                                         "B − A",coreCyan,Modifier.weight(1f))
                                                     InstrumentKpi("Δ mean GPU",
                                                         if(meanGpuA!=null && meanGpuB!=null)
@@ -1221,7 +1220,8 @@ class MainActivity : ComponentActivity() {
                                                     InstrumentKpi("Δ battery W",
                                                         if(meanWattA!=null && meanWattB!=null)
                                                             fmt(meanWattB-meanWattA)+" W" else null,
-                                                        "Battery net · B − A",coreAmber,Modifier.weight(1f))
+                                                        "Sample-mean discharge only · B − A",
+                                                        coreAmber,Modifier.weight(1f))
                                                 }
                                                 Text("CPU temperature · elapsed time · A cyan, B amber",
                                                     color=coreSecondary)
