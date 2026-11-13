@@ -159,10 +159,10 @@ internal fun PureGlassGauge(
                         val rad=(135f+i*270f/27f)*PI.toFloat()/180f
                         val radiusOuter=size.minDimension*.49f
                         val radiusInner=radiusOuter*(if(i%3==0).84f else .91f)
-                        val c=Offset(size.center.x+cos(rad)*radiusOuter,
-                            size.center.y+sin(rad)*radiusOuter)
-                        val a=Offset(size.center.x+cos(rad)*radiusInner,
-                            size.center.y+sin(rad)*radiusInner)
+                        val c=Offset(center.x+cos(rad)*radiusOuter,
+                            center.y+sin(rad)*radiusOuter)
+                        val a=Offset(center.x+cos(rad)*radiusInner,
+                            center.y+sin(rad)*radiusInner)
                         drawLine(if(value!=null &&
                             i<=((progress.coerceIn(0f,1f))*27).toInt())
                             displayAccent else Color(0xFF2C4360),
