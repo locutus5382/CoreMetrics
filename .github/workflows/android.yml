@@ -29,15 +29,15 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.8.1-standard-debug
+          name: CoreMetrics-v0.8.2-standard-debug
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Upload analytics-only v0.8 app
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.8.1-analytics-only
-          path: app/build/outputs/apk/v081base/app-v081base.apk
+          name: CoreMetrics-v0.8.2-analytics-only
+          path: app/build/outputs/apk/v082base/app-v082base.apk
       - name: Upload optional themes v0.8 app
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.8.1-themes
-          path: app/build/outputs/apk/v081themes/app-v081themes.apk
+          name: CoreMetrics-v0.8.2-themes
+          path: app/build/outputs/apk/v082themes/app-v082themes.apk
