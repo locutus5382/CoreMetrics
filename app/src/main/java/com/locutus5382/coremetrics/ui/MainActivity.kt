@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
+import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -482,13 +483,19 @@ class MainActivity : ComponentActivity() {
                             val list=database.list(200)
                             val a=list.firstOrNull{it.id==reportAId}
                                 ?:error("Report session A is missing")
-                            val analyzedA=BenchmarkAnalyzer.analyze(a,database.points(a.id),if(reportSkipWarmup)30 else 0)
+                            val reportPoints=database.points(a.id)
+                            val analyzedA=BenchmarkAnalyzer.analyze(a,reportPoints,if(reportSkipWarmup)30 else 0)
                             val content=if(reportBId!=0L && reportBId!=a.id) {
                                 val b=list.firstOrNull{it.id==reportBId}
                                     ?:error("Report session B is missing")
                                 BenchmarkAnalyzer.comparison(analyzedA,
                                     BenchmarkAnalyzer.analyze(b,database.points(b.id),if(reportSkipWarmup)30 else 0))
-                            } else BenchmarkAnalyzer.text(analyzedA)
+                            } else BenchmarkAnalyzer.text(analyzedA) +
+                                SessionDiagnosticsAnalyzer.text(
+                                    SessionDiagnosticsAnalyzer.analyze(
+                                        V08Analytics.afterWarmUp(reportPoints,
+                                            if(reportSkipWarmup)30 else 0),analyzedA),
+                                    reportPoints.firstOrNull()?.timeMs)
                             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use{
                                 it.write(content)
                             } ?:error("Cannot write report")
@@ -986,7 +993,7 @@ class MainActivity : ComponentActivity() {
                                                         detailPoints,if(skipWarmUp)30 else 0)
                                                 }
                                                 SessionQuickOverview(r)
-                                                SessionMetricTimeline(eligibleDetail,
+                                                SessionDiagnosticsPanel(eligibleDetail,r,
                                                     referenceStartMs=detailPoints.firstOrNull()?.timeMs)
                                                 OutlinedButton(onClick={
                                                     detailTechnical=!detailTechnical
