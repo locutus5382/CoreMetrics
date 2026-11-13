@@ -144,7 +144,7 @@ object CompareStudioAnalysis {
         fun fmt(x:Double?,unit:String=""):String =
             x?.takeIf { it.isFinite() }
                 ?.let { String.format(Locale.US,"%.2f",it)+unit } ?: "unavailable"
-        appendLine("COREMETRICS v0.9.3 | SELECTED A/B DIAGNOSTIC COMPARISON")
+        appendLine("COREMETRICS v0.9.6 | SELECTED A/B DIAGNOSTIC COMPARISON")
         appendLine("Window: elapsed "+
             fmt(r.window.startElapsedMs/1000.0)+" to "+
             fmt(r.window.endElapsedMs/1000.0)+" s from each ORIGINAL recording start")

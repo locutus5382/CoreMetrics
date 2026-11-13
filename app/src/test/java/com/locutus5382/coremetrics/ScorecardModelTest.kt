@@ -80,6 +80,13 @@ class ScorecardModelTest {
         assertEquals("46.0 °C",cpu.left)
         assertEquals("50.0 °C",cpu.right)
         assertEquals("+4.0 °C",cpu.delta)
+        val busiest=card.rows.first{it.label=="Busiest core P50"}
+        assertEquals("54.0%",busiest.left)
+        assertEquals("54.0%",busiest.right)
+        assertEquals("0.0%",busiest.delta)
+        assertTrue(card.subtitle.contains("Repeatable course"))
+        assertTrue(card.subtitle.contains("Mesa"))
+        assertEquals(8,card.rows.size)
         val power=card.rows.first{it.label=="Mean battery discharge"}
         assertEquals("+1.00 W",power.delta)
         assertTrue(card.footnotes.any{it.contains("not")||it.contains("NOT")})

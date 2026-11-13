@@ -23,6 +23,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import com.locutus5382.coremetrics.analysis.ChartTraceReducer
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.analysis.DischargeSample
+import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
@@ -52,8 +53,9 @@ internal object CompareTimeCursor {
 
 private enum class Metric(val title:String, val unit:String) {
     CPU_TEMP("CPU °C","°C"),GPU_TEMP("GPU °C","°C"),GPU_LOAD("GPU load","%"),
-    CPU_LOAD("CPU load","%"),POWER("Discharge W"," W"),
-    FPS("Layer FPS"," FPS")
+    CPU_LOAD("CPU load","%"),BUSIEST_CORE("Busiest core","%"),
+    P3_CLOCK("P3 clock"," GHz"),P7_CLOCK("P7 clock"," GHz"),
+    POWER("Discharge W"," W"),FPS("Layer FPS"," FPS")
 }
 
 private fun reading(p:SessionStore.Point, metric:Metric):Double? = when(metric) {
@@ -61,12 +63,20 @@ private fun reading(p:SessionStore.Point, metric:Metric):Double? = when(metric) 
     Metric.GPU_TEMP -> p.gpu
     Metric.CPU_LOAD -> p.cpuLoad
     Metric.GPU_LOAD -> p.gpuLoad
+    Metric.BUSIEST_CORE -> p.busiestCorePct
+    Metric.P3_CLOCK -> SessionDiagnosticsAnalyzer.clockGHz(p.cpuClocks,3)
+    Metric.P7_CLOCK -> SessionDiagnosticsAnalyzer.clockGHz(p.cpuClocks,7)
     Metric.POWER -> DischargeSample.watts(p.batteryWatts,p.batteryPowerStatus)
     Metric.FPS -> p.sfFps
 }?.takeIf { it.isFinite() }
 
 private fun f(value:Double?):String =
     value?.let { String.format(Locale.US,"%.1f",it) } ?: "—"
+private fun fMetric(value:Double?,metric:Metric):String =
+    value?.let {
+        String.format(Locale.US,
+            if(metric==Metric.P3_CLOCK||metric==Metric.P7_CLOCK)"%.2f" else "%.1f",it)
+    } ?: "—"
 
 @Composable
 internal fun CompareScrubPanel(
@@ -80,9 +90,15 @@ internal fun CompareScrubPanel(
     if(a.isEmpty() || b.isEmpty())return
     var metric by remember { mutableStateOf(Metric.CPU_TEMP) }
     val selectableMetrics=remember(a,b) {
-        val hasFps=a.any { it.sfFps?.isFinite()==true } ||
-            b.any { it.sfFps?.isFinite()==true }
-        Metric.values().filter { it!=Metric.FPS || hasFps }
+        fun hasValid(metric:Metric)=a.any{reading(it,metric)!=null} ||
+            b.any{reading(it,metric)!=null}
+        Metric.values().filter {
+            when(it) {
+                Metric.FPS,Metric.P3_CLOCK,Metric.P7_CLOCK,Metric.BUSIEST_CORE ->
+                    hasValid(it)
+                else -> true
+            }
+        }
     }
     LaunchedEffect(selectableMetrics) {
         if(metric !in selectableMetrics)metric=Metric.CPU_TEMP
@@ -103,7 +119,10 @@ internal fun CompareScrubPanel(
     val left=CompareTimeCursor.nearest(cursorA,elapsed,originalOriginMs=originA)
     val right=CompareTimeCursor.nearest(cursorB,elapsed,originalOriginMs=originB)
     val vals=remember(a,b,metric) {
-        (a+b).mapNotNull { reading(it,metric) }
+        buildList {
+            a.mapNotNullTo(this){reading(it,metric)}
+            b.mapNotNullTo(this){reading(it,metric)}
+        }
     }
     val available=vals.isNotEmpty()
     val bounds=remember(vals) {
@@ -212,9 +231,12 @@ internal fun CompareScrubPanel(
         }
         Text("Δ B − A: "+(if(left!=null && right!=null &&
             reading(left,metric)!=null && reading(right,metric)!=null)
-            f(reading(right,metric)!!-reading(left,metric)!!)+metric.unit
+            fMetric(reading(right,metric)!!-reading(left,metric)!!,metric)+metric.unit
             else "unavailable"),
             color=solarGold,fontWeight=FontWeight.Bold)
+        Text("Busiest core is the busiest measured interval core (core ID can change); "+
+            "P3/P7 are observed clocks, not governor caps or proof of throttling.",
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Text("Battery-W excludes charging, unknown status and invalid watts. " +
             "Closest measured points within ±10 seconds. A gap, ended run or " +
             "missing sensor is not interpolated. Time origins use each original run's first sample.",
@@ -228,7 +250,7 @@ private fun CursorCard(label:String,point:SessionStore.Point?,
     Column(modifier.pureGlass(12).padding(10.dp)) {
         Text(label,color=if(label=="A") coreCyan else solarGold,
             fontWeight=FontWeight.Bold)
-        Text(metric.title+": "+f(point?.let{reading(it,metric)})+
+        Text(metric.title+": "+fMetric(point?.let{reading(it,metric)},metric)+
             (if(point==null) "" else metric.unit),
             color=coreText,style=MaterialTheme.typography.bodyMedium)
         Text("CPU "+f(point?.cpu)+"°  GPU "+f(point?.gpu)+"°",

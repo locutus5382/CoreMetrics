@@ -190,10 +190,16 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
     val gapLimit=if(cadence>10_000.0)15_000.0
         else max(10_000.0,cadence*2.5)
     var chartWidth by remember{mutableIntStateOf(700)}
+    var chartHeight by remember{mutableIntStateOf(240)}
     val reduced=remember(points,signal,chartWidth) {
         ChartTraceReducer.reduce(
             points.map{p->ChartTraceReducer.Sample(p.timeMs,signal.value(p))},
             time0,points.last().timeMs,chartWidth,gapLimit.toLong())
+    }
+    val trace=remember(reduced,chartWidth,chartHeight,time0,duration,
+        bottom,scale,gapLimit) {
+        ChartPathCache.build(reduced,time0,duration,
+            chartWidth.toFloat(),chartHeight.toFloat(),bottom,scale,gapLimit.toLong())
     }
     Column {
         Row(horizontalArrangement=Arrangement.SpaceBetween,
@@ -204,7 +210,8 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
                 color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         }
         Canvas(Modifier.fillMaxWidth().height(118.dp)
-            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)}
+            .onSizeChanged{chartWidth=it.width.coerceAtLeast(1)
+                chartHeight=it.height.coerceAtLeast(1)}
             .background(Color(0x5A07152C),RoundedCornerShape(10.dp))
             .pointerInput(time0,duration) {
                 detectTapGestures{offset ->
@@ -220,19 +227,7 @@ private fun SignalTrack(points:List<SessionStore.Point>,signal:SessionSignal,
             for(i in 1..3)drawLine(Color.White.copy(alpha=.12f),
                 Offset(0f,size.height*i/4f),
                 Offset(size.width,size.height*i/4f),1.dp.toPx())
-            val path=Path()
-            var last:ChartTraceReducer.Sample?=null
-            for(p in reduced){
-                val v=p.value
-                if(v==null){last=null;continue}
-                val x=((p.timeMs-time0)/duration*size.width).toFloat()
-                val y=((1-(v-bottom)/scale)*size.height).toFloat()
-                if(last==null || (p.timeMs-last.timeMs)>gapLimit)
-                    path.moveTo(x,y)
-                else path.lineTo(x,y)
-                last=p
-            }
-            drawPath(path,signal.accent,style=Stroke(2.dp.toPx()))
+            drawPath(trace,signal.accent,style=Stroke(2.dp.toPx()))
             val px=cursor.coerceIn(0f,1f)*size.width
             drawLine(solarGold,Offset(px,0f),Offset(px,size.height),1.4.dp.toPx())
         }

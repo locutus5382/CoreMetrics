@@ -77,8 +77,7 @@ object ScorecardModel {
             session.status !in setOf("COMPLETED","IMPORTED_COMPLETED")
         return Card(
             type=Type.SINGLE,title="SINGLE-SESSION DIAGNOSTICS",
-            subtitle="Session #"+session.id+" | "+session.label+
-                " | "+session.configuration,
+            subtitle="Session "+sideSubtitle(session),
             range=elapsed(start)+" - "+elapsed(end)+
                 " of original recording",badge=if(bad)
                 "CHECK RECORDING QUALITY" else "MEASURED WINDOW",
@@ -99,8 +98,16 @@ object ScorecardModel {
                 "Battery watts are terminal discharge measurements, not CPU/GPU chip power.",
                 "Within ±2°C of median is not thermal equilibrium. Gaps are not interpolated."
             ),
-            sourceDescription="CoreMetrics v0.9.3 · Local/offline · Original data unchanged"
+            sourceDescription="CoreMetrics v0.9.6 · Local/offline · Original data unchanged"
         )
+    }
+
+    private fun sideSubtitle(session:SessionStore.Session):String {
+        val note=session.note?.takeIf { it.isNotBlank() }?.take(26)
+        val driver=session.graphicsDriver?.removePrefix("Custom: ")
+            ?.takeIf { it.isNotBlank() }?.take(28)
+        return listOfNotNull("#"+session.id,note,driver,
+            session.configuration.take(18)).joinToString(" · ")
     }
 
     fun comparison(result:CompareStudioAnalysis.Result):Card {
@@ -114,12 +121,14 @@ object ScorecardModel {
             "GPU temp P50" to SessionDiagnosticsAnalyzer.Metric.GPU_TEMP,
             "GPU temp P95" to SessionDiagnosticsAnalyzer.Metric.GPU_TEMP,
             "CPU load P50" to SessionDiagnosticsAnalyzer.Metric.CPU_LOAD,
-            "GPU load P50" to SessionDiagnosticsAnalyzer.Metric.GPU_LOAD
+            "GPU load P50" to SessionDiagnosticsAnalyzer.Metric.GPU_LOAD,
+            "Busiest core P50" to SessionDiagnosticsAnalyzer.Metric.BUSIEST_CORE
         )
         val rows=metrics.map{(name,metric)->
             val p95=name.endsWith("P95")
             val unit=if(metric==SessionDiagnosticsAnalyzer.Metric.CPU_LOAD||
-                metric==SessionDiagnosticsAnalyzer.Metric.GPU_LOAD)"%" else " °C"
+                metric==SessionDiagnosticsAnalyzer.Metric.GPU_LOAD||
+                metric==SessionDiagnosticsAnalyzer.Metric.BUSIEST_CORE)"%" else " °C"
             val left=if(p95)a.p95(metric) else a.median(metric)
             val right=if(p95)b.p95(metric) else b.median(metric)
             ValueRow(name,formatted(left,unit),formatted(right,unit),
@@ -148,8 +157,7 @@ object ScorecardModel {
         )
         return Card(
             type=Type.AB,title="A/B DIAGNOSTIC COMPARISON",
-            subtitle="A #"+a.session.id+" ("+a.session.configuration+")  /  B #"+
-                b.session.id+" ("+b.session.configuration+")",
+            subtitle="A "+sideSubtitle(a.session)+"  /  B "+sideSubtitle(b.session),
             range=elapsed(result.window.startElapsedMs)+" - "+
                 elapsed(result.window.endElapsedMs)+" · shared elapsed time",
             badge=result.evidenceLabel,
@@ -162,7 +170,7 @@ object ScorecardModel {
             ),graphStartMs=result.window.startElapsedMs,
             graphEndMs=result.window.endElapsedMs,
             footnotes=notes,
-            sourceDescription="CoreMetrics v0.9.3 · Observational comparison, not measured FPS"
+            sourceDescription="CoreMetrics v0.9.6 · Observational comparison, not measured FPS"
         )
     }
 }

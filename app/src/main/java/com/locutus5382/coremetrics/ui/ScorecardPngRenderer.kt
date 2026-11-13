@@ -153,8 +153,8 @@ internal object ScorecardPngRenderer {
             label("B - A",1360f,315f,22f,GOLD,true,157f,matte)
         } else label("SELECTED WINDOW",904f,315f,21f,MUTED,true,520f,matte)
         rect(71f,326f,1529f,328f,0x5C87BEE7)
-        card.rows.take(7).forEachIndexed { i,row ->
-            val y=371f+i*41f
+        card.rows.take(8).forEachIndexed { i,row ->
+            val y=365f+i*39f
             if(i%2==1)rect(60f,y-31f,1540f,y+9f,0x200C6EAC)
             label(row.label,75f,y,23f,WHITE,false,if(ab)760f else 805f,matte)
             if(ab) {
