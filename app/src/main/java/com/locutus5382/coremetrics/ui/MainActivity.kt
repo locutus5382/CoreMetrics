@@ -74,6 +74,7 @@ import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
 import com.locutus5382.coremetrics.analysis.SegmentAnalysis
 import com.locutus5382.coremetrics.analysis.CompareStudioAnalysis
 import com.locutus5382.coremetrics.analysis.ScorecardModel
+import com.locutus5382.coremetrics.analysis.ScorecardExportRequest
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -103,12 +104,6 @@ private val pages = listOf("Live", "Sessions", "Compare", "HUD", "Settings")
 private data class AbWindowExportRequest(
     val sessionAId:Long,val sessionBId:Long,
     val startElapsedMs:Long,val endElapsedMs:Long
-)
-
-private data class ScorecardPngRequest(
-    val firstId:Long,val secondId:Long,
-    val startMs:Long,val endMs:Long,
-    val styleKey:String,val shareAfterSave:Boolean
 )
 
 private data class SegmentExportRequest(
@@ -501,7 +496,8 @@ class MainActivity : ComponentActivity() {
             var segmentTextRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
             var segmentCsvRequest by remember { mutableStateOf(null as SegmentExportRequest?) }
             var abWindowExport by remember { mutableStateOf(null as AbWindowExportRequest?) }
-            var pngRequest by remember { mutableStateOf(null as ScorecardPngRequest?) }
+            // Persist pending SAF intent across configuration/Activity recreation.
+            var pngRequest by rememberSaveable { mutableStateOf(null as String?) }
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -648,7 +644,7 @@ class MainActivity : ComponentActivity() {
             val pngDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("image/png")
             ) { uri ->
-                val request=pngRequest
+                val request=ScorecardExportRequest.decode(pngRequest)
                 pngRequest=null
                 if(uri!=null && request!=null)scope.launch {
                     val outcome=withContext(Dispatchers.IO) {
@@ -684,6 +680,12 @@ class MainActivity : ComponentActivity() {
                             }?:error("Cannot open PNG destination")
                         }
                     }
+                    // SAF document may already exist even if encode/write fails.
+                    // Best effort: remove only the just-created selected URI.
+                    val removedPartial=if(outcome.isFailure)withContext(Dispatchers.IO) {
+                        runCatching {contentResolver.delete(uri,null,null)>0}
+                            .getOrDefault(false)
+                    }else true
                     outcome.fold(onSuccess={
                         message="PNG scorecard saved (1600 × 1050, original evidence preserved)"
                         if(request.shareAfterSave) {
@@ -704,7 +706,9 @@ class MainActivity : ComponentActivity() {
                         }
                     },onFailure={
                         message="PNG export failed: "+
-                            (it.message?:it.javaClass.simpleName)
+                            (it.message?:it.javaClass.simpleName)+
+                            (if(removedPartial)"" else
+                                " · Cannot remove incomplete file; check chosen folder")
                     })
                 }
             }
@@ -1243,11 +1247,11 @@ class MainActivity : ComponentActivity() {
                                                             r.session.id+"_"+range.startMs+"_"+range.endMs+".csv")
                                                     },
                                                     onExportPng={ range,share ->
-                                                        pngRequest=ScorecardPngRequest(
+                                                        pngRequest=ScorecardExportRequest(
                                                             firstId=r.session.id,secondId=0L,
                                                             startMs=range.startMs,endMs=range.endMs,
                                                             styleKey=appliedFinish.key,
-                                                            shareAfterSave=share)
+                                                            shareAfterSave=share).encode()
                                                         pngDocument.launch(
                                                             "CoreMetrics_Session_"+r.session.id+
                                                                 "_"+range.startMs+"_"+range.endMs+".png")
@@ -1501,12 +1505,12 @@ class MainActivity : ComponentActivity() {
                                                                 "_"+window.startElapsedMs+"_"+window.endElapsedMs+".txt")
                                                     },
                                                     onExportPng={ window,share ->
-                                                        pngRequest=ScorecardPngRequest(
+                                                        pngRequest=ScorecardExportRequest(
                                                             firstId=firstId,secondId=secondId,
                                                             startMs=window.startElapsedMs,
                                                             endMs=window.endElapsedMs,
                                                             styleKey=appliedFinish.key,
-                                                            shareAfterSave=share)
+                                                            shareAfterSave=share).encode()
                                                         pngDocument.launch(
                                                             "CoreMetrics_AB_"+firstId+"_"+secondId+
                                                                 "_"+window.startElapsedMs+
