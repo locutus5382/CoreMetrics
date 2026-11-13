@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Status:** v0.9.1 integrity-stabilization test branch (draft). Unit tests/Android builds and physical Odin acceptance required before RC1. Earlier v0.9.0 and v0.8.9 branches remain unchanged; do not treat debug APKs as production signed builds.
+**Status:** v0.9.2 performance/lifecycle device-test branch. GitHub CI assembles tests/APKs; Odin/secondary Android runtime profiling, HUD recovery acceptance, production signing and release review are separate gates. Earlier versions are preserved and no RC tag has been created.
 
 ## Planned product
 - **Live:** CPU/SoC and GPU temperature, CPU/GPU load and clocks, RAM, battery. All readings identified by source, with explicit Unavailable fallback.
@@ -33,6 +33,22 @@ The selector is in the **Settings** screen only of `com.locutus5382.coremetrics.
 This build deliberately **does not copy** Gemini's `.blur(20.dp)` card modifier (that would blur text and controls), remove Material ripple/accessibility states, or run perpetual reflection animations. The adapted design uses static Compose gradient/border primitives.
 
 Install `CoreMetrics-v0.8-analytics-only` and `CoreMetrics-v0.8-themes` APKs side by side; use only one recording overlay at once and import equivalent CSVs into both databases for comparison.
+
+## v0.9.2 — Analysis chart performance & lifecycle hardening (device-test draft)
+
+**Branch:** fix/coremetrics-v092-performance-lifecycle, stacked on v0.9.1 audit/recording integrity branch. v0.9.1 and older branches are untouched.
+
+**Display-only reduction:** 10,000 original points can be represented by at most four real extrema/endpoints per horizontal pixel column (first, min, max, last) plus explicit gap break markers. **Original samples, P50/P95, timestamps, session metadata, CSV/TXT/PNG exports, battery integration and A/B signs are unchanged.** The Classic two-track timeline, Advanced Diagnostic Explorer raw/rolling traces, and A/B cursor chart now prepare cached geometry at screen width rather than visiting every source sample for every cursor drag. P95/peak markers still use real source observations.
+
+**Cursor precision:** Advanced Diagnostic Explorer uses binary search over source readings with a small near-endpoint tolerance and refuses a cursor deep inside a missing sensor/recording interval. The existing A/B/Classic \`CompareTimeCursor\` already uses binary search and was not needlessly replaced. No synthesized readings.
+
+**Activity lifecycle/idle overhead:** Activity visibility no longer synchronously queries an Android ContentProvider hosted in the separate monitor process from \`onStart()/onStop()\`. It uses last-known active status, sends visibility commands only for user-started monitor state, and re-synchronizes on the first status poll. Idle screen polling backs off from 1.3s to 4.5s; active recording/standby still polls at 1.3s. The Activity closes its dedicated read-side \`SQLiteOpenHelper\` when destroyed; recorder's own WAL database connection is independent.
+
+**Android test scaffolding:** An \`androidTest\` suite validates Android PNG decoding for all four visual finishes, the MIME/document contract, and Activity recreation. CI compiles \`assembleDebugAndroidTest\` but does **not** execute device/emulator tests. For execution, use \`gradle :app:connectedDebugAndroidTest\` on a clean test device/emulator, with no ongoing valuable recording.
+
+**Builds:** \`CoreMetrics-v0.9.2-frosted\` / \`app-v092base.apk\` and \`CoreMetrics-v0.9.2-themes\` / \`app-v092themes.apk\`. Package IDs and local session databases are isolated from v0.9.1. They are debug device-test APKs, not release-signed Play files.
+
+**Verification:** \`docs/PORTAL_V092_ACCEPTANCE.md\` and \`docs/V092_PERFORMANCE_AUDIT.md\`. Real-world frame-time, allocated memory, battery and LMK recovery have **not** been measured by source review or JVM tests; compare the same recordings against v0.9.1 before claiming gains. No RC1 tag or merge.
 
 ## v0.9.1 — Recorder and measurement integrity stabilization
 
