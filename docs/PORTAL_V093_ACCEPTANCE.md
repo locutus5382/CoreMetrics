@@ -27,6 +27,7 @@ This release responds to observed duplicate READY+REC HUD overlays, failed Quick
 - [ ] Compare journal 'SERVICE_CREATED' package/PID/service object ID with 'HUD_ATTACH' root identity and 'HUD_REMOVE'. One service generation per process does not imply one WindowManager view unless removal is explicitly confirmed.
 
 ## File export and analytical regression (P1)
+- [ ] Rotate/recreate Activity while a long CSV/TXT/PNG analysis/export is in progress; no `database is closed` or lock failures. App process keeps one reader helper, recorder process its own writer.
 - [ ] Open each Save dialog (full CSV, benchmark TXT, segment TXT, segment CSV, A/B window TXT, PNG). Rotate/recreate Activity while picker is open, then save. Each must export the originally selected session IDs/range; cancel must do nothing.
 - [ ] A/B PNG legend: **A cyan, B orange**, matching interactive chart. Check selected 00:00–14:20 Hades window against TXT statistics.
 - [ ] Short 1–4-sample trouble-shooting runs are clearly marked INSUFFICIENT FOR COMPARISON even if 100% of the five seconds were recorded.

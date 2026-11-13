@@ -81,6 +81,7 @@ import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
 import com.locutus5382.coremetrics.data.SessionStore
+import com.locutus5382.coremetrics.data.UiSessionStoreOwner
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.RecorderJournal
@@ -337,7 +338,6 @@ class MainActivity : ComponentActivity() {
     // Activity.onStart/onStop: the binder query could block the UI thread and
     // can launch an idle monitor process just to send a visibility signal.
     private var lastObservedMonitorActive=false
-    private var activityStore:SessionStore?=null
     private fun notifyAppVisible(visible:Boolean) {
         if(!lastObservedMonitorActive)return
         runCatching {
@@ -370,19 +370,11 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        // The Activity owns a read-side helper, separate from the recorder's
-        // SQLite WAL connection in :monitor. Do not leak it across rotations.
-        runCatching{activityStore?.close()}
-        activityStore=null
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
-        val database = SessionStore(applicationContext)
-        activityStore=database
+        // SQLite helper survives UI recreation; no close-while-exporting race.
+        val database = UiSessionStoreOwner.get(applicationContext)
         setContent {
             // The normal debug APK and Themes flavor are unified visually.
             // Only the deliberately fixed Analytics comparison flavor omits
