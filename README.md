@@ -2,11 +2,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.6.3 unified alpha — focused HUD usability, metadata-save and low-memory STOP stabilization, one canonical application ID, four optional finishes, debug and R8-optimized test builds.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+**Current development status: v0.9.6.4 unified alpha — low-memory standby policy, session-detail reload optimization, A/B consistency, metadata and diagnostic capability hardening; one canonical application ID, four finishes and both debug/R8-optimized test builds.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.6.3)
+## One-app Quick Start (v0.9.6.4)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.6.3-unified-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.6.3-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.6.4-unified-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.6.4-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CoreMetrics HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CoreMetrics REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -21,6 +21,16 @@
 
 ---
 
+
+## v0.9.6.4 — STOP-state policy, metadata/analysis and diagnostic preparation
+
+- **REC vs READY:** STOP finalizes the same SQLite session and normally keeps the HUD READY; the READY lease following STOP is intentionally *not* eligible for automatic OS resurrection. An explicitly armed standby may recover after LMK, and recording itself may recover the original ID.
+- **Durable STOP intent:** a failed terminal lease write is recorded. The service attempts to clear a stale recovery lease rather than silently allowing an unintended recorder restart, but cannot guarantee recovery when persistent storage itself is failing.
+- **Fast metadata editing:** changing a driver, resolution, game note or configuration refreshes session metadata in the existing analysis report without rereading the original 12,000-point sample dataset.
+- **A/B clarity:** all eight PNG measurement rows are represented in the in-app A/B table, selectors include shortened game notes, PNG comparison headers show independent A/B sessions, and exports distinguish app build version from stable report format version.
+- **Data and labels:** manually edited notes strip control characters; the legacy all-at-once metadata method now validates both tags and refuses editing active RECORDING rows. HUD Studio text describes the new frosted edge docks.
+- **Read-only optional capability check:** Diagnostics exports can report Android thermal status, available 10-second thermal headroom, swap *allocation*, and memory PSI if permitted on the device. These are one-shot probes at export time, NOT readings at past LMK events, not per-session telemetry, and do not alter sampler cadence or DB schema. Send the diagnostic export after Odin testing to decide whether to record these metrics in v0.9.7.
+- **Release policy:** test on actual Odin 2 Portal; CI builds the Android instrumentation APK but does not run it. Never merge to main or claim LMK immunity based on CI alone.
 
 ## v0.9.6.3 — HUD and lifecycle stabilization
 
