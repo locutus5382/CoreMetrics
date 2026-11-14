@@ -34,6 +34,8 @@ internal object ScorecardPngRenderer {
     private const val COBALT=0xFF387CF5.toInt()
     private const val ORANGE=0xFFFF8B31.toInt()
     private const val GOLD=0xFFFFC700.toInt()
+    // Immutable platform typefaces: resolve once, not for each text label.
+    private val monoBold=Typeface.create(Typeface.MONOSPACE,Typeface.BOLD)
 
     fun write(card:ScorecardModel.Card,style:SurfaceFinish,output:OutputStream) {
         val bitmap=Bitmap.createBitmap(WIDTH,HEIGHT,Bitmap.Config.ARGB_8888)
@@ -52,16 +54,23 @@ internal object ScorecardPngRenderer {
     /** The writer deliberately paints only provided measurements and caveats. */
     private fun render(canvas:Canvas,card:ScorecardModel.Card,style:SurfaceFinish) {
         val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+        // This mutable scratch object is confined to one render invocation;
+        // it is safe if two exports run on different threads.
+        val scratchRect=RectF()
         fun fill(color:Int){paint.reset();paint.isAntiAlias=true;paint.color=color
             paint.style=Paint.Style.FILL}
         fun rect(l:Float,t:Float,r:Float,b:Float,c:Int,radius:Float=0f) {
             fill(c)
-            if(radius>0f)canvas.drawRoundRect(RectF(l,t,r,b),radius,radius,paint)
+            if(radius>0f){
+                scratchRect.set(l,t,r,b)
+                canvas.drawRoundRect(scratchRect,radius,radius,paint)
+            }
             else canvas.drawRect(l,t,r,b,paint)
         }
         fun stroke(l:Float,t:Float,r:Float,b:Float,c:Int,radius:Float=16f) {
             fill(c);paint.style=Paint.Style.STROKE;paint.strokeWidth=2f
-            canvas.drawRoundRect(RectF(l,t,r,b),radius,radius,paint)
+            scratchRect.set(l,t,r,b)
+            canvas.drawRoundRect(scratchRect,radius,radius,paint)
             paint.style=Paint.Style.FILL
         }
         fun label(value:String,x:Float,y:Float,size:Float=25f,
@@ -70,9 +79,9 @@ internal object ScorecardPngRenderer {
             fill(color)
             paint.textSize=size
             paint.typeface=when {
-                mono->Typeface.create(Typeface.MONOSPACE,if(bold)Typeface.BOLD else Typeface.NORMAL)
-                bold->Typeface.create(Typeface.DEFAULT,Typeface.BOLD)
-                else->Typeface.create(Typeface.DEFAULT,Typeface.NORMAL)
+                mono->if(bold)monoBold else Typeface.MONOSPACE
+                bold->Typeface.DEFAULT_BOLD
+                else->Typeface.DEFAULT
             }
             var text=value.replace("\n"," ")
             if(paint.measureText(text)>maxWidth) {

@@ -552,6 +552,11 @@ class MainActivity : ComponentActivity() {
             var metadataEditorId by rememberSaveable { mutableLongStateOf(0L) }
             var firstPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
             var secondPoints by remember { mutableStateOf(emptyList<SessionStore.Point>()) }
+            // Each points list belongs to one verified session ID. Never show
+            // stale points while a new selection is loading; swapping already
+            // loaded sessions must not re-query 24k sample rows.
+            var firstLoadedId by remember { mutableLongStateOf(0L) }
+            var secondLoadedId by remember { mutableLongStateOf(0L) }
             // Every SAF request survives Activity recreation and is consumed
             // exactly once on document selection OR cancellation.
             var exportId by rememberSaveable { mutableLongStateOf(0L) }
@@ -878,6 +883,8 @@ class MainActivity : ComponentActivity() {
                 if(page!="Compare"){
                     firstPoints=emptyList()
                     secondPoints=emptyList()
+                    firstLoadedId=0L
+                    secondLoadedId=0L
                     compareTechnical=false
                 }
             }
@@ -903,14 +910,43 @@ class MainActivity : ComponentActivity() {
                 }
             }
             LaunchedEffect(page, firstId, secondId) {
-                if (page == "Compare") {
-                    val result = withContext(Dispatchers.IO) {
-                        val a = if (firstId != 0L) database.points(firstId) else emptyList()
-                        val b = if (secondId != 0L) database.points(secondId) else emptyList()
+                if(page=="Compare") {
+                    val requestedA=firstId
+                    val requestedB=secondId
+                    val dataA=when {
+                        requestedA==0L->emptyList()
+                        firstLoadedId==requestedA->firstPoints
+                        secondLoadedId==requestedA->secondPoints
+                        else->null
+                    }
+                    val dataB=when {
+                        requestedB==0L->emptyList()
+                        secondLoadedId==requestedB->secondPoints
+                        firstLoadedId==requestedB->firstPoints
+                        else->null
+                    }
+                    if(firstLoadedId!=requestedA) {
+                        firstLoadedId=0L
+                        firstPoints=emptyList()
+                    }
+                    if(secondLoadedId!=requestedB) {
+                        secondLoadedId=0L
+                        secondPoints=emptyList()
+                    }
+                    val result=withContext(Dispatchers.IO) {
+                        val a=dataA ?: database.points(requestedA)
+                        val b=dataB ?: database.points(requestedB)
                         a to b
                     }
-                    firstPoints = result.first
-                    secondPoints = result.second
+                    // The coroutine is cancelled on selection change; guard
+                    // against stale query results racing a newer selection.
+                    if(page=="Compare" && firstId==requestedA &&
+                        secondId==requestedB) {
+                        firstPoints=result.first
+                        secondPoints=result.second
+                        firstLoadedId=requestedA
+                        secondLoadedId=requestedB
+                    }
                 }
             }
 
@@ -1602,10 +1638,12 @@ class MainActivity : ComponentActivity() {
                                                                     if(firstId==s.id) {
                                                                         firstId=0L
                                                                         firstPoints=emptyList()
+                                                                        firstLoadedId=0L
                                                                     }
                                                                     if(secondId==s.id) {
                                                                         secondId=0L
                                                                         secondPoints=emptyList()
+                                                                        secondLoadedId=0L
                                                                     }
                                                                     sessionList=withContext(Dispatchers.IO){database.list()}
                                                                     linkedPairs=withContext(Dispatchers.IO){database.links()}
@@ -1684,6 +1722,9 @@ class MainActivity : ComponentActivity() {
                                                     val oldPoints=firstPoints
                                                     firstPoints=secondPoints
                                                     secondPoints=oldPoints
+                                                    val oldLoadedId=firstLoadedId
+                                                    firstLoadedId=secondLoadedId
+                                                    secondLoadedId=oldLoadedId
                                                 }){Text("Swap A ⇄ B")}
                                                 val linked=linkedPairs.any{
                                                     setOf(it.firstId,it.secondId)==setOf(firstId,secondId)
