@@ -67,6 +67,10 @@ MemTotal: 4194304 kB
         assertEquals(1,partial.gaps)
         val interrupted=RecordingIntegrityAnalyzer.analyze(input,"INTERRUPTED")
         assertEquals(RecordingIntegrityAnalyzer.Verdict.INTERRUPTED,interrupted.verdict)
+        assertEquals(RecordingIntegrityAnalyzer.Verdict.INTERRUPTED,
+            RecordingIntegrityAnalyzer.analyze(input,"IMPORTED_INTERRUPTED_RECOVERED").verdict)
+        assertEquals(RecordingIntegrityAnalyzer.Verdict.INTERRUPTED,
+            RecordingIntegrityAnalyzer.analyze(input,"IMPORTED_FAILED").verdict)
         assertTrue(partial.missingMs>0)
     }
 
