@@ -541,6 +541,7 @@ class MainActivity : ComponentActivity() {
             // Labels, tags and warm-up selection must never trigger a new
             // 12,000-row read; only a different selected ID does.
             var detailLoadedId by remember { mutableLongStateOf(0L) }
+            var detailLoadedCount by remember { mutableIntStateOf(-1) }
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
@@ -882,6 +883,7 @@ class MainActivity : ComponentActivity() {
                     detailReport=null
                     detailPoints=emptyList()
                     detailLoadedId=0L
+                    detailLoadedCount=-1
                     detailedId=0L
                     detailTechnical=false
                     metadataEditorId=0L
@@ -903,20 +905,28 @@ class MainActivity : ComponentActivity() {
                         linkedPairs=withContext(Dispatchers.IO){database.links()}
                 }
             }
-            // Separate immutable sample loading from derived analysis.
-            // Changing note/driver/profile or warm-up recomputes from cached
-            // samples without querying the original 12k telemetry rows.
-            LaunchedEffect(page,detailedId) {
-                detailReport=null
-                detailLoadedId=0L
-                detailPoints=emptyList()
-                if(page=="Sessions" && detailedId>0L) {
-                    val requestedId=detailedId
+            // Changing note/driver/profile never rereads recorded telemetry.
+            // If a recording gains new persisted samples while the page stays
+            // open, the changed count explicitly invalidates the old sample set.
+            LaunchedEffect(page,detailedId,sessionList) {
+                val requestedId=detailedId
+                val rowCount=sessionList.firstOrNull{it.id==requestedId}?.count
+                if(SessionSampleCachePolicy.reload(
+                        page,requestedId,detailLoadedId,
+                        rowCount,detailLoadedCount)) {
+                    detailReport=null
+                    detailLoadedId=0L
+                    detailLoadedCount=-1
+                    detailPoints=emptyList()
                     val loaded=withContext(Dispatchers.IO){
-                        database.points(requestedId)
+                        val points=database.points(requestedId)
+                        val count=database.sessionById(requestedId)?.count
+                            ?:points.size
+                        points to count
                     }
                     if(page=="Sessions" && detailedId==requestedId) {
-                        detailPoints=loaded
+                        detailPoints=loaded.first
+                        detailLoadedCount=loaded.second
                         detailLoadedId=requestedId
                     }
                 }
