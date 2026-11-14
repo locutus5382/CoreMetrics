@@ -50,10 +50,14 @@ internal object ProcTelemetryReader {
                     swapTotal != null && swapFree != null) break
             }
         }
-        val ram = if (total != null && total > 0L && available != null &&
-            available <= total) (total - available).toDouble() / 1048576.0 else null
-        val swap = if (swapTotal != null && swapTotal > 0L && swapFree != null &&
-            swapFree <= swapTotal) (swapTotal - swapFree).toDouble() / 1048576.0 else null
+        val t = total
+        val a = available
+        val st = swapTotal
+        val sf = swapFree
+        val ram = if (t != null && t > 0L && a != null && a <= t)
+            (t - a).toDouble() / 1048576.0 else null
+        val swap = if (st != null && st > 0L && sf != null && sf <= st)
+            (st - sf).toDouble() / 1048576.0 else null
         return MemorySnapshot(ram, swap)
     }
 
