@@ -92,7 +92,10 @@ internal fun SessionAnalysisStudio(
         else -> null
     }
     val loadedFully=session.count<=source.size
+    var showAdvanced by rememberSaveable(session.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        // Lead with conclusions, not the export controls or chart configuration.
+        bundle?.let { SessionQuickOverview(it.benchmark,it.points) }
         Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp),
             verticalArrangement=Arrangement.spacedBy(9.dp)) {
             Text("SINGLE-SESSION ANALYSIS STUDIO",
@@ -201,13 +204,18 @@ internal fun SessionAnalysisStudio(
         }
         val current=bundle
         if(current!=null) {
-            Text("ALL NUMBERS BELOW APPLY TO THE SELECTED WINDOW",
-                color=iceBlue,fontWeight=FontWeight.Bold)
-            SessionQuickOverview(current.benchmark,current.points)
-            StabilityPanel(current)
-            SessionDiagnosticsPanel(current.points,current.benchmark,
-                referenceStartMs=origin,precomputed=current.diagnostics)
-            technicalContent(current)
+            OutlinedButton(onClick={ showAdvanced=!showAdvanced }) {
+                Text(if(showAdvanced) "Hide advanced analysis"
+                    else "Explore timelines and technical evidence")
+            }
+            if(showAdvanced) {
+                Text("ALL METRICS BELOW APPLY TO THE SELECTED WINDOW",
+                    color=iceBlue,fontWeight=FontWeight.Bold)
+                StabilityPanel(current)
+                SessionDiagnosticsPanel(current.points,current.benchmark,
+                    referenceStartMs=origin,precomputed=current.diagnostics)
+                technicalContent(current)
+            }
         }
     }
 }
