@@ -2096,7 +2096,7 @@ class MainActivity : ComponentActivity() {
                                                     color=coreSecondary)
                                                 Text("The synchronized cursor and chart are above.",
                                                     color=coreSecondary)
-                                                Text("Time alignment uses each recording\'s first selected sample, not synchronized in-game events.",
+                                                Text("Time alignment uses each recording's first selected sample, not synchronized in-game events.",
                                                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
                                             } else {
                                                 Text("Select two recordings. If the gameplay filter returns nothing, " +
@@ -2286,7 +2286,7 @@ class MainActivity : ComponentActivity() {
                                                 "Net battery W: Android battery current × voltage where valid.\n"+
                                                 "System RAM used: /proc/meminfo MemTotal − MemAvailable.\n"+
                                                 "Busiest core: /proc/stat interval winner, NOT core residency.\n"+
-                                                "Android thermal status is device-wide, not proof of CPU or GPU throttling.\\n"+
+                                                "Android thermal status is device-wide, not proof of CPU or GPU throttling.\n"+
                                                 "Swap and memory PSI are optional OS data where permitted.",
                                                 color=coreSecondary,
                                                 style=MaterialTheme.typography.bodySmall)
