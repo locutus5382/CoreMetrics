@@ -17,6 +17,10 @@ class DirectSampler(private val app: Application) {
     private val policyName = Regex("""policy\d+""")
     private val coreName = Regex("""cpu\d+""")
     private val whitespace = Regex("""\s+""")
+    private val thermalZoneName = Regex("""thermal_zone\d+""")
+    // Cache only confirmed hardware maxima. Scaling limits remain live reads;
+    // absent or unreadable values are retried, never frozen as zero.
+    private val hardwareMaxKhz = mutableMapOf<String,Long>()
     // Cache policy *paths* only, never frequency values. Retry discovery if
     // no directories were readable at first sampling (e.g. early boot).
     private var policyDirectories: List<File>? = null
@@ -34,15 +38,22 @@ class DirectSampler(private val app: Application) {
     private val priorCore = mutableMapOf<String, CpuMath.Times>()
     private data class Sensor(val type: String, val path: String)
     private val thermals: List<Sensor> by lazy {
-        (0..127).mapNotNull { i ->
-            val root = "/sys/class/thermal/thermal_zone" + i
-            val type = read(root + "/type")?.lowercase() ?: return@mapNotNull null
-            Sensor(type, root + "/temp")
+        val root=File("/sys/class/thermal")
+        val zones=root.listFiles()?.filter { it.name.matches(thermalZoneName) }
+            ?.sortedBy { it.name.removePrefix("thermal_zone").toIntOrNull()
+                ?: Int.MAX_VALUE }?.take(256)?.takeIf { it.isNotEmpty() }
+            // Some vendor kernels allow zone file reads but restrict listing.
+            ?: (0..127).map { File(root,"thermal_zone"+it) }
+        zones.mapNotNull { zone ->
+            val type=read(zone.path+"/type")?.lowercase() ?: return@mapNotNull null
+            Sensor(type,zone.path+"/temp")
         }
     }
     private fun read(path: String): String? = try {
+        // Generic sysfs nodes used here expose one scalar/status line. Never
+        // materialize an entire procfs file and truncate it afterwards.
         File(path).takeIf { it.isFile && it.canRead() }
-            ?.bufferedReader()?.use { it.readText().trim().take(16384) }
+            ?.bufferedReader()?.use { it.readLine()?.trim()?.take(16384) }
     } catch (_: Exception) { null }
 
     // Classify discovered thermal sensors only once, instead of filtering
@@ -113,8 +124,9 @@ class DirectSampler(private val app: Application) {
             val ceiling = read(path + "scaling_max_freq")?.toLongOrNull()
                 ?.takeIf { it in 100_000L..5_000_000L }
                 ?: return@mapNotNull null
-            val hardware = read(path + "cpuinfo_max_freq")?.toLongOrNull()
-                ?.takeIf { it in 100_000L..5_000_000L }
+            val hardware=hardwareMaxKhz[p] ?: read(path+"cpuinfo_max_freq")
+                ?.toLongOrNull()?.takeIf { it in 100_000L..5_000_000L }
+                ?.also { hardwareMaxKhz[p]=it }
             val limited = hardware != null && ceiling < hardware
             p + " max " + String.format(java.util.Locale.US, "%.2f", ceiling/1e6) +
                 " GHz" + if (limited) " (below hw)" else ""
@@ -124,7 +136,9 @@ class DirectSampler(private val app: Application) {
 
     fun sample(appPackage: String?, frame: FrameEstimate? = null): Snapshot {
         val now = System.currentTimeMillis()
-        val lines = read("/proc/stat")?.lineSequence()?.toList().orEmpty()
+        val lines=runCatching {
+            ProcTelemetryReader.cpuLines(File("/proc/stat").reader())
+        }.getOrDefault(emptyList())
         val current = CpuMath.parse(lines.firstOrNull())
         val cpuPercent = CpuMath.percent(priorCpu, current)
         priorCpu = current
@@ -138,13 +152,9 @@ class DirectSampler(private val app: Application) {
         }.toList()
         val peakLoad = CpuMath.maxCoreLoad(perCore)
         val uniqueWinner = CpuMath.uniqueBusiest(perCore)
-        val mem = read("/proc/meminfo")
-        fun kb(key: String): Long? = mem?.lineSequence()?.firstOrNull { it.startsWith(key + ":") }
-            ?.substringAfter(':')?.trim()?.substringBefore(' ')
-            ?.toLongOrNull()
-        val total = kb("MemTotal"); val available = kb("MemAvailable")
-        val ram = if (total != null && available != null && available in 0..total)
-            (total - available) / 1048576.0 else null
+        val ram=runCatching {
+            ProcTelemetryReader.usedGiB(File("/proc/meminfo").reader())
+        }.getOrNull()
         // One sticky broadcast fetch per sample. Both temperature/percentage
         // and electrical-power status interpret precisely the SAME snapshot.
         val batteryIntent = try {
