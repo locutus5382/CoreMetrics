@@ -109,16 +109,22 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     /** Each chip edits one column atomically: fast two-tap changes cannot
      * overwrite a different tag from a stale UI snapshot. */
     @Synchronized fun updateGraphicsDriver(sessionId:Long,tag:String?):Boolean {
-        require(sessionId>0)
+        if(sessionId<=0L)return false
+        val accepted=SessionMetadata.driver(tag)
+        // An invalid non-null string MUST NOT silently overwrite a valid
+        // driver with NULL and then report the SQLite update as success.
+        if(tag!=null && accepted==null)return false
         return writableDatabase.update("sessions",ContentValues().apply {
-            put("graphics_driver",SessionMetadata.driver(tag))
-        },"id=?",arrayOf(sessionId.toString()))==1
+            put("graphics_driver",accepted)
+        },"id=? AND status!='RECORDING'",arrayOf(sessionId.toString()))==1
     }
     @Synchronized fun updateResolutionScale(sessionId:Long,tag:String?):Boolean {
-        require(sessionId>0)
+        if(sessionId<=0L)return false
+        val accepted=SessionMetadata.resolution(tag)
+        if(tag!=null && accepted==null)return false
         return writableDatabase.update("sessions",ContentValues().apply {
-            put("resolution_scale",SessionMetadata.resolution(tag))
-        },"id=?",arrayOf(sessionId.toString()))==1
+            put("resolution_scale",accepted)
+        },"id=? AND status!='RECORDING'",arrayOf(sessionId.toString()))==1
     }
 
     /** User-controlled associations are non-destructive; never merge raw data. */

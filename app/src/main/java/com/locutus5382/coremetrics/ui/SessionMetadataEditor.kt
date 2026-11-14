@@ -8,12 +8,17 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import com.locutus5382.coremetrics.data.SessionMetadata
 import com.locutus5382.coremetrics.data.SessionStore
 
 /** Manually entered context. Never infer driver/resolution from sampling. */
 @Composable
 internal fun SessionMetadataEditor(session:SessionStore.Session,
-    onDriver:(String?)->Unit,onResolution:(String?)->Unit,
+    onDriver:(String?,(Boolean,String)->Unit)->Unit,
+    onResolution:(String?,(Boolean,String)->Unit)->Unit,
     onNote:(String?)->Unit,onConfig:(String)->Unit,
     onDelete:()->Unit,onClose:()->Unit) {
     var gameNote by rememberSaveable(session.id) {
@@ -35,6 +40,30 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
     var scaleName by rememberSaveable(session.id){
         mutableStateOf(session.resolutionScale?.takeIf{it.startsWith("Custom: ")}
             ?.removePrefix("Custom: ").orEmpty())
+    }
+    var driverFeedback by remember(session.id){mutableStateOf("")}
+    var scaleFeedback by remember(session.id){mutableStateOf("")}
+    fun submitDriver(value:String?) {
+        if(value!=null && SessionMetadata.driver(value)==null) {
+            driverFeedback="Invalid driver tag. Use a short name without control characters."
+            return
+        }
+        driverFeedback="Saving driver…"
+        onDriver(value){saved,detail->
+            driverFeedback=if(saved)"Driver saved: "+(value?:"None")
+                else "Driver not saved: "+detail
+        }
+    }
+    fun submitScale(value:String?) {
+        if(value!=null && SessionMetadata.resolution(value)==null) {
+            scaleFeedback="Invalid resolution tag. Check the custom value."
+            return
+        }
+        scaleFeedback="Saving resolution…"
+        onResolution(value){saved,detail->
+            scaleFeedback=if(saved)"Resolution saved: "+(value?:"None")
+                else "Resolution not saved: "+detail
+        }
     }
     Column(Modifier.fillMaxWidth().pureGlass(12).padding(11.dp),
         verticalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -60,7 +89,10 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
         Text("Profile is user-supplied, not verified from CPU clocks.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         HorizontalDivider()
-        Text("Graphics driver",color=coreText)
+        Text("Graphics driver · saved: "+
+            (session.graphicsDriver?:"None"),color=coreText)
+        if(driverFeedback.isNotBlank())Text(driverFeedback,
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(7.dp)) {
             listOf("None","System","Turnip","Custom").forEach{tag->
@@ -69,22 +101,30 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                     onClick={
                         if(tag=="Custom")driverCustom=true else {
                             driverCustom=false
-                            onDriver(tag.takeUnless{it=="None"})
+                            submitDriver(tag.takeUnless{it=="None"})
                         }
                     },label={Text(tag)})
             }
         }
         if(driverCustom) {
             OutlinedTextField(value=driverName,
-                onValueChange={driverName=it.take(38)},
+                onValueChange={driverName=it.take(38);driverFeedback=""},
                 modifier=Modifier.fillMaxWidth(),singleLine=true,
+                keyboardOptions=KeyboardOptions(imeAction=ImeAction.Done),
+                keyboardActions=KeyboardActions(onDone={
+                    if(driverName.isNotBlank())
+                        submitDriver("Custom: "+driverName.trim())
+                }),
                 label={Text("Custom driver / version")})
             OutlinedButton(enabled=driverName.isNotBlank(),
-                onClick={onDriver("Custom: "+driverName.trim())}){
+                onClick={submitDriver("Custom: "+driverName.trim())}){
                 Text("Save driver")
             }
         }
-        Text("Resolution / display",color=coreText)
+        Text("Resolution / display · saved: "+
+            (session.resolutionScale?:"None"),color=coreText)
+        if(scaleFeedback.isNotBlank())Text(scaleFeedback,
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(7.dp)) {
             listOf("None","Handheld 1x","Docked","Custom").forEach{tag->
@@ -93,17 +133,22 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                     onClick={
                         if(tag=="Custom")scaleCustom=true else {
                             scaleCustom=false
-                            onResolution(tag.takeUnless{it=="None"})
+                            submitScale(tag.takeUnless{it=="None"})
                         }
                     },label={Text(tag)})
             }
         }
         if(scaleCustom) {
-            OutlinedTextField(value=scaleName,onValueChange={scaleName=it.take(38)},
+            OutlinedTextField(value=scaleName,
+                onValueChange={scaleName=it.take(38);scaleFeedback=""},
                 modifier=Modifier.fillMaxWidth(),singleLine=true,
+                keyboardOptions=KeyboardOptions(imeAction=ImeAction.Done),
+                keyboardActions=KeyboardActions(onDone={
+                    if(scaleName.isNotBlank())submitScale("Custom: "+scaleName.trim())
+                }),
                 label={Text("Custom resolution / scale")})
             OutlinedButton(enabled=scaleName.isNotBlank(),
-                onClick={onResolution("Custom: "+scaleName.trim())}){
+                onClick={submitScale("Custom: "+scaleName.trim())}){
                 Text("Save resolution")
             }
         }

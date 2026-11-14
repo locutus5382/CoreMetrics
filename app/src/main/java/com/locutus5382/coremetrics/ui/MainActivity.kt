@@ -1544,7 +1544,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 if(metadataEditorId==s.id) {
                                                     SessionMetadataEditor(session=s,
-                                                        onDriver={tag->
+                                                        onDriver={tag,ack->
                                                             scope.launch {
                                                                 val outcome=withContext(Dispatchers.IO){
                                                                     runCatching{
@@ -1557,14 +1557,16 @@ class MainActivity : ComponentActivity() {
                                                                     sessionList=withContext(Dispatchers.IO){
                                                                         database.list()
                                                                     }
+                                                                    ack(true,"")
                                                                     message="Graphics driver tag saved"
                                                                 },onFailure={e->
-                                                                    message="Driver tag failed: "+
-                                                                        (e.message?:e.javaClass.simpleName)
+                                                                    val detail=e.message?:e.javaClass.simpleName
+                                                                    ack(false,detail)
+                                                                    message="Driver tag failed: "+detail
                                                                 })
                                                             }
                                                         },
-                                                        onResolution={tag->
+                                                        onResolution={tag,ack->
                                                             scope.launch {
                                                                 val outcome=withContext(Dispatchers.IO){
                                                                     runCatching{
@@ -1577,10 +1579,12 @@ class MainActivity : ComponentActivity() {
                                                                     sessionList=withContext(Dispatchers.IO){
                                                                         database.list()
                                                                     }
+                                                                    ack(true,"")
                                                                     message="Resolution tag saved"
                                                                 },onFailure={e->
-                                                                    message="Resolution tag failed: "+
-                                                                        (e.message?:e.javaClass.simpleName)
+                                                                    val detail=e.message?:e.javaClass.simpleName
+                                                                    ack(false,detail)
+                                                                    message="Resolution tag failed: "+detail
                                                                 })
                                                             }
                                                         },
