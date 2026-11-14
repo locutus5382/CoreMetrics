@@ -16,7 +16,8 @@ internal object RecorderLease {
     private const val MAX_STANDBY_AGE_MS=10*60_000L
     data class Saved(val recording:Boolean,val id:Long,val label:String,
         val configuration:String,val intervalMs:Long,
-        val hudEnabled:Boolean,val hudLocked:Boolean)
+        val hudEnabled:Boolean,val hudLocked:Boolean,
+        val stopRequested:Boolean)
 
     private fun prefs(context:Context)=
         context.getSharedPreferences(FILE,Context.MODE_PRIVATE)
@@ -25,6 +26,7 @@ internal object RecorderLease {
         val p=prefs(context)
         return p.edit()
             .putBoolean("active",true).putBoolean("recording",recording)
+            .putBoolean("stop_requested",false)
             .putLong("id",id).putString("label",label.take(64))
             .putString("config",config.take(40))
             .putLong("interval",if(interval==2000L)2000L else 5000L)
@@ -45,9 +47,20 @@ internal object RecorderLease {
         if(id>0L) save(context,true,id,label,config,intervalMs,hud,restored) else false
     fun markRecovery(context:Context):Boolean {
         val p=prefs(context)
+        // Pending user STOP is terminal reconciliation, not another attempt
+        // to resume the background sampler; allow it even after two restarts.
+        if(p.getBoolean("stop_requested",false))return true
         val count=p.getInt("recoveries",0)
         if(count>=2)return false
         return p.edit().putInt("recoveries",count+1).commit()
+    }
+    /** Synchronously preserve user's STOP/DISARM intent before task.cancel().
+     * If LMK occurs during final SQLite commit, recovery may only finish the
+     * original session, never restart its sensor collector. */
+    fun requestStop(context:Context):Boolean {
+        val p=prefs(context)
+        if(!p.getBoolean("active",false))return false
+        return p.edit().putBoolean("stop_requested",true).commit()
     }
     /** Persist user-requested HUD visibility independently of recording.
      * A low-memory restarted REC must not unexpectedly re-show a hidden HUD. */
@@ -73,7 +86,8 @@ internal object RecorderLease {
     }
     fun clear(context:Context):Boolean = prefs(context).edit()
         .putBoolean("active",false).putBoolean("recording",false)
-        .remove("id").remove("recoveries").remove("hud_locked").commit()
+        .remove("id").remove("recoveries").remove("hud_locked")
+        .remove("stop_requested").commit()
 
     /**
      * A process killed during an explicit recording has a fresh lease;
@@ -82,7 +96,9 @@ internal object RecorderLease {
      */
     fun recover(context:Context):Saved? {
         val p=prefs(context)
-        if(!p.getBoolean("active",false) || p.getInt("recoveries",0)>=2)return null
+        if(!p.getBoolean("active",false))return null
+        val stopRequested=p.getBoolean("stop_requested",false)
+        if(!stopRequested && p.getInt("recoveries",0)>=2)return null
         val recording=p.getBoolean("recording",false)
         val savedUptime=p.getLong("heartbeat_uptime",-1L)
         val savedWall=p.getLong("heartbeat_wall",-1L)
@@ -99,6 +115,6 @@ internal object RecorderLease {
             p.getString("config","Unknown")?:"Unknown",
             p.getLong("interval",5000L),
             p.getBoolean("hud_enabled",false),
-            p.getBoolean("hud_locked",false))
+            p.getBoolean("hud_locked",false),stopRequested)
     }
 }

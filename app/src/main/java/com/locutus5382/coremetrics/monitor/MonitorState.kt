@@ -15,6 +15,12 @@ internal object MonitorState {
     @Volatile var message = "Idle"
     @Volatile var hudState = "HUD_OFF"
     @Volatile var hudVisible = false
+    // Requested visibility, actual overlay attachment and temporary in-app
+    // pause are separate concepts, especially for Quick Settings.
+    @Volatile var hudRequested = false
+    @Volatile var hudAttached = false
+    @Volatile var appPaused = false
+    @Volatile var saving = false
     @Volatile var hudLocked = false
     // Drawer edits occur in :monitor, not the Compose UI process.
     @Volatile var hudOptionRevision = 0L

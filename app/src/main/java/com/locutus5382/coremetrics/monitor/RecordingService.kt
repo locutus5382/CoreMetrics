@@ -120,14 +120,18 @@ class RecordingService:Service() {
      * Never write HUD preference/lease merely because our Activity is visible.
      */
     private fun syncHudVisibility() {
-        if(!hud.attached()) {
+        MonitorState.hudRequested=userWantsHud
+        MonitorState.hudAttached=hud.attached()
+        MonitorState.appPaused=appInForeground && userWantsHud
+        if(!MonitorState.hudAttached) {
             MonitorState.hudVisible=false
+            MonitorState.hudState=if(userWantsHud)"HUD_NOT_ATTACHED" else "HUD_OFF"
             return
         }
         hud.setVisible(userWantsHud && !appInForeground)
         MonitorState.hudVisible=hud.visible()
         MonitorState.hudState=when {
-            appInForeground && userWantsHud -> "HUD_PAUSED_IN_APP"
+            MonitorState.appPaused -> "HUD_PAUSED_IN_APP"
             MonitorState.hudVisible -> "HUD_VISIBLE"
             else -> "HUD_HIDDEN"
         }
@@ -155,6 +159,9 @@ class RecordingService:Service() {
         RecorderJournal.event(this,"HUD_REMOVE",removal+" "+hud.windowIdentity())
         MonitorState.hudState=removal
         MonitorState.hudVisible=hud.visible()
+        MonitorState.hudAttached=hud.attached()
+        MonitorState.hudRequested=false
+        MonitorState.appPaused=false
         MonitorState.hudLocked=hud.isLocked()
         MonitorState.clear("Standby closed")
         RecorderLease.clear(this)
@@ -235,6 +242,25 @@ class RecordingService:Service() {
                 stopSelf(startId)
                 return START_NOT_STICKY
             }
+            if(old.stopRequested) {
+                RecorderJournal.event(this,"STOP_RECOVERY_FINALIZE",
+                    "id="+old.id+" same-session terminal reconciliation")
+                val finalized=if(old.recording)runCatching {
+                    db.finish(old.id,System.currentTimeMillis(),"INTERRUPTED_STOPPED")
+                    true
+                }.onFailure { RecorderJournal.event(this,
+                    "STOP_RECOVERY_DB_ERROR",it.javaClass.simpleName) }
+                    .getOrDefault(false) else true
+                if(finalized)RecorderLease.clear(this)
+                // Failure retains the stop_requested lease. No sampling can
+                // start; the next explicit recovery may retry finalization.
+                MonitorState.clear(if(finalized)"Previous stop finalized"
+                    else "Previous stop pending database recovery")
+                MonitorState.saving=false
+                refreshTile()
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
             RecorderJournal.event(this,"RESTART_ACCEPTED",
                 if(old.recording)"REC id="+old.id else "STANDBY")
             Intent(this,RecordingService::class.java)
@@ -266,7 +292,8 @@ class RecordingService:Service() {
                 // lease. Resume the same user-started session instead.
                 if(task?.isActive!=true && !MonitorState.starting){
                     val previous=RecorderLease.recover(this)
-                    if(previous?.recording==true && db.canResume(previous.id)){
+                    if(previous?.stopRequested==true ||
+                        previous?.recording==true && db.canResume(previous.id)){
                         RecorderJournal.event(this,"ARM_REDIRECTED_TO_RECOVERY",
                             "existing id="+previous.id)
                         return onStartCommand(
@@ -422,29 +449,41 @@ class RecordingService:Service() {
             }
             DISARM -> {
                 RecorderJournal.event(this,"DISARM_REQUESTED")
-                RecorderLease.clear(this)
                 armed=false
                 disarmAfterStop=true
                 MonitorState.standby=false
                 val current=task
-                if(current?.isActive==true || MonitorState.starting){
+                if(current!=null && !current.isCompleted || MonitorState.starting){
+                    // Do not clear a fresh recovery lease until the recorder
+                    // actually persisted its final database status.
+                    RecorderLease.requestStop(this)
+                    MonitorState.saving=true
                     explicitUserStop=true
                     stopping=true
                     current?.cancel()
-                } else disarmNow()
+                } else {
+                    RecorderLease.clear(this)
+                    disarmNow()
+                }
+                refreshTile()
                 return START_NOT_STICKY
             }
             STOP -> {
                 RecorderJournal.event(this,"STOP_REQUESTED","id="+MonitorState.sessionId)
-                RecorderLease.clear(this)
                 explicitUserStop=true
                 stopping=true
                 MonitorState.message="Stopping and saving…"
                 val current=task
                 if(current==null || current.isCompleted){
+                    RecorderLease.clear(this)
                     stopping=false
+                    MonitorState.saving=false
                     if(armed && userWantsHud)standby()else disarmNow()
-                }else current.cancel()
+                }else {
+                    RecorderLease.requestStop(this)
+                    MonitorState.saving=true
+                    current.cancel()
+                }
                 refreshTile()
                 return START_NOT_STICKY
             }
@@ -458,7 +497,8 @@ class RecordingService:Service() {
                 // session with a second recording. Use validated recovery.
                 if(!command.getBooleanExtra(RESTORED,false)){
                     val previous=RecorderLease.recover(this)
-                    if(previous!=null && previous.recording &&
+                    if(previous?.stopRequested==true ||
+                        previous!=null && previous.recording &&
                         db.canResume(previous.id)){
                         RecorderJournal.event(this,"START_REDIRECTED_TO_RECOVERY",
                             "existing id="+previous.id)
@@ -600,26 +640,37 @@ class RecordingService:Service() {
                             // recovery lease. An LMK in this narrow window
                             // must not strand a RECORDING row without any
                             // chance of resuming its original session ID.
-                            withContext(Dispatchers.IO){
-                                if(id!=0L)runCatching{
+                            val finalized=withContext(Dispatchers.IO){
+                                if(id==0L)true else runCatching{
                                     db.finish(id,System.currentTimeMillis(),outcome)
+                                    true
                                 }.onFailure{
                                     RecorderJournal.event(this@RecordingService,
                                         "SESSION_FINISH_DB_ERROR",it.javaClass.simpleName)
-                                }
+                                }.getOrDefault(false)
                             }
-                            // Explicit Stop remains terminal even if the DB
-                            // write failed: no unsolicited new recording.
-                            RecorderLease.clear(this@RecordingService)
+                            if(finalized)RecorderLease.clear(this@RecordingService)
+                            else RecorderLease.requestStop(this@RecordingService)
+                            // On failure a STOP-pending lease survives for a
+                            // later explicit retry; never resume sampling.
                             RecorderJournal.event(this@RecordingService,
                                 "SESSION_FINALIZED","id="+id+" status="+outcome+
                                     " samples="+MonitorState.sampleCount)
-                            MonitorState.clear(if(outcome=="COMPLETED")
-                                "Recording saved" else "Recording "+outcome.lowercase())
+                            MonitorState.clear(if(!finalized)
+                                "Stop pending database recovery"
+                                else if(outcome=="COMPLETED")"Recording saved"
+                                else "Recording "+outcome.lowercase())
                             withContext(Dispatchers.Main.immediate){
                                 task=null
                                 stopping=false
-                                if(destroying) {
+                                MonitorState.saving=!finalized
+                                if(!finalized) {
+                                    // Do not overwrite the stop-pending lease
+                                    // with a fresh standby lease.
+                                    armed=false
+                                    disarmAfterStop=true
+                                    stopServiceNow()
+                                }else if(destroying) {
                                     armed=false
                                     MonitorState.standby=false
                                 } else if(armed && userWantsHud && !disarmAfterStop) {
@@ -682,6 +733,9 @@ class RecordingService:Service() {
         MonitorState.serviceCreated=false
         MonitorState.standby=false
         MonitorState.hudVisible=false
+        MonitorState.hudAttached=false
+        MonitorState.hudRequested=false
+        MonitorState.appPaused=false
         task?.cancel()
         scope.cancel()
         val active=task
