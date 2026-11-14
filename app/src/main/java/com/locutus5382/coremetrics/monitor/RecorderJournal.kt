@@ -79,6 +79,7 @@ object RecorderJournal {
         return "CoreMetrics "+version+" recorder diagnostics\n" +
             "Current UI PID: " + Process.myPid() + "\n\n" +
             "Recent lifecycle events:\n" + read(context) +
-            "\n\n"+liveMemory+"\nAndroid process exit history:\n" + exits + "\n"
+            "\n\n"+liveMemory+"\n\n"+DeviceCapabilityProbe.report(context)+
+            "\nAndroid process exit history:\n" + exits + "\n"
     }
 }
