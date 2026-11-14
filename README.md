@@ -2,11 +2,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.6.5 diagnostics-probe alpha — no changes to the recorder or HUD; on-demand, bounded inspection of Android thermal headroom, Linux swap/PSI, and CPU policy7 time_in_state. v0.9.6.4 stabilization is retained.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+**Current development status: v0.9.6.6 unified alpha — focused code-audit fixes for session analysis cache correctness, non-blocking diagnostic reports, app/export version consistency and note editing feedback. The v0.9.6.4 recorder recovery and v0.9.6.5 read-only capability probe remain unchanged.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.6.5)
+## One-app Quick Start (v0.9.6.6)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.6.5-unified-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.6.5-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.6.6-unified-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.6.6-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CoreMetrics HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CoreMetrics REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -21,6 +21,15 @@
 
 ---
 
+
+## v0.9.6.6 — Audit, session-analysis correctness and diagnostic UX
+
+- Analysis reuses SQLite sample rows for unchanged session IDs and sample counts. Changing driver, scale, profile, game note or warm-up selection **recomputes derived benchmark quality from cached samples** rather than copying an out-of-date score or rereading 12,000 points. If the original recording gains samples, the changed persisted row count invalidates the cache and triggers a new read.
+- Settings diagnostic snapshots (thermal headroom, swap, PSI, policy7 time_in_state, process exits and journal) execute on a background IO dispatcher, not the Compose UI thread; a loading label blocks accidental duplicate requests and disables Copy while the new snapshot is still being collected.
+- Manually edited game notes now display **Saving…**, success or error next to Save; the editor prevents double-tap writes while a save is outstanding.
+- OS thermal-status probe renders a named state beside its code and a readable local timestamp; remains a **one-time report**, not a recorded telemetry metric or FPS/throttling inference.
+- Exports now correctly identify app version **v0.9.6.6** and keep the independent report **format v0.9.6**. A JVM regression test checks that reported app version matches the APK's generated `BuildConfig.VERSION_NAME` during build.
+- No changes to Android service/lease lifecycle from v0.9.6.5, Quick Settings metadata, HUD touches/visual themes, root/privacy policy, sampling interval, database schema or immediate SQLite insertion. Safe hardware acceptance is still needed before any merge or public release.
 
 ## v0.9.6.5 — On-demand Odin capability validation (no sampling changes)
 

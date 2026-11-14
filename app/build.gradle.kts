@@ -10,8 +10,8 @@ android {
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 31
-        versionName = "0.9.6.5-probe-alpha"
+        versionCode = 32
+        versionName = "0.9.6.6-unified-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics REC"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CoreMetrics HUD"
@@ -39,7 +39,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }
 }
 dependencies {
