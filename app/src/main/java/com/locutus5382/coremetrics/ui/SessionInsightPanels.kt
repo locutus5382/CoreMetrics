@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.onSizeChanged
 import com.locutus5382.coremetrics.analysis.ChartTraceReducer
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
+import com.locutus5382.coremetrics.analysis.RecordingIntegrityAnalyzer
+import com.locutus5382.coremetrics.analysis.SessionObservationAnalyzer
 import com.locutus5382.coremetrics.analysis.DischargeSample
 import com.locutus5382.coremetrics.data.SessionStore
 import java.util.Locale
@@ -53,7 +55,12 @@ private fun num(v:Double?,digits:Int=1):String =
     } ?: "—"
 
 @Composable
-internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report) {
+internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report,
+    points:List<SessionStore.Point> = emptyList()) {
+    val integrity = remember(points,report.session.status) {
+        RecordingIntegrityAnalyzer.analyze(points,report.session.status)
+    }
+    val findings = remember(points) { SessionObservationAnalyzer.observations(points) }
     Column(Modifier.fillMaxWidth().pureGlass(14).padding(12.dp),
         verticalArrangement=Arrangement.spacedBy(9.dp)) {
         Text("SESSION ${report.session.id} · ${report.session.configuration} · "+
@@ -66,10 +73,29 @@ internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report) {
             SummaryMetric("DURATION",
                 num(report.elapsedSeconds,0)+" s",Modifier.weight(1f))
         }
-        Text("Telemetry integrity: ${report.quality.score}/100 · "+
-            "${num(report.quality.coveragePct)}% sample coverage · "+
-            "${report.quality.gapCount} detected gaps",
+        val health = when(integrity.verdict) {
+            RecordingIntegrityAnalyzer.Verdict.RELIABLE -> "RELIABLE"
+            RecordingIntegrityAnalyzer.Verdict.PARTIAL -> "PARTIAL"
+            RecordingIntegrityAnalyzer.Verdict.INTERRUPTED -> "INTERRUPTED"
+            RecordingIntegrityAnalyzer.Verdict.INSUFFICIENT -> "INSUFFICIENT"
+        }
+        Text("RECORDING INTEGRITY · "+health,
+            color=if(integrity.verdict==RecordingIntegrityAnalyzer.Verdict.RELIABLE)
+                coreMint else solarGold,fontWeight=FontWeight.Bold)
+        Text(integrity.message,color=coreSecondary,
+            style=MaterialTheme.typography.bodySmall)
+        Text("Observed continuity: "+num(integrity.continuityPct)+"% · "+
+            integrity.gaps+" gaps · "+integrity.sampleCount+" readings",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+        Text("WHAT THE RECORDING SHOWS",color=iceBlue,fontWeight=FontWeight.Bold)
+        findings.forEach { finding ->
+            Text("• "+finding,color=coreText,style=MaterialTheme.typography.bodySmall)
+        }
+        if(integrity.samplerP95Ms!=null) Text(
+            "Recorder collection P95: "+num(integrity.samplerP95Ms,2)+
+            " ms per tick (excludes SQLite/HUD); timing jitter P95: "+
+            num(integrity.p95JitterMs,1)+" ms",
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Text("Thermal trend: "+
             (report.thermal.slopeCPerMin?.let{
                 String.format(Locale.US,"%+.1f°C/min",it)
@@ -284,7 +310,7 @@ internal fun CompareQuickOverview(a:BenchmarkAnalyzer.Report,
                         color=coreText,style=MaterialTheme.typography.bodySmall)
                     Text(num(report.elapsedSeconds,0)+" s · "+
                         report.sampleCount+" measured samples · "+
-                        report.quality.score+"/100 integrity",
+                        report.quality.score+"/100 legacy comparison-input score",
                         color=coreSecondary,style=MaterialTheme.typography.bodySmall)
                 }
             }
