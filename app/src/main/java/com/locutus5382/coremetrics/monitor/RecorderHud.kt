@@ -161,7 +161,9 @@ internal class RecorderHud(private val context:Context) {
     private var blinkOn=true
     private var locked=false
     private var collapsed=false
-    private var dockRight=true
+    private enum class DockEdge { LEFT, RIGHT, TOP }
+    private var dockEdge=DockEdge.RIGHT
+    private var expandedY=0
     private var drawerOpen=false
     private var expandedX=0
     private var onRecord:(()->Unit)?=null
@@ -363,30 +365,22 @@ internal class RecorderHud(private val context:Context) {
             setOnClickListener{handler()}
         }
 
-    /** Clear state communication: enabled = cyan frosted, disabled = muted,
-     * almost borderless, REC = red. The native drawer does not poll telemetry. */
+    /** Neutral Frosted Glass: enabled = translucent white glass with a subtle
+     * hairline and check; disabled = text only, without a colored tile. */
+    private fun frostedChip():GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(Color.argb(112,226,241,255),Color.argb(45,190,221,245))
+    ).apply {
+        cornerRadius=dp(11f).toFloat()
+        setStroke(dp(1f).coerceAtLeast(1),Color.argb(170,239,249,255))
+    }
     private fun paintDrawerToggle(view:TextView,label:String,enabled:Boolean) {
-        view.text=(if(enabled)"✓ " else "○ ")+label
+        view.text=(if(enabled)"✓  " else "")+label
         view.contentDescription=label+(if(enabled)" enabled" else " disabled")
-        view.setTextColor(if(enabled)Color.WHITE
-            else Color.argb(160,188,212,236))
+        view.setTextColor(if(enabled)Color.WHITE else Color.argb(183,207,224,239))
         view.typeface=Typeface.create("sans-serif-medium",
             if(enabled)Typeface.BOLD else Typeface.NORMAL)
-        val orange=label=="CPU T" || label=="RAM"
-        view.background=GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            if(enabled && orange)intArrayOf(
-                Color.argb(219,255,107,0),Color.argb(195,209,65,0))
-            else if(enabled)intArrayOf(
-                Color.argb(216,37,99,235),Color.argb(191,25,72,192))
-            else intArrayOf(
-                Color.argb(39,7,17,40),Color.argb(36,7,17,40))
-        ).apply {
-            cornerRadius=dp(12f).toFloat()
-            if(enabled)setStroke(dp(1.5f).coerceAtLeast(1),
-                Color.argb(235,242,247,255))
-            else setStroke(0,Color.TRANSPARENT)
-        }
+        view.background=if(enabled)frostedChip() else null
     }
 
     private fun refreshDrawerControls() {
@@ -402,25 +396,15 @@ internal class RecorderHud(private val context:Context) {
             " Glass %d%% ",(opts.opacity*100f).roundToInt())
         drawerRecControl?.let { button ->
             button.text=if(recording)"● STOP" else "● REC"
-            button.setTextColor(Color.WHITE)
-            button.background=GradientDrawable().apply {
-                cornerRadius=dp(12f).toFloat()
-                setColor(if(recording)Color.rgb(154,35,48)
-                    else Color.rgb(60,109,133))
-                setStroke(dp(1f).coerceAtLeast(1),
-                    if(recording)Color.rgb(255,106,115)
-                    else Color.rgb(113,204,238))
-            }
+            button.setTextColor(if(recording)Color.rgb(255,182,189)
+                else Color.WHITE)
+            button.background=frostedChip()
         }
         drawerControl?.let { gear ->
             gear.text=if(drawerOpen)"▴" else "⚙"
             gear.contentDescription=if(drawerOpen)
                 "Close quick HUD controls" else "Open quick HUD controls"
-            gear.background=if(drawerOpen)GradientDrawable().apply{
-                cornerRadius=dp(12f).toFloat()
-                setColor(Color.rgb(11,80,101))
-                setStroke(dp(1f).coerceAtLeast(1),Color.rgb(94,224,255))
-            } else rounded(.35f)
+            gear.background=if(drawerOpen)frostedChip() else rounded(.35f)
         }
     }
 
@@ -439,6 +423,9 @@ internal class RecorderHud(private val context:Context) {
             val chip=action(label,handler).apply {
                 textSize=11f
                 setPadding(dp(6f),dp(5f),dp(6f),dp(5f))
+                // Unselected controls have no large colored backgrounds.
+                background=null
+                setTextColor(Color.argb(193,222,236,247))
             }
             row.addView(chip,LinearLayout.LayoutParams(
                 0,dp(39f),1f).apply {marginEnd=dp(4f)})
@@ -466,23 +453,26 @@ internal class RecorderHud(private val context:Context) {
             changeOptions(opts.copy(showPower=!opts.showPower))
         }
         addChip(bottom,"Dock") {
-            dock((params?.x?:0)+(root?.width?:0)/2>=windowWidth()/2)
+            dock(nearestDockEdge())
         }
         drawerRecControl=addChip(bottom,"REC") {
             onRecord?.invoke()
         }
+        // The dock control is functional text, not a loud accent tile.
         column.addView(bottom,LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,dp(43f)))
         val opacity=makeRow()
         opacity.addView(action("−"){changeOptions(
-            opts.copy(opacity=(opts.opacity-.1f).coerceAtLeast(.30f)))},
+            opts.copy(opacity=(opts.opacity-.1f).coerceAtLeast(.30f)))}
+            .apply {background=frostedChip()},
             LinearLayout.LayoutParams(dp(45f),dp(33f)))
         opacityLabel=styledLabel("",11f).also { label ->
             label.gravity=Gravity.CENTER
             opacity.addView(label,LinearLayout.LayoutParams(dp(105f),dp(33f)))
         }
         opacity.addView(action("+"){changeOptions(
-            opts.copy(opacity=(opts.opacity+.1f).coerceAtMost(.90f)))},
+            opts.copy(opacity=(opts.opacity+.1f).coerceAtMost(.90f)))}
+            .apply {background=frostedChip()},
             LinearLayout.LayoutParams(dp(45f),dp(33f)))
         opacity.addView(styledLabel(
             "  ✓ enabled · ○ hidden",9f))
@@ -540,6 +530,7 @@ internal class RecorderHud(private val context:Context) {
         this.onOptionsChanged=onOptionsChanged
         disposed=false
         locked=false;collapsed=false;drawerOpen=false
+        dockEdge=DockEdge.RIGHT
         drawerSwitches.clear()
         opacityLabel=null;drawerRecControl=null
         val line=LinearLayout(context).apply {
@@ -550,10 +541,12 @@ internal class RecorderHud(private val context:Context) {
             setPadding(dp(7f),dp(4f),dp(8f),dp(4f))
         }
         mainText=label
-        // A weighted telemetry label shrinks BEFORE settings/lock/REC do.
-        // Previously a long metric string could push the ⚙ button off-screen.
+        // Natural-width telemetry: no weight-induced empty strip between
+        // metrics and REC/settings/lock actions. Window width is recalculated
+        // from the actual displayed lines and capped to the viewport.
         line.addView(label,LinearLayout.LayoutParams(
-            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
         val rec=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -569,9 +562,7 @@ internal class RecorderHud(private val context:Context) {
         line.addView(rec)
         drawerControl=action("⚙"){drawerOpen=!drawerOpen;applyAppearance()}
         line.addView(drawerControl)
-        minimizeControl=action("‹"){dock(
-            (params?.x?:0)+(root?.width?:0)/2>=windowWidth()/2)
-        }.apply {
+        minimizeControl=action("‹"){dock(nearestDockEdge())}.apply {
             contentDescription="Dock HUD to nearest edge; tap edge tab to restore"
         }
         line.addView(minimizeControl)
@@ -591,19 +582,17 @@ internal class RecorderHud(private val context:Context) {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER
             isClickable=true
-            minimumWidth=dp(44f)
-            minimumHeight=dp(88f)
             contentDescription="Expand docked CoreMetrics HUD"
             setOnClickListener{expand()}
         }
-        val glow=View(context).apply {
-            background=GradientDrawable().apply {
-                cornerRadius=dp(8f).toFloat()
-                setColor(Color.rgb(56,189,248))
-            }
+        val badge=styledLabel("CM",11f).apply {
+            gravity=Gravity.CENTER
+            background=frostedChip()
+            setTextColor(Color.WHITE)
+            contentDescription="CoreMetrics dock tab; tap to expand"
         }
-        tab.addView(glow,LinearLayout.LayoutParams(dp(12f),dp(55f)))
-        dockVisual=glow
+        tab.addView(badge,LinearLayout.LayoutParams(dp(36f),dp(62f)))
+        dockVisual=badge
         dockTab=tab
 
         val frame=LinearLayout(context).apply {
@@ -613,11 +602,10 @@ internal class RecorderHud(private val context:Context) {
             addView(tab)
         }
         root=frame
-        // Fix the panel width to the available viewport. The two settings
-        // rows scroll internally instead of expanding the whole overlay beyond
-        // the screen and hiding its settings/unlock controls.
-        val hudWidth=minOf(dp(475f),
-            (windowWidth()-dp(24f)).coerceAtLeast(dp(190f)))
+        // Initial width is temporary. applyAppearance() immediately sizes
+        // the actual WindowManager window to the selected metric content.
+        val hudWidth=minOf(dp(360f),
+            (windowWidth()-dp(20f)).coerceAtLeast(dp(260f)))
         val p=WindowManager.LayoutParams(
             hudWidth,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -648,7 +636,7 @@ internal class RecorderHud(private val context:Context) {
                     if(kotlin.math.abs(deltaX)>dp(5f) ||
                         kotlin.math.abs(deltaY)>dp(5f))moved=true
                     p.x=(baseX+deltaX.roundToInt())
-                        .coerceIn(0,(windowWidth()-frame.width).coerceAtLeast(0))
+                        .coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
                     p.y=(baseY+deltaY.roundToInt())
                         .coerceIn(0,(windowHeight()-frame.height).coerceAtLeast(0))
                     runCatching{wm.updateViewLayout(frame,p)}
@@ -656,9 +644,14 @@ internal class RecorderHud(private val context:Context) {
                 }
                 MotionEvent.ACTION_UP -> {
                     if(moved) {
-                        val closeLeft=p.x<=dp(16f)
-                        val closeRight=p.x+frame.width>=windowWidth()-dp(16f)
-                        if(closeLeft || closeRight)dock(closeRight)
+                        val closeTop=p.y<=dp(22f)
+                        val closeLeft=p.x<=dp(18f)
+                        val closeRight=p.x+p.width>=windowWidth()-dp(18f)
+                        when {
+                            closeTop->dock(DockEdge.TOP)
+                            closeLeft->dock(DockEdge.LEFT)
+                            closeRight->dock(DockEdge.RIGHT)
+                        }
                     }
                     true
                 }
@@ -690,30 +683,79 @@ internal class RecorderHud(private val context:Context) {
         }
     }
 
-    private fun dock(toRight:Boolean) {
+    private fun nearestDockEdge():DockEdge {
+        val p=params ?:return DockEdge.RIGHT
+        if(p.y<=dp(35f))return DockEdge.TOP
+        return if(p.x+p.width/2<windowWidth()/2)DockEdge.LEFT else DockEdge.RIGHT
+    }
+    private fun dock(edge:DockEdge) {
         if(locked || !attached())return
-        val frame=root ?:return
         val p=params ?:return
         expandedX=p.x
-        dockRight=toRight
+        expandedY=p.y
+        dockEdge=edge
         collapsed=true
         drawerOpen=false
         applyAppearance()
         syncBlink()
-        p.x=if(toRight) (windowWidth()-dp(44f)).coerceAtLeast(0) else 0
-        runCatching{wm.updateViewLayout(frame,p)}
     }
     private fun expand() {
         if(locked || !collapsed)return
-        val frame=root ?:return
         val p=params ?:return
         collapsed=false
         applyAppearance()
-        syncBlink()
-        val width=frame.measuredWidth.takeIf{it>0}?:dp(390f)
-        p.x=if(dockRight) (windowWidth()-width-dp(12f)).coerceAtLeast(0)
-            else dp(12f)
-        runCatching{wm.updateViewLayout(frame,p)}
+        p.x=when(dockEdge) {
+            DockEdge.RIGHT -> (windowWidth()-p.width-dp(10f)).coerceAtLeast(0)
+            DockEdge.LEFT -> dp(10f)
+            DockEdge.TOP -> expandedX.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
+        }
+        p.y=if(dockEdge==DockEdge.TOP)dp(24f) else
+            expandedY.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
+        root?.let { runCatching{wm.updateViewLayout(it,p)} }
+    }
+
+    /** Keep one overlay window. Docking MUST change WindowManager dimensions
+     * as well as the child visibility; an invisible 475dp window is not a tab. */
+    private fun updateGeometry() {
+        val frame=root ?:return
+        val p=params ?:return
+        if(collapsed) {
+            val top=dockEdge==DockEdge.TOP
+            val w=dp(if(top)86f else 44f)
+            val h=dp(if(top)44f else 78f)
+            val tab=dockTab
+            tab?.layoutParams=LinearLayout.LayoutParams(w,h)
+            (dockVisual as? TextView)?.apply {
+                text=if(top) (if(recording)"● REC" else "CM READY")
+                    else (if(recording)"●\nREC" else "CM\nREADY")
+                layoutParams=LinearLayout.LayoutParams(
+                    dp(if(top)76f else 38f),dp(if(top)34f else 68f))
+            }
+            p.width=w
+            p.height=h
+            p.x=when(dockEdge) {
+                DockEdge.RIGHT -> (windowWidth()-w).coerceAtLeast(0)
+                DockEdge.LEFT -> 0
+                DockEdge.TOP -> expandedX.coerceIn(0,(windowWidth()-w).coerceAtLeast(0))
+            }
+            p.y=if(top)0 else expandedY.coerceIn(0,(windowHeight()-h).coerceAtLeast(0))
+        }else{
+            p.height=WindowManager.LayoutParams.WRAP_CONTENT
+            val text=mainText
+            val longest=text?.text?.toString()?.split('\n')
+                ?.maxOfOrNull { text.paint.measureText(it) } ?: 0f
+            // Account for REC/STOP, gear, docking, lock and optional close
+            // using a conservative cap; text is then bounded by free width.
+            val controls=dp(if(recording)218f else 211f)
+            val viewport=(windowWidth()-dp(20f)).coerceAtLeast(dp(260f))
+            val minimum=dp(if(drawerOpen)425f else 255f).coerceAtMost(viewport)
+            val natural=longest.roundToInt()+controls+dp(16f)
+            p.width=natural.coerceIn(minimum,viewport)
+            text?.maxWidth=(p.width-controls-dp(5f)).coerceAtLeast(dp(65f))
+            p.x=p.x.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
+            p.y=p.y.coerceIn(0,(windowHeight()-dp(54f)).coerceAtLeast(0))
+        }
+        if(attached())runCatching{wm.updateViewLayout(frame,p)}
     }
 
     private fun changeOptions(updated:HudOptions) {
@@ -772,12 +814,11 @@ internal class RecorderHud(private val context:Context) {
             ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
             else -> Color.rgb(255,199,0)
         }
-        // The dock tab's GradientDrawable is allocated when the view is
-        // constructed; just update its color on appearance changes.
-        (dockVisual?.background as? GradientDrawable)?.setColor(color)
+        // Keep the dock's translucent neutral glass; tint only its status text.
+        (dockVisual as? TextView)?.setTextColor(color)
         renderTelemetry()
         renderAction()
-        if(attached())runCatching{params?.let{wm.updateViewLayout(frame,it)}}
+        updateGeometry()
         if(drawerOpen && !collapsed)frame.post {
             if(root===frame && attached() && drawerOpen && !collapsed) {
                 val p=params ?:return@post
@@ -813,10 +854,13 @@ internal class RecorderHud(private val context:Context) {
             ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
             else -> Color.rgb(255,199,0)
         }
-        (dockVisual?.background as? GradientDrawable)?.setColor(thermalColor)
+        (dockVisual as? TextView)?.setTextColor(thermalColor)
         // Rendering consumes only the recorder's current sample; never polls
         // hardware at an independent cadence.
-        if(visible())renderTelemetry()
+        if(visible()) {
+            renderTelemetry()
+            if(!collapsed)updateGeometry()
+        }
     }
 
     private fun severityColor(level:HudSeverity.Level):Int=when(level){
