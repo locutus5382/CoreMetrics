@@ -41,7 +41,8 @@ object BenchmarkAnalyzer {
         val meanCpuC:Double?, val peakCpuC:Double?, val meanGpuC:Double?,
         val meanCpuLoad:Double?, val meanGpuLoad:Double?,
         val quality:Quality, val energy:Energy, val thermal:Thermal,
-        val frames:FrameEfficiency, val skippedWarmUpSeconds:Int = 0
+        val frames:FrameEfficiency, val skippedWarmUpSeconds:Int = 0,
+        val recordingIntegrity:RecordingIntegrityAnalyzer.Result? = null
     )
     private fun mean(v:List<Double?>):Double? {
         val values=v.filterNotNull().filter { it.isFinite() }
@@ -237,7 +238,8 @@ object BenchmarkAnalyzer {
             Quality(score,level,reasons,coverage,typical,gapCount,observed,conflict),
             Energy(if(dischargeMs>0L)wh else null,dischargeMs/1000.0,
                 energyCoverage,weightedW,mWhPerMinute,weightedW,condition),
-            thermal(pts),frames,skip)
+            thermal(pts),frames,skip,
+            RecordingIntegrityAnalyzer.analyze(pts,session.status))
     }
 
     fun text(report:Report):String=buildString {
@@ -252,8 +254,17 @@ object BenchmarkAnalyzer {
             "Analysis excludes first ${r.skippedWarmUpSeconds} s after first recorded " +
             "sample (not verified game-loading completion). Original data unchanged.")
         appendLine("Duration (first-to-last sample): ${fmt(r.elapsedSeconds,1)} s")
-        appendLine("QUALITY / COVERAGE")
-        appendLine("Heuristic data quality: ${r.quality.score}/100 — ${r.quality.category}")
+        appendLine("RECORDING INTEGRITY (observed sample span)")
+        r.recordingIntegrity?.let { integrity ->
+            appendLine("Integrity: "+integrity.verdict+
+                "; continuity: "+fmt(integrity.continuityPct,1)+"%"+
+                "; detected gaps: "+integrity.gaps+
+                "; missing interval time: "+integrity.missingMs+" ms")
+            appendLine("Collector time P95: "+fmt(integrity.samplerP95Ms,2)+
+                " ms (excludes SQLite writes and HUD rendering)")
+        }
+        appendLine("COMPARISON INPUT QUALITY / COVERAGE")
+        appendLine("Legacy composite comparison-input score: ${r.quality.score}/100 — ${r.quality.category}")
         appendLine("Coverage: ${fmt(r.quality.coveragePct,1)}%; " +
             "typical interval: ${r.quality.typicalIntervalMs} ms; gaps: ${r.quality.gapCount}")
         appendLine("Observed CPU ceilings: ${r.quality.observedCeilings}")
@@ -278,7 +289,7 @@ object BenchmarkAnalyzer {
         appendLine("Valid discharge integration: ${fmt(r.energy.measuredSeconds,1)} s; " +
             "coverage: ${fmt(r.energy.coveragePct,1)}%")
         appendLine("Battery measurements are battery-terminal net power, NOT wall or SoC-only watts.")
-        appendLine("FPS / STUTTER / EFFICIENCY")
+        appendLine("INTERPRETATION LIMITS")
         appendLine(r.frames.note)
         appendLine("This report makes no claim of identical in-game scenes, tuner causality, " +
             "thermal throttling, or statistical significance.")
@@ -336,7 +347,7 @@ object BenchmarkAnalyzer {
         appendLine("B observed limits: ${b.quality.observedCeilings}")
         appendLine("A final-minute temperature trend: ${a.thermal.state}")
         appendLine("B final-minute temperature trend: ${b.thermal.state}")
-        appendLine("FPS per watt: unavailable until presented frame data is verified.")
+        appendLine("Game smoothness is not independently measured.")
         appendLine("A/B is observational. Different gameplay, duration, charging state, " +
             "fan mode or warm-up confound comparisons; do not infer which is faster.")
         appendLine()
