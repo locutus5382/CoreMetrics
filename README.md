@@ -2,7 +2,7 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.7 telemetry intelligence alpha — focused code-audit fixes for session analysis cache correctness, non-blocking diagnostic reports, app/export version consistency and note editing feedback. The v0.9.6.4 recorder recovery and v0.9.6.5 read-only capability probe remain unchanged.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+**Current development status: v0.9.7 telemetry intelligence alpha — experimental read-only platform thermal signals, a separate thermal HUD dot, optional swap/PSI readings, sampler timing, a SQLite v6 migration and concise recording-integrity analysis. The v0.9.6.6 lifecycle recovery and HUD ownership baseline is preserved.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
 
 ## One-app Quick Start (v0.9.7)
 
@@ -17,7 +17,7 @@
 
 **Migration warning:** Older `.v092themes`, `.v093base`, `.v093themes`, `.preview`, and other side-by-side test variants remain distinct Android packages with **separate SQLite session databases**. Installing the unified APK will NOT import their private sessions. Export any valuable CSVs and diagnostic reports from old builds first, then import CSVs into the unified application. Remove old Quick Settings tiles, revoke older variants' overlay grants and uninstall variants only AFTER preserving data. The canonical package `com.locutus5382.coremetrics` retains its own app-private data when updated with a compatible signing key; a different signing key may require uninstall/reinstall and backup first.
 
-**Validation:** See `docs/PORTAL_V0962_UNIFIED_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
+**Validation:** See `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
 
 ---
 
