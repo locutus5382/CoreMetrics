@@ -20,16 +20,18 @@ internal object RecorderLease {
     data class Saved(val recording:Boolean,val id:Long,val label:String,
         val configuration:String,val intervalMs:Long,
         val hudEnabled:Boolean,val hudLocked:Boolean,
-        val stopRequested:Boolean)
+        val stopRequested:Boolean,val standbyRecoveryEnabled:Boolean)
 
     private fun prefs(context:Context)=
         context.getSharedPreferences(FILE,Context.MODE_PRIVATE)
     private fun save(context:Context,recording:Boolean,id:Long,label:String,
-        config:String,interval:Long,hud:Boolean,restored:Boolean):Boolean {
+        config:String,interval:Long,hud:Boolean,restored:Boolean,
+        standbyRecovery:Boolean=true):Boolean {
         val p=prefs(context)
         return p.edit()
             .putBoolean("active",true).putBoolean("recording",recording)
             .putBoolean("stop_requested",false)
+            .putBoolean("standby_recovery",if(recording)false else standbyRecovery)
             .putLong("id",id).putString("label",label.take(64))
             .putString("config",config.take(40))
             .putLong("interval",if(interval==2000L)2000L else 5000L)
@@ -43,8 +45,8 @@ internal object RecorderLease {
             .commit()
     }
     fun standby(context:Context,label:String,config:String,intervalMs:Long,
-        restored:Boolean=false)=
-        save(context,false,0L,label,config,intervalMs,true,restored)
+        restored:Boolean=false,recoverable:Boolean=true)=
+        save(context,false,0L,label,config,intervalMs,true,restored,recoverable)
     fun start(context:Context,id:Long,label:String,config:String,
         intervalMs:Long,hud:Boolean,restored:Boolean=false)=
         if(id>0L) save(context,true,id,label,config,intervalMs,hud,restored) else false
@@ -90,7 +92,7 @@ internal object RecorderLease {
     fun clear(context:Context):Boolean = prefs(context).edit()
         .putBoolean("active",false).putBoolean("recording",false)
         .remove("id").remove("recoveries").remove("hud_locked")
-        .remove("stop_requested").commit()
+        .remove("stop_requested").remove("standby_recovery").commit()
 
     /**
      * A process killed during an explicit recording has a fresh lease;
@@ -103,6 +105,9 @@ internal object RecorderLease {
         val stopRequested=p.getBoolean("stop_requested",false)
         if(!stopRequested && p.getInt("recoveries",0)>=2)return null
         val recording=p.getBoolean("recording",false)
+        val standbyRecovery=p.getBoolean("standby_recovery",true)
+        if(!RecorderContinuation.allowLeaseRecovery(
+                recording,stopRequested,standbyRecovery))return null
         val savedUptime=p.getLong("heartbeat_uptime",-1L)
         val savedWall=p.getLong("heartbeat_wall",-1L)
         val deltaU=SystemClock.elapsedRealtime()-savedUptime
@@ -122,6 +127,6 @@ internal object RecorderLease {
             p.getString("config","Unknown")?:"Unknown",
             p.getLong("interval",5000L),
             p.getBoolean("hud_enabled",false),
-            p.getBoolean("hud_locked",false),stopRequested)
+            p.getBoolean("hud_locked",false),stopRequested,standbyRecovery)
     }
 }

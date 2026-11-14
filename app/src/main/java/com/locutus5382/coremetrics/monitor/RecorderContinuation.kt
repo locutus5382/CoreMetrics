@@ -14,6 +14,13 @@ internal object RecorderContinuation {
             action!=RecordingService.STOP &&
             action!=RecordingService.DISARM
 
+    /** An explicitly armed READY HUD may be restored after LMK. A READY HUD
+     * reached through STOP is not silently resurrected after process death.
+     * A pending terminal STOP is always eligible for reconciliation only. */
+    fun allowLeaseRecovery(recording:Boolean,stopRequested:Boolean,
+        standbyRecovery:Boolean):Boolean=
+        stopRequested || recording || standbyRecovery
+
     /** A system teardown is not a user-requested STOP. */
     fun cancellationOutcome(explicitUserStop:Boolean):String =
         if(explicitUserStop)"COMPLETED" else "INTERRUPTED"

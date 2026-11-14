@@ -179,13 +179,28 @@ class RecordingService:Service() {
         refreshTile()
         stopServiceNow()
     }
-    private fun standby(recovered:Boolean=false){
+    private fun standby(recovered:Boolean=false,recoverable:Boolean=true){
         MonitorState.clear("HUD ready · tap REC in game")
         MonitorState.standby=true
-        RecorderLease.standby(this,armedLabel,armedConfig,armedInterval,recovered)
+        val persisted=RecorderLease.standby(this,armedLabel,armedConfig,
+            armedInterval,recovered,recoverable)
+        if(!persisted)RecorderJournal.event(this,"STANDBY_LEASE_WRITE_FAILED",
+            "standby remains active until process exit; no guaranteed recovery")
         hud.mode(false)
         foreground("CoreMetrics · standby","No sensors sampled until REC",true)
         refreshTile()
+    }
+    /** STOP must not silently ignore a failed SharedPreferences.commit.
+     * Clearing the old lease on failure prevents unintended re-recording;
+     * the original SQLite row is still finalized by the cancellation handler. */
+    private fun persistTerminalIntent(command:String) {
+        if(RecorderLease.requestStop(this))return
+        val cleared=RecorderLease.clear(this)
+        RecorderJournal.event(this,"STOP_INTENT_WRITE_FAILED",
+            "command="+command+" lease_cleared="+cleared)
+        MonitorState.message=if(cleared)
+            "Stopping; recovery disabled (lease storage failed)"
+        else "Stopping; persistent storage unavailable"
     }
     private fun hudClick(){
         val i=Intent(this,RecordingService::class.java)
@@ -457,7 +472,7 @@ class RecordingService:Service() {
                 if(current!=null && !current.isCompleted || MonitorState.starting){
                     // Do not clear a fresh recovery lease until the recorder
                     // actually persisted its final database status.
-                    RecorderLease.requestStop(this)
+                    persistTerminalIntent("DISARM")
                     MonitorState.saving=true
                     explicitUserStop=true
                     stopping=true
@@ -479,9 +494,10 @@ class RecordingService:Service() {
                     RecorderLease.clear(this)
                     stopping=false
                     MonitorState.saving=false
-                    if(armed && userWantsHud)standby()else disarmNow()
+                    if(armed && userWantsHud)standby(recoverable=false)
+                    else disarmNow()
                 }else {
-                    RecorderLease.requestStop(this)
+                    persistTerminalIntent("STOP")
                     MonitorState.saving=true
                     current.cancel()
                 }
@@ -654,7 +670,7 @@ class RecordingService:Service() {
                                 }.getOrDefault(false)
                             }
                             if(finalized)RecorderLease.clear(this@RecordingService)
-                            else RecorderLease.requestStop(this@RecordingService)
+                            else persistTerminalIntent("FINISH_FAILED")
                             // On failure a STOP-pending lease survives for a
                             // later explicit retry; never resume sampling.
                             RecorderJournal.event(this@RecordingService,
@@ -678,7 +694,7 @@ class RecordingService:Service() {
                                     armed=false
                                     MonitorState.standby=false
                                 } else if(armed && userWantsHud && !disarmAfterStop) {
-                                    standby()
+                                    standby(recoverable=false)
                                 } else {
                                     disarmAfterStop=false
                                     disarmNow()

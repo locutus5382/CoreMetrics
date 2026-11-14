@@ -6,6 +6,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RecorderContinuationTest {
+    @Test fun postStopStandbyDoesNotResurrectButExplicitStandbyMay() {
+        assertTrue(RecorderContinuation.allowLeaseRecovery(
+            recording=false,stopRequested=false,standbyRecovery=true))
+        assertFalse(RecorderContinuation.allowLeaseRecovery(
+            recording=false,stopRequested=false,standbyRecovery=false))
+        assertTrue(RecorderContinuation.allowLeaseRecovery(
+            recording=true,stopRequested=false,standbyRecovery=false))
+        assertTrue(RecorderContinuation.allowLeaseRecovery(
+            recording=true,stopRequested=true,standbyRecovery=false))
+    }
     @Test fun activeHudActionsRemainStickyAfterLockAndHide() {
         val actions=listOf(RecordingService.START,RecordingService.HUD_LOCK,
             RecordingService.HUD_UNLOCK,RecordingService.HUD_CONFIG,
