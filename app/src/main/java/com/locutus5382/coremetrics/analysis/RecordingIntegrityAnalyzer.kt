@@ -9,7 +9,7 @@ import kotlin.math.roundToLong
  * suitability for comparing two different gameplay workloads.
  * This observes the span between first/last stored samples, not game duration.
  */
-internal object RecordingIntegrityAnalyzer {
+object RecordingIntegrityAnalyzer {
     enum class Verdict { RELIABLE, PARTIAL, INTERRUPTED, INSUFFICIENT }
     data class Result(
         val verdict: Verdict,
