@@ -74,6 +74,25 @@ MemTotal: 4194304 kB
         assertTrue(partial.missingMs>0)
     }
 
+    @Test fun derivedTimingStatisticsRequireNoNewStoredSensorData() {
+        val regular=(0L..39L).map { point(it*5_000L,cost=0.65) }
+        val result=RecordingIntegrityAnalyzer.analyze(regular,"COMPLETED")
+        assertEquals(5_000.0,result.meanIntervalMs!!,0.01)
+        assertEquals(0.0,result.p99JitterMs!!,0.01)
+        assertEquals(0,result.stepsOver2xTarget)
+        val delayed=regular.take(20)+regular.drop(20).map {
+            it.copy(timeMs=it.timeMs+15_000L,sampleElapsedMs=it.sampleElapsedMs?.plus(15_000L))
+        }
+        val affected=RecordingIntegrityAnalyzer.analyze(delayed,"COMPLETED")
+        assertEquals(1,affected.stepsOver2xTarget)
+        assertEquals(RecordingIntegrityAnalyzer.Verdict.PARTIAL,affected.verdict)
+    }
+
+    @Test fun shortWindowsDoNotPretendP99JitterIsReliable() {
+        val samples=(0L..10L).map{point(it*5_000L)}
+        assertNull(RecordingIntegrityAnalyzer.analyze(samples,"COMPLETED").p99JitterMs)
+    }
+
     @Test fun observationsDoNotMisdiagnoseOsStatus() {
         val input=(0L..4L).map { point(it*5000L,status=0) }
         val text=SessionObservationAnalyzer.observations(input).joinToString(" ")
