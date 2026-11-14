@@ -1632,7 +1632,7 @@ class MainActivity : ComponentActivity() {
                                                                 })
                                                             }
                                                         },
-                                                        onNote={note->
+                                                        onNote={note,ack->
                                                             scope.launch {
                                                                 val outcome=withContext(Dispatchers.IO){
                                                                     runCatching {
@@ -1643,10 +1643,12 @@ class MainActivity : ComponentActivity() {
                                                                 }
                                                                 outcome.fold(onSuccess={
                                                                     sessionList=withContext(Dispatchers.IO){database.list()}
+                                                                    ack(true,"")
                                                                     message="Game note updated"
-                                                                },onFailure={
-                                                                    message="Game note failed: "+
-                                                                        (it.message?:it.javaClass.simpleName)
+                                                                },onFailure={e->
+                                                                    val reason=e.message?:e.javaClass.simpleName
+                                                                    ack(false,reason)
+                                                                    message="Game note failed: "+reason
                                                                 })
                                                             }
                                                         },

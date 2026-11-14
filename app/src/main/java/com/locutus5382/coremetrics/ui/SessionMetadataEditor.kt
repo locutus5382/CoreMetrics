@@ -19,7 +19,7 @@ import com.locutus5382.coremetrics.data.SessionStore
 internal fun SessionMetadataEditor(session:SessionStore.Session,
     onDriver:(String?,(Boolean,String)->Unit)->Unit,
     onResolution:(String?,(Boolean,String)->Unit)->Unit,
-    onNote:(String?)->Unit,onConfig:(String)->Unit,
+    onNote:(String?,(Boolean,String)->Unit)->Unit,onConfig:(String)->Unit,
     onDelete:()->Unit,onClose:()->Unit) {
     var gameNote by rememberSaveable(session.id) {
         mutableStateOf(session.note.orEmpty())
@@ -41,8 +41,23 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
         mutableStateOf(session.resolutionScale?.takeIf{it.startsWith("Custom: ")}
             ?.removePrefix("Custom: ").orEmpty())
     }
+    var noteFeedback by remember(session.id){mutableStateOf("")}
+    var noteSaving by remember(session.id){mutableStateOf(false)}
     var driverFeedback by remember(session.id){mutableStateOf("")}
     var scaleFeedback by remember(session.id){mutableStateOf("")}
+    fun submitNote() {
+        if(noteSaving)return
+        val cleaned=SessionMetadata.note(gameNote)
+        noteSaving=true
+        noteFeedback="Saving note…"
+        onNote(cleaned){saved,detail->
+            noteSaving=false
+            if(saved) {
+                gameNote=cleaned.orEmpty()
+                noteFeedback="Game note saved"
+            }else noteFeedback="Note not saved: "+detail
+        }
+    }
     fun submitDriver(value:String?) {
         if(value!=null && SessionMetadata.driver(value)==null) {
             driverFeedback="Invalid driver tag. Use a short name without control characters."
@@ -73,11 +88,18 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
             "unknown stays unknown, not guessed from GPU activity.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Text("Game / track note",color=coreText)
-        OutlinedTextField(value=gameNote,onValueChange={gameNote=it.take(64)},
+        OutlinedTextField(value=gameNote,
+            onValueChange={gameNote=it.take(64);noteFeedback=""},
+            enabled=!noteSaving,
             modifier=Modifier.fillMaxWidth(),singleLine=true,
             label={Text("e.g. Hades · same scene")})
-        OutlinedButton(enabled=gameNote.trim()!=session.note.orEmpty(),
-            onClick={onNote(gameNote.trim().ifEmpty{null})}){Text("Save game note")}
+        OutlinedButton(
+            enabled=!noteSaving &&
+                SessionMetadata.note(gameNote)!=session.note,
+            onClick={submitNote()}
+        ){Text(if(noteSaving)"Saving note…" else "Save game note")}
+        if(noteFeedback.isNotBlank())Text(noteFeedback,color=coreSecondary,
+            style=MaterialTheme.typography.labelSmall)
         Text("Configuration profile",color=coreText)
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(7.dp)) {
