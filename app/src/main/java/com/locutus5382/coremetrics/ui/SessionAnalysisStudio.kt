@@ -203,7 +203,7 @@ internal fun SessionAnalysisStudio(
         if(current!=null) {
             Text("ALL NUMBERS BELOW APPLY TO THE SELECTED WINDOW",
                 color=iceBlue,fontWeight=FontWeight.Bold)
-            SessionQuickOverview(current.benchmark)
+            SessionQuickOverview(current.benchmark,current.points)
             StabilityPanel(current)
             SessionDiagnosticsPanel(current.points,current.benchmark,
                 referenceStartMs=origin,precomputed=current.diagnostics)
