@@ -2,11 +2,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.6.1 unified alpha — one CoreMetrics application ID, one APK, four optional finishes.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+**Current development status: v0.9.6.2 unified alpha — one canonical CoreMetrics application ID, four optional finishes, with both debug and R8-optimized test builds.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.6)
+## One-app Quick Start (v0.9.6.2)
 
-1. Install the **single** `CoreMetrics-v0.9.6-unified-debug` GitHub Actions artifact (`app-debug.apk`, package `com.locutus5382.coremetrics`), with overlay and notification permissions enabled.
+1. For fault diagnosis install `CoreMetrics-v0.9.6.2-unified-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.6.2-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CoreMetrics HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CoreMetrics REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -17,10 +17,21 @@
 
 **Migration warning:** Older `.v092themes`, `.v093base`, `.v093themes`, `.preview`, and other side-by-side test variants remain distinct Android packages with **separate SQLite session databases**. Installing the unified APK will NOT import their private sessions. Export any valuable CSVs and diagnostic reports from old builds first, then import CSVs into the unified application. Remove old Quick Settings tiles, revoke older variants' overlay grants and uninstall variants only AFTER preserving data. The canonical package `com.locutus5382.coremetrics` retains its own app-private data when updated with a compatible signing key; a different signing key may require uninstall/reinstall and backup first.
 
-**Validation:** See `docs/PORTAL_V096_UNIFIED_ACCEPTANCE.md`. Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
+**Validation:** See `docs/PORTAL_V0962_UNIFIED_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
 
 ---
 
+
+## v0.9.6.2 — Packaging, streaming sampler and stability
+
+- **Remove the oversized extended Material icon dependency:** Five custom, compact original XML vector navigation icons replace a whole icon pack; no bundled native binaries, fonts or external network dependencies are added. Compare **actual** APK sizes from CI rather than assume a specific reduction.
+- **Installable optimized test build:** GitHub Actions builds the normal debuggable APK, the unsigned R8 release, and a separate R8-optimized test APK signed with Android's default debug key. CI test signatures are **not stable across fresh runners**. No in-place update guarantee between separate GitHub Action runs or prior debug installations.
+- **Less Linux procfs overhead:** CPU statistics are streamed until the first non-CPU line (not hardcoded eight cores). Memory statistics stop after both `MemTotal` and `MemAvailable` are found. Invalid readings remain unavailable. JVM tests exercise reordered/invalid data and many-core devices.
+- **CPU and thermal I/O:** Successful `cpuinfo_max_freq` hardware maxima are cached during a sampler lifetime; read live `scaling_max_freq` unchanged. Thermal zones are enumerated once with a bounded fallback for devices that restrict directory listing.
+- **A/B swap without redundant sample queries:** Selected session IDs and loaded sample lists stay together, and cancelled/stale asynchronous reads do not replace newer selections. Scores and exports still use original database samples.
+- **PNG export cleanup:** A per-export mutable rectangle and cached typefaces avoid repeated allocations. The 8-row table, 1600×1050 PNG, source labels and no-donation reporting policy are unchanged.
+- **Finalization ordering:** Persist final recording status before clearing the fresh recovery lease. This reduces a narrow crash window in which previously persisted `RECORDING` samples might lose immediate session-recovery eligibility. Explicit STOP remains terminal. Keep single HUD owner and service lifecycle behavior intact.
+- **Do not infer performance improvement from APK size:** Only on-device PSS, CPU I/O timings, first-sample latency and Hades/driver tests can demonstrate measurable RAM/overhead savings. No sampler interval or hardware write changes.
 
 ## v0.9.6 — Session management, analysis and optional support
 
