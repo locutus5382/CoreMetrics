@@ -135,4 +135,61 @@ class CompareStudioAnalysisTest {
         assertTrue(result.a.benchmark.energy.coveragePct<80.0)
         assertTrue(result.warnings.any{it.contains("discharge coverage")})
     }
+
+    @Test fun comparativeFindingsDescribeHardwareNotGamePerformance() {
+        val result=analyze()
+        assertTrue(result.observations.any {
+            it.contains("1.00 W higher time-weighted battery discharge")
+        })
+        assertTrue(result.observations.all {
+            !it.contains("efficiency win",ignoreCase=true) &&
+                !it.contains("faster gameplay",ignoreCase=true)
+        })
+        val exported=CompareStudioAnalysis.report(result)
+        assertTrue(exported.contains("WHAT THE SELECTED WINDOWS SHOW"))
+        assertTrue(exported.contains("Selected-window recording integrity A/B:"))
+    }
+
+    @Test fun initialGpuThermalMismatchIsFlagged() {
+        val hotter=b().map { it.copy(gpu=47.0) }
+        val result=analyze(pb=hotter)
+        assertTrue(result.warnings.any {
+            it.contains("Initial measured GPU sensor temperature differs")
+        })
+    }
+
+    @Test fun differentFinalMinuteTemperatureSlopeIsAWarningNotThrottling() {
+        val slow=(0..40).map { p(it,cpu=40.0+it*0.02) }
+        val fast=(0..40).map {
+            p(it,origin=2_000_000L,cpu=40.0+it*0.25)
+        }
+        val result=analyze(pa=slow,pb=fast)
+        assertTrue(result.warnings.any {
+            it.contains("Final-minute CPU temperature slopes differ")
+        })
+        assertFalse(result.observations.joinToString(" ").contains(
+            "throttling detected",ignoreCase=true))
+    }
+
+    @Test fun partialWindowSamplingGapsAreExposedEvenWhenRowsRemainUsable() {
+        val pa=(0..8).map{p(it)}+(35..44).map{p(it)}
+        val pb=(0..44).map{p(it,origin=2_000_000L)}
+        val result=analyze(pa=pa,pb=pb,window=Window(0L,220_000L))
+        assertTrue(result.observationsUsable)
+        assertTrue(result.warnings.any {
+            it.contains("Selected A window has") && it.contains("sampling intervals")
+        })
+        assertTrue(CompareStudioAnalysis.report(result).contains(
+            "Selected-window recording integrity A/B: PARTIAL"))
+    }
+
+    @Test fun chargingMeasurementsNeverCreateDischargeWinClaim() {
+        val charging=b().map {
+            it.copy(batteryPowerStatus="CHARGING_OR_EXTERNAL_POWER")
+        }
+        val result=analyze(pb=charging)
+        assertTrue(result.observations.none {
+            it.contains("battery discharge than A")
+        })
+    }
 }
