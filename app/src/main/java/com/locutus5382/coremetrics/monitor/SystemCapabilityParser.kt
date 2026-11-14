@@ -25,6 +25,20 @@ internal object SystemCapabilityParser {
 
     fun swapUsedKiB(meminfo:String):Long?=swapFieldsKiB(meminfo)?.usedKiB
 
+    /** Android PowerManager constants as stable readable report labels.
+     * They indicate the OS classification, not observed SoC throttling. */
+    fun thermalStatusName(status:Int?):String=when(status) {
+        0->"NONE"
+        1->"LIGHT"
+        2->"MODERATE"
+        3->"SEVERE"
+        4->"CRITICAL"
+        5->"EMERGENCY"
+        6->"SHUTDOWN"
+        null->"UNAVAILABLE"
+        else->"UNKNOWN"
+    }
+
     /** CPUfreq time_in_state is cumulative kernel ticks, NOT core load,
      * clock frequency measured during one gameplay interval, or useful work.
      * This probe only establishes whether well-formed data are readable. */

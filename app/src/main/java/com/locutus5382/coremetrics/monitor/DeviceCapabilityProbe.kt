@@ -3,8 +3,9 @@ package com.locutus5382.coremetrics.monitor
 import android.content.Context
 import android.os.PowerManager
 import java.io.File
-import java.io.Reader
-import java.io.BufferedReader
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * One-shot, read-only capability inspection on user-requested diagnostic
@@ -14,9 +15,7 @@ import java.io.BufferedReader
  * policy; these reads establish availability only, not telemetry accuracy.
  */
 internal object DeviceCapabilityProbe {
-    private data class ReadResult(val data:String?,val reason:String) {
-        val available:Boolean get()=data!=null
-    }
+    private data class ReadResult(val data:String?,val reason:String)
 
     /** A strict size cap also protects against unexpected kernel file content. */
     private fun readBounded(path:String,limit:Int=2048):ReadResult {
@@ -42,12 +41,14 @@ internal object DeviceCapabilityProbe {
 
     fun report(context:Context):String=buildString {
         appendLine("Odin/Android read-only capability probe")
-        appendLine("Timestamp: "+System.currentTimeMillis()+
+        appendLine("Timestamp: "+
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z",Locale.US).format(Date())+
             " (at report export; NOT at prior process exit or during gameplay)")
         val power=context.getSystemService(PowerManager::class.java)
         val status=runCatching {power?.currentThermalStatus}
         appendLine("OS thermal status: "+status.fold(
-            onSuccess={it?.toString() ?: "unavailable"},
+            onSuccess={it?.let{n->n.toString()+" ("+
+                SystemCapabilityParser.thermalStatusName(n)+")"} ?: "unavailable"},
             onFailure={"unavailable ("+it.javaClass.simpleName+")"})+
             " (Android policy classification, not proof of clock throttling)")
         val rawHeadroom=runCatching {power?.getThermalHeadroom(10)}

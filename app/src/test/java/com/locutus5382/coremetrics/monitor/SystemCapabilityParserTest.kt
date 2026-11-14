@@ -32,6 +32,13 @@ class SystemCapabilityParserTest {
         assertNull(SystemCapabilityParser.residency("permission denied"))
         assertNull(SystemCapabilityParser.residency("400000 -1"))
     }
+    @Test fun thermalStatusCodesHaveReadableNonCausalLabels() {
+        assertEquals("NONE",SystemCapabilityParser.thermalStatusName(0))
+        assertEquals("SEVERE",SystemCapabilityParser.thermalStatusName(3))
+        assertEquals("SHUTDOWN",SystemCapabilityParser.thermalStatusName(6))
+        assertEquals("UNAVAILABLE",SystemCapabilityParser.thermalStatusName(null))
+        assertEquals("UNKNOWN",SystemCapabilityParser.thermalStatusName(99))
+    }
     @Test fun psiExtractsOnlySomeAndFullLines() {
         val ps=SystemCapabilityParser.psiLines(
             "some avg10=0.10 avg60=0.20 avg300=0.30 total=100\n"+
