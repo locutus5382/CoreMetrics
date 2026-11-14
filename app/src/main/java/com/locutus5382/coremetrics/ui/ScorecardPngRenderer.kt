@@ -137,8 +137,21 @@ internal object ScorecardPngRenderer {
         rect(1130f,112f,1548f,172f,0xE21A344E.toInt(),16f)
         stroke(1130f,112f,1548f,172f,badgeColor,16f)
         label(card.badge,1152f,152f,22f,badgeColor,true,373f,matte)
-        label(card.subtitle,56f,206f,27f,MUTED,true,1450f)
-        label(card.range,56f,247f,26f,GOLD,false,1450f,matte)
+        // A/B cards keep both sessions legible with separate metadata lines.
+        // Keep the shared table beginning at y=280 untouched.
+        if(card.type==ScorecardModel.Type.AB) {
+            val split=card.subtitle.split("  /  B ",limit=2)
+            if(split.size==2) {
+                label(split[0],56f,201f,22f,CYAN,true,1435f,matte)
+                label("B "+split[1],56f,230f,22f,GOLD,true,1435f,matte)
+            }else{
+                label(card.subtitle,56f,206f,23f,MUTED,true,1450f,matte)
+            }
+            label(card.range,56f,260f,22f,MUTED,false,1450f,matte)
+        }else{
+            label(card.subtitle,56f,206f,27f,MUTED,true,1450f,matte)
+            label(card.range,56f,247f,26f,GOLD,false,1450f,matte)
+        }
 
         // Shared row structure means single and A/B cards remain comparable,
         // including missing-value labeling and the fixed B-A sign convention.

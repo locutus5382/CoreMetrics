@@ -897,7 +897,18 @@ class MainActivity : ComponentActivity() {
                         linkedPairs=withContext(Dispatchers.IO){database.links()}
                 }
             }
-            LaunchedEffect(page,detailedId,skipWarmUp,sessionList) {
+            // Metadata edits update session labels but not original samples.
+            // Do not fetch thousands of rows again for a label edit.
+            LaunchedEffect(page,sessionList) {
+                val report=detailReport
+                if(page=="Sessions" && report!=null &&
+                    report.session.id==detailedId) {
+                    val fresh=sessionList.firstOrNull{it.id==detailedId}
+                    if(fresh!=null && fresh!=report.session)
+                        detailReport=report.copy(session=fresh)
+                }
+            }
+            LaunchedEffect(page,detailedId,skipWarmUp) {
                 if(page=="Sessions" && detailedId>0L) {
                     val response=withContext(Dispatchers.IO) {
                         val session=database.sessionById(detailedId)
@@ -1702,7 +1713,10 @@ class MainActivity : ComponentActivity() {
                                                 sessionList.take(14).forEach { s ->
                                                     FilterChip(selected = firstId == s.id,
                                                         onClick = { firstId = s.id },
-                                                        label = { Text("Session " + s.id + " · " + s.configuration+
+                                                        label = { Text("Session " + s.id +
+                                                            (s.note?.takeIf{it.isNotBlank()}?.take(22)
+                                                                ?.let{" · "+it}.orEmpty())+
+                                                            " · " + s.configuration+
                                                             " · driver: "+(s.graphicsDriver?:"untagged")) })
                                                 }
                                             }
@@ -1712,7 +1726,10 @@ class MainActivity : ComponentActivity() {
                                                 sessionList.take(14).forEach { s ->
                                                     FilterChip(selected = secondId == s.id,
                                                         onClick = { secondId = s.id },
-                                                        label = { Text("Session " + s.id + " · " + s.configuration+
+                                                        label = { Text("Session " + s.id +
+                                                            (s.note?.takeIf{it.isNotBlank()}?.take(22)
+                                                                ?.let{" · "+it}.orEmpty())+
+                                                            " · " + s.configuration+
                                                             " · driver: "+(s.graphicsDriver?:"untagged")) })
                                                 }
                                             }

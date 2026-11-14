@@ -4,5 +4,9 @@ package com.locutus5382.coremetrics.analysis
  * Remains independent of Android runtime and BuildConfig for JVM unit tests.
  */
 internal object ExportVersion {
+    /** Report format compatibility stays stable across app updates. */
     const val VERSION="0.9.6"
+    const val APP_VERSION="0.9.6.4"
+    fun sourceLabel()="CoreMetrics app v"+APP_VERSION+
+        " · report format v"+VERSION
 }
