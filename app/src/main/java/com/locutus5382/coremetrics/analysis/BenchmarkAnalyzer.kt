@@ -204,7 +204,6 @@ object BenchmarkAnalyzer {
         }
         if(labels.isEmpty())reasons+="Observed CPU frequency limits unavailable"
         else reasons+="Observed ceilings are not authenticated tuner identity"
-        if(pts.none{it.sfFps!=null})reasons+="Game FPS is unavailable; cannot assess gaming smoothness"
         // A five-second, gap-free sample set can be 100% intact yet completely
         // uninformative for thermal/driver A/B comparisons. Do not badge it
         // as a medium-quality comparative result merely for even cadence.
@@ -223,8 +222,7 @@ object BenchmarkAnalyzer {
         // Never infer game efficiency from sparse or unverified SurfaceFlinger
         // FPS snapshots. Future verified frame-time series needs its own analyzer.
         val frames=FrameEfficiency(null,null,null,
-            "Game FPS, FPS/W and joules/frame unavailable: source not independently " +
-            "verified; one/two-second telemetry cannot provide 1% lows.")
+            "No verified game frame-timing source; game smoothness is not assessed.")
         return Report(session,pts.size,elapsed,
             mean(pts.map { SessionDiagnosticsAnalyzer.value(
                 SessionDiagnosticsAnalyzer.Metric.CPU_TEMP,it) }),
