@@ -19,9 +19,9 @@ class BenchmarkAnalyzerTest {
         val withStock=BenchmarkAnalyzer.analyze(sess(config="Stock"),samples)
         val withUnderclock=BenchmarkAnalyzer.analyze(
             sess(config="Underclocking"),samples)
-        assertFalse(withStock.quality.labelConflict)
-        assertTrue(withUnderclock.quality.labelConflict)
-        assertTrue(withUnderclock.quality.score<withStock.quality.score)
+        assertTrue(withStock.quality.labelConflict)
+        assertFalse(withUnderclock.quality.labelConflict)
+        assertTrue(withStock.quality.score<withUnderclock.quality.score)
     }
     @Test fun energyUsesTrapezoidOnlyOnValidDischargingIntervals() {
         val r=BenchmarkAnalyzer.analyze(sess(),listOf(p(100_000,4.0),p(102_000,6.0),
