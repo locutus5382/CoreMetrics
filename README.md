@@ -1,5 +1,7 @@
 # CoreMetrics
 
+> **We analyze how the handheld behaves, not how many frames the game renders.**
+
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
 **Current development status: v0.9.7 telemetry intelligence alpha — experimental read-only platform thermal signals, a separate thermal HUD dot, optional swap/PSI readings, sampler timing, a SQLite v6 migration and concise recording-integrity analysis. The v0.9.6.6 lifecycle recovery and HUD ownership baseline is preserved.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
