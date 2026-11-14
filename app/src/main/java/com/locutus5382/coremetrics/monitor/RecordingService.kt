@@ -596,12 +596,21 @@ class RecordingService:Service() {
                             e.javaClass.simpleName+":"+(e.message?:""))
                     }finally{
                         withContext(NonCancellable){
-                            RecorderLease.clear(this@RecordingService)
+                            // Finish the persisted row BEFORE removing its
+                            // recovery lease. An LMK in this narrow window
+                            // must not strand a RECORDING row without any
+                            // chance of resuming its original session ID.
                             withContext(Dispatchers.IO){
                                 if(id!=0L)runCatching{
                                     db.finish(id,System.currentTimeMillis(),outcome)
+                                }.onFailure{
+                                    RecorderJournal.event(this@RecordingService,
+                                        "SESSION_FINISH_DB_ERROR",it.javaClass.simpleName)
                                 }
                             }
+                            // Explicit Stop remains terminal even if the DB
+                            // write failed: no unsolicited new recording.
+                            RecorderLease.clear(this@RecordingService)
                             RecorderJournal.event(this@RecordingService,
                                 "SESSION_FINALIZED","id="+id+" status="+outcome+
                                     " samples="+MonitorState.sampleCount)
