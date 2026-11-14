@@ -32,7 +32,8 @@ object CompareStudioAnalysis {
         val window:Window,val a:Side,val b:Side,
         val sharedAvailableMs:Long,
         val observationsUsable:Boolean,
-        val warnings:List<String>
+        val warnings:List<String>,
+        val observations:List<String> = emptyList()
     ) {
         val evidenceLabel:String get()=when {
             !observationsUsable -> "INSUFFICIENT DATA"
@@ -63,6 +64,50 @@ object CompareStudioAnalysis {
             .map { SessionRegimeAnalyzer.label(it) }
         return Side(session,original.first().timeMs,source,report,diag,caps)
     }
+    /**
+     * Selected-window observations, never claims of game FPS, equal workload,
+     * throttling or superior performance. The source must support each claim.
+     */
+    private fun observations(a:Side,b:Side):List<String> = buildList {
+        val powerA=a.benchmark.energy
+        val powerB=b.benchmark.energy
+        if(powerA.powerCondition==BenchmarkAnalyzer.PowerCondition.DISCHARGING &&
+            powerB.powerCondition==BenchmarkAnalyzer.PowerCondition.DISCHARGING &&
+            powerA.coveragePct>=80.0 && powerB.coveragePct>=80.0) {
+            val x=powerA.weightedMeanW
+            val y=powerB.weightedMeanW
+            if(x!=null && y!=null && x.isFinite() && y.isFinite() &&
+                abs(y-x)>=0.05) {
+                add("B recorded "+String.format(Locale.US,"%.2f",abs(y-x))+
+                    " W "+if(y<x)"lower" else "higher"+
+                    " time-weighted battery discharge than A; equivalent game performance was not measured.")
+            }
+        }
+        fun difference(metric:SessionDiagnosticsAnalyzer.Metric):Double? {
+            val x=a.median(metric);val y=b.median(metric)
+            return if(x!=null && y!=null && x.isFinite() && y.isFinite())y-x else null
+        }
+        difference(SessionDiagnosticsAnalyzer.Metric.GPU_TEMP)?.let { delta ->
+            if(abs(delta)>=0.5) add("B recorded "+String.format(Locale.US,"%.1f",abs(delta))+
+                " °C "+(if(delta<0)"lower" else "higher")+
+                " median GPU-sensor temperature in the selected window.")
+        }
+        difference(SessionDiagnosticsAnalyzer.Metric.GPU_LOAD)?.let { delta ->
+            if(abs(delta)>10.0) add("B recorded "+String.format(Locale.US,"%.1f",abs(delta))+
+                " percentage points "+(if(delta<0)"lower" else "higher")+
+                " median GPU utilization; this does not prove a game-performance difference.")
+        }
+    }.take(3)
+
+    /** Averaging a few early readings reduces the influence of a single outlier. */
+    private fun earlyTemperature(points:List<SessionStore.Point>,
+        value:(SessionStore.Point)->Double?):Double? {
+        val first=points.firstOrNull()?.timeMs ?: return null
+        val early=points.takeWhile{it.timeMs-first<=20_000L}.take(5)
+            .mapNotNull{value(it)?.takeIf(Double::isFinite)}
+        return early.takeIf{it.size>=3}?.average()
+    }
+
     fun analyze(
         sessionA:SessionStore.Session,originalA:List<SessionStore.Point>,
         sessionB:SessionStore.Session,originalB:List<SessionStore.Point>,window:Window
@@ -100,11 +145,23 @@ object CompareStudioAnalysis {
             val cpuLoad=diff(SessionDiagnosticsAnalyzer.Metric.CPU_LOAD)
             if(cpuLoad!=null&&cpuLoad>10.0)
                 add("Median CPU load differs by more than 10 percentage points")
-            val firstA=a.points.firstOrNull()?.cpu
-            val firstB=b.points.firstOrNull()?.cpu
-            if(firstA!=null&&firstB!=null&&firstA.isFinite()&&firstB.isFinite() &&
-                abs(firstA-firstB)>5.0)
+            val initialCpuA=earlyTemperature(a.points){it.cpu}
+            val initialCpuB=earlyTemperature(b.points){it.cpu}
+            if(initialCpuA!=null && initialCpuB!=null &&
+                abs(initialCpuA-initialCpuB)>5.0)
                 add("Initial measured CPU sensor temperature differs by over 5 °C")
+            val initialGpuA=earlyTemperature(a.points){it.gpu}
+            val initialGpuB=earlyTemperature(b.points){it.gpu}
+            if(initialGpuA!=null && initialGpuB!=null &&
+                abs(initialGpuA-initialGpuB)>5.0)
+                add("Initial measured GPU sensor temperature differs by over 5 °C")
+            val trendA=a.benchmark.thermal
+            val trendB=b.benchmark.thermal
+            if(trendA.samples>=12 && trendB.samples>=12 &&
+                trendA.spanSeconds>=55.0 && trendB.spanSeconds>=55.0 &&
+                trendA.slopeCPerMin!=null && trendB.slopeCPerMin!=null &&
+                abs(trendA.slopeCPerMin-trendB.slopeCPerMin)>1.5)
+                add("Final-minute CPU temperature slopes differ by over 1.5 °C/min; thermal states may not be comparable")
             if(sessionA.graphicsDriver.isNullOrBlank() ||
                 sessionB.graphicsDriver.isNullOrBlank() ||
                 sessionA.resolutionScale.isNullOrBlank() ||
@@ -126,12 +183,26 @@ object CompareStudioAnalysis {
             if(a.benchmark.quality.coveragePct<85.0 ||
                 b.benchmark.quality.coveragePct<85.0)
                 add("Telemetry timestamp coverage under 85% in at least one window")
+            for((label,side) in listOf("A" to a,"B" to b)) {
+                val integrity=side.benchmark.recordingIntegrity
+                if(integrity==null ||
+                    integrity.verdict==RecordingIntegrityAnalyzer.Verdict.INSUFFICIENT) {
+                    add("Selected $label window lacks sufficient interval evidence")
+                }else if(integrity.gaps>0 ||
+                    (integrity.continuityPct!=null && integrity.continuityPct<95.0)) {
+                    add("Selected $label window has "+
+                        integrity.gaps+" delayed/missing sampling intervals (estimated continuity "+
+                        (integrity.continuityPct?.let {
+                            String.format(Locale.US,"%.1f",it)+"%" } ?: "unavailable")+")")
+                }
+            }
             if(a.observedCaps.isEmpty()||b.observedCaps.isEmpty())
                 add("CPU frequency caps were not available in both windows")
             if(a.observedCaps.size>1||b.observedCaps.size>1)
                 add("CPU frequency ceilings changed within a selected window")
         }
-        return Result(window,a,b,shared,usable,warnings)
+        return Result(window,a,b,shared,usable,warnings,
+            if(usable) observations(a,b) else emptyList())
     }
     fun delta(a:Double?,b:Double?):Double? =
         if(a!=null&&b!=null&&a.isFinite()&&b.isFinite())b-a else null
@@ -167,7 +238,15 @@ object CompareStudioAnalysis {
         appendLine("Observed CPU limits A: "+a.observedCaps.joinToString(" | ").ifEmpty{"unavailable"})
         appendLine("Observed CPU limits B: "+b.observedCaps.joinToString(" | ").ifEmpty{"unavailable"})
         appendLine("Evidence status: "+r.evidenceLabel)
+        appendLine("Selected-window recording integrity A/B: "+
+            (a.benchmark.recordingIntegrity?.verdict ?: "unavailable")+" / "+
+            (b.benchmark.recordingIntegrity?.verdict ?: "unavailable"))
+        appendLine("Observed continuity A/B: "+
+            fmt(a.benchmark.recordingIntegrity?.continuityPct,"%")+" / "+
+            fmt(b.benchmark.recordingIntegrity?.continuityPct,"%"))
         r.warnings.forEach { appendLine("CAUTION: "+it) }
+        appendLine("WHAT THE SELECTED WINDOWS SHOW (observational)")
+        r.observations.forEach { appendLine("- "+it) }
         appendLine("Matching duration or usage does not establish identical scenes, "+
             "equal performance, or underclocking causality.")
         appendLine()
