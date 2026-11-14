@@ -24,5 +24,11 @@ data class Snapshot(
     val surfaceFrameMs: Double? = null,
     val surfaceFpsStatus: String = "OFF_BY_DEFAULT",
     val observedCpuLimits: String? = null,
-    val perCoreLoads: String? = null
+    val perCoreLoads: String? = null,
+    val thermalStatus: Int? = null,
+    val thermalHeadroom: Double? = null,
+    val swapUsedGiB: Double? = null,
+    val memoryPsiSomeAvg10: Double? = null,
+    val sampleDurationMs: Double? = null,
+    val sampleElapsedMs: Long? = null
 )
