@@ -217,11 +217,10 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         })
     }
 
-    @Synchronized fun finish(id: Long, time: Long, status: String) {
+    @Synchronized fun finish(id: Long, time: Long, status: String):Boolean =
         writableDatabase.update("sessions", ContentValues().apply {
             put("ended_at", time); put("status", status)
-        }, "id=?", arrayOf(id.toString()))
-    }
+        }, "id=?", arrayOf(id.toString()))==1
 
     /** Count already persisted points when recovering the same SQLite ID. */
     @Synchronized fun storedSampleCount(id:Long):Long =

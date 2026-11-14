@@ -246,7 +246,8 @@ class RecordingService:Service() {
                 RecorderJournal.event(this,"STOP_RECOVERY_FINALIZE",
                     "id="+old.id+" same-session terminal reconciliation")
                 val finalized=if(old.recording)runCatching {
-                    db.finish(old.id,System.currentTimeMillis(),"INTERRUPTED_STOPPED")
+                    check(db.finish(old.id,System.currentTimeMillis(),
+                        "INTERRUPTED_STOPPED")){"Session row missing during STOP recovery"}
                     true
                 }.onFailure { RecorderJournal.event(this,
                     "STOP_RECOVERY_DB_ERROR",it.javaClass.simpleName) }
@@ -570,8 +571,10 @@ class RecordingService:Service() {
                             }
                         }
                         withContext(Dispatchers.IO){
-                            RecorderLease.start(this@RecordingService,id,label,config,
-                                interval,wantsHud,restored)
+                            check(RecorderLease.start(this@RecordingService,id,
+                                label,config,interval,wantsHud,restored)) {
+                                "Cannot persist recorder recovery lease"
+                            }
                         }
                         MonitorState.sessionId=id
                         MonitorState.startedAt=if(restoredId>0L)
@@ -642,7 +645,8 @@ class RecordingService:Service() {
                             // chance of resuming its original session ID.
                             val finalized=withContext(Dispatchers.IO){
                                 if(id==0L)true else runCatching{
-                                    db.finish(id,System.currentTimeMillis(),outcome)
+                                    check(db.finish(id,System.currentTimeMillis(),
+                                        outcome)){"Session row missing during finalization"}
                                     true
                                 }.onFailure{
                                     RecorderJournal.event(this@RecordingService,

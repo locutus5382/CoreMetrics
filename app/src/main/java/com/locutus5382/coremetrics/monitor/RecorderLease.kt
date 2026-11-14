@@ -14,6 +14,9 @@ internal object RecorderLease {
     private const val FILE="coremetrics_started_service_lease"
     private const val MAX_REC_AGE_MS=90_000L
     private const val MAX_STANDBY_AGE_MS=10*60_000L
+    // Terminal-only reconciliation may be requested long after STOP. This
+    // window never authorizes sampling or resurrects an abandoned recording.
+    private const val MAX_STOP_AGE_MS=24*60*60_000L
     data class Saved(val recording:Boolean,val id:Long,val label:String,
         val configuration:String,val intervalMs:Long,
         val hudEnabled:Boolean,val hudLocked:Boolean,
@@ -104,7 +107,11 @@ internal object RecorderLease {
         val savedWall=p.getLong("heartbeat_wall",-1L)
         val deltaU=SystemClock.elapsedRealtime()-savedUptime
         val deltaWall=System.currentTimeMillis()-savedWall
-        val max=if(recording)MAX_REC_AGE_MS else MAX_STANDBY_AGE_MS
+        val max=when {
+            stopRequested->MAX_STOP_AGE_MS
+            recording->MAX_REC_AGE_MS
+            else->MAX_STANDBY_AGE_MS
+        }
         if(savedUptime<=0L || savedWall<=0L ||
             deltaU<0L || deltaU>max || deltaWall<0L ||
             deltaWall>max+10_000L)return null

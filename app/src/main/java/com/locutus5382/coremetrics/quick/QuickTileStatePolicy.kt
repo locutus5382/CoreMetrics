@@ -9,8 +9,8 @@ internal object QuickTileStatePolicy {
         running:Boolean,starting:Boolean,standby:Boolean,
         stopping:Boolean=false,stopPending:Boolean=false):Mode=when {
         !reachable->Mode.UNKNOWN
+        stopping && serviceAlive->Mode.SAVING
         stopPending && !running->Mode.STOP_PENDING
-        stopping->Mode.SAVING
         pendingRecovery && !running && !starting && !standby->Mode.RECOVERABLE
         !serviceAlive->Mode.IDLE
         running->Mode.RECORDING
