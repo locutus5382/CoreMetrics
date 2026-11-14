@@ -285,7 +285,8 @@ private fun CompareScoreRows(result:CompareStudioAnalysis.Result) {
             "Power avg W" to (a.benchmark.energy.weightedMeanW to
                 b.benchmark.energy.weightedMeanW),
             "CPU load P50 %" to (a.median(Metric.CPU_LOAD) to b.median(Metric.CPU_LOAD)),
-            "GPU load P50 %" to (a.median(Metric.GPU_LOAD) to b.median(Metric.GPU_LOAD))
+            "GPU load P50 %" to (a.median(Metric.GPU_LOAD) to b.median(Metric.GPU_LOAD)),
+            "Busiest core P50 %" to (a.median(Metric.BUSIEST_CORE) to b.median(Metric.BUSIEST_CORE))
         )
         rows().forEach { (label,v) ->
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {

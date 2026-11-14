@@ -5,6 +5,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionMetadataTest {
+    @Test fun notesPreserveLanguageButRemoveControls() {
+        assertEquals("Hades · T30",SessionMetadata.note("  Hades\n ·\r T30\u0085  "))
+        assertEquals("Проба · 游戏",SessionMetadata.note("Проба · 游戏"))
+        assertNull(SessionMetadata.note("\n\r\u0007"))
+        assertEquals(64,SessionMetadata.note("a".repeat(80))?.length)
+    }
     @Test fun acceptedPresetsAndCustomNames() {
         assertEquals("Turnip",SessionMetadata.driver("Turnip"))
         assertEquals("System",SessionMetadata.driver(" System "))

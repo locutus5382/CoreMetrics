@@ -10,6 +10,12 @@ object SessionMetadata {
         // spreadsheet expression when an export is opened externally.
         return trimmed.takeIf{it.firstOrNull() !in listOf('=','+','-','@')}
     }
+    /** Manually entered game/track labels: preserve Unicode and punctuation,
+     * remove all control characters consistently with the CSV importer. */
+    fun note(s:String?):String?=s?.trim()
+        ?.filter{it.code>=32 && it.code!=127 && it.code !in 0x80..0x9F}
+        ?.take(64)?.trim()?.takeIf{it.isNotBlank()}
+
     fun driver(s:String?):String? {
         val value=cleaned(s)?:return null
         return if(value=="System" || value=="Turnip" ||

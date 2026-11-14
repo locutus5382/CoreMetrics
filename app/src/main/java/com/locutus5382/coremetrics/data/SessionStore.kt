@@ -97,13 +97,17 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     @Synchronized fun updateMetadata(
         sessionId:Long, graphicsDriver:String?, resolutionScale:String?
     ):Boolean {
-        require(sessionId>0L)
+        if(sessionId<=0L)return false
+        val driver=SessionMetadata.driver(graphicsDriver)
+        val scale=SessionMetadata.resolution(resolutionScale)
+        if(graphicsDriver!=null && driver==null ||
+            resolutionScale!=null && scale==null)return false
         val values=ContentValues().apply {
-            put("graphics_driver",SessionMetadata.driver(graphicsDriver))
-            put("resolution_scale",SessionMetadata.resolution(resolutionScale))
+            put("graphics_driver",driver)
+            put("resolution_scale",scale)
         }
-        return writableDatabase.update("sessions",values,"id=?",
-            arrayOf(sessionId.toString()))==1
+        return writableDatabase.update("sessions",values,
+            "id=? AND status!='RECORDING'",arrayOf(sessionId.toString()))==1
     }
 
     /** Each chip edits one column atomically: fast two-tap changes cannot
@@ -178,8 +182,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             val id=db.insertOrThrow("sessions",null,ContentValues().apply {
                 put("started_at",time)
                 put("label","Session")
-                put("game_note",label.trim().take(64).takeIf {
-                    it.isNotBlank() && it!="Gameplay" && !it.startsWith("Session ")
+                put("game_note",SessionMetadata.note(label).takeIf {
+                    it!=null && it!="Gameplay" && !it.startsWith("Session ")
                 })
                 put("configuration",when(config) {
                     "Stock","Underclocking","Custom" -> config
@@ -295,7 +299,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     @Synchronized fun updateGameNote(id:Long,note:String?):Boolean {
         if(id<=0L)return false
         return writableDatabase.update("sessions",ContentValues().apply {
-            put("game_note",note?.trim()?.take(64)?.takeIf{it.isNotBlank()})
+            put("game_note",SessionMetadata.note(note))
         },"id=? AND status!='RECORDING'",arrayOf(id.toString()))==1
     }
 

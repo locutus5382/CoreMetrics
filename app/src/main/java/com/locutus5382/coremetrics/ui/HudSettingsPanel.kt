@@ -45,8 +45,8 @@ internal fun HudSettingsPanel(
             style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
         Text("CM HUD tile shows/hides the HUD without stopping active recording. "+
             "Use only one CoreMetrics variant at a time. "+
-            "Start Eden first, open HUD from Quick Settings, then tap REC. Drag the pill to within " +
-            "16dp of either edge to dock into a 12dp visual tab with a 44dp tap area. " +
+            "Start Eden first, open HUD from Quick Settings, then tap REC. Drag the pill to the " +
+            "left, right or top edge to snap into a labeled frosted dock tab. " +
             "Tap the tab to expand, or use ‹ to dock; ⚙ opens controls. " +
             "Standby performs no telemetry sampling.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
