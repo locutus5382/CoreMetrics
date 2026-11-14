@@ -260,6 +260,13 @@ object BenchmarkAnalyzer {
                 "; continuity: "+fmt(integrity.continuityPct,1)+"%"+
                 "; detected gaps: "+integrity.gaps+
                 "; missing interval time: "+integrity.missingMs+" ms")
+            appendLine("Sampler interval mean / median: "+
+                fmt(integrity.meanIntervalMs,1)+" / "+
+                (integrity.medianIntervalMs?.toString() ?: "unavailable")+" ms"+
+                "; jitter P95 / P99 (non-gap steps): "+
+                fmt(integrity.p95JitterMs,1)+" / "+
+                fmt(integrity.p99JitterMs,1)+" ms"+
+                "; >2x target intervals: "+integrity.stepsOver2xTarget)
             appendLine("Collector time P95: "+fmt(integrity.samplerP95Ms,2)+
                 " ms (excludes SQLite writes and HUD rendering)")
         }

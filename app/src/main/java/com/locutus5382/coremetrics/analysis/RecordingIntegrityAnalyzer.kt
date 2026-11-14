@@ -22,7 +22,11 @@ object RecordingIntegrityAnalyzer {
         val p95JitterMs: Double?,
         val samplerMedianMs: Double?,
         val samplerP95Ms: Double?,
-        val message: String
+        val message: String,
+        // Offline derived statistics; no recorder or schema changes.
+        val meanIntervalMs: Double? = null,
+        val p99JitterMs: Double? = null,
+        val stepsOver2xTarget: Int = 0
     )
 
     private fun median(values: List<Double>): Double? =
@@ -88,7 +92,16 @@ object RecordingIntegrityAnalyzer {
             Verdict.INTERRUPTED -> "Recording ended unexpectedly; saved samples remain usable."
             Verdict.INSUFFICIENT -> "Not enough valid timing data."
         }
+        val p99 = if(jitter.size>=20) {
+            val ordered=jitter.sorted()
+            ordered[(kotlin.math.ceil(ordered.size*0.99).toInt()-1)
+                .coerceIn(0,ordered.lastIndex)]
+        } else null
         return Result(verdict,points.size,continuity,gaps,missingMs,target,
-            typical,percentile95(jitter),median(costs),percentile95(costs),message)
+            typical,percentile95(jitter),median(costs),percentile95(costs),message,
+            meanIntervalMs=positive.takeIf{it.size>=2}?.map{it.toDouble()}?.average(),
+            p99JitterMs=p99,
+            stepsOver2xTarget=steps.count{it>2*target})
+
     }
 }

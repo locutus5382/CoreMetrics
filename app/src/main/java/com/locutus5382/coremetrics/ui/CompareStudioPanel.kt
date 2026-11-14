@@ -126,8 +126,23 @@ internal fun CompareStudioPanel(
                             result.a.points.size+" A / "+result.b.points.size+" B",
                         color=coreSecondary,style=MaterialTheme.typography.bodySmall)
                 }
-                if(ready) CompareScoreRows(result)
-                else Text("Widen the range or choose sessions with more valid samples.",
+                if(ready) {
+                    if(result.observations.isNotEmpty()) {
+                        Column(Modifier.fillMaxWidth().pureGlass(12).padding(10.dp),
+                            verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                            Text("WHAT THESE SELECTED WINDOWS SHOW",
+                                color=iceBlue,fontWeight=FontWeight.Bold,
+                                style=MaterialTheme.typography.labelMedium)
+                            result.observations.forEach { observation ->
+                                Text("• "+observation,color=coreText,
+                                    style=MaterialTheme.typography.bodySmall)
+                            }
+                            Text("Hardware telemetry does not measure emulator/game FPS or prove equal workload.",
+                                color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    CompareScoreRows(result)
+                } else Text("Widen the range or choose sessions with more valid samples.",
                     color=solarOrange,style=MaterialTheme.typography.bodySmall)
                 Text("Observed P3/P7 limits · A: "+
                     result.a.observedCaps.joinToString(" / ").ifEmpty{"unavailable"}+
@@ -151,7 +166,15 @@ internal fun CompareStudioPanel(
                 } else Text("No major differences detected by available metadata; "+
                     "scene equivalence and frame-rate performance remain unverified.",
                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
-                Text("A/B integrity: "+result.a.benchmark.quality.score+"/100 and "+
+                Text("Selected-window integrity: "+
+                    (result.a.benchmark.recordingIntegrity?.verdict ?: "unavailable")+" / "+
+                    (result.b.benchmark.recordingIntegrity?.verdict ?: "unavailable")+
+                    " · continuity "+
+                    fmt(result.a.benchmark.recordingIntegrity?.continuityPct)+"% / "+
+                    fmt(result.b.benchmark.recordingIntegrity?.continuityPct)+"%", 
+                    color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+                Text("Legacy A/B comparison-input scores: "+
+                    result.a.benchmark.quality.score+"/100 and "+
                     result.b.benchmark.quality.score+"/100 · discharge coverage "+
                     fmt(result.a.benchmark.energy.coveragePct)+"% / "+
                     fmt(result.b.benchmark.energy.coveragePct)+"%",

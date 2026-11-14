@@ -92,9 +92,11 @@ internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report,
             Text("• "+finding,color=coreText,style=MaterialTheme.typography.bodySmall)
         }
         if(integrity.samplerP95Ms!=null) Text(
-            "Recorder collection P95: "+num(integrity.samplerP95Ms,2)+
-            " ms per tick (excludes SQLite/HUD); timing jitter P95: "+
-            num(integrity.p95JitterMs,1)+" ms",
+            "Collector P95: "+num(integrity.samplerP95Ms,2)+
+            " ms/tick (excludes SQLite/HUD); interval jitter P95: "+
+            num(integrity.p95JitterMs,1)+" ms"+
+            (integrity.p99JitterMs?.let{", P99: "+num(it,1)+" ms"}?:"")+
+            "; >2× target intervals: "+integrity.stepsOver2xTarget,
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Text("Thermal trend: "+
             (report.thermal.slopeCPerMin?.let{
