@@ -7,6 +7,8 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
+import android.os.Handler
+import android.os.Looper
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.R
 import android.graphics.drawable.Icon
@@ -64,12 +66,15 @@ class SessionTile:TileService(){
                 Toast.LENGTH_LONG).show()
         }
         refresh()
+        Handler(Looper.getMainLooper()).postDelayed({refresh()},450L)
     }
     private fun refresh(){
         val mode=status()
         val secondary=when(mode){
             QuickTileStatePolicy.Mode.RECORDING->"Recording · Tap STOP"
             QuickTileStatePolicy.Mode.STARTING->"Starting…"
+            QuickTileStatePolicy.Mode.SAVING->"Saving recording…"
+            QuickTileStatePolicy.Mode.STOP_PENDING->"Finish previous STOP"
             QuickTileStatePolicy.Mode.RECOVERABLE->"Recover session"
             QuickTileStatePolicy.Mode.STANDBY->"Ready · Tap REC"
             QuickTileStatePolicy.Mode.UNKNOWN->"Status unknown · Recover"

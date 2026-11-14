@@ -8,6 +8,8 @@ import android.provider.Settings
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
+import android.os.Handler
+import android.os.Looper
 import com.locutus5382.coremetrics.R
 import android.graphics.drawable.Icon
 import com.locutus5382.coremetrics.monitor.RecordingService
@@ -25,7 +27,8 @@ class HudTile:TileService(){
     }
     private fun toggle(){
         val current=status()
-        val action=QuickTileStatePolicy.hud(current.mode,current.hudVisible)
+        val action=QuickTileStatePolicy.hud(current.mode,current.hudVisible,
+            current.hudRequested,current.pausedInApp)
         if(action==QuickTileStatePolicy.HudAction.WAIT){
             Toast.makeText(this,"HUD status unknown or starting; nothing duplicated",
                 Toast.LENGTH_LONG).show()
@@ -76,6 +79,10 @@ class HudTile:TileService(){
                 Toast.LENGTH_LONG).show()
         }
         refresh()
+        // Service requests TileService listening again after it processes the
+        // command; a one-shot delayed read also closes the immediate-click
+        // old-state window without polling while the tile is idle.
+        Handler(Looper.getMainLooper()).postDelayed({refresh()},450L)
     }
     private fun refresh(){
         val current=status()
@@ -83,21 +90,35 @@ class HudTile:TileService(){
             QuickTileStatePolicy.Mode.UNKNOWN->"Status unknown · Recover"
             QuickTileStatePolicy.Mode.RECOVERABLE->"Recover session"
             QuickTileStatePolicy.Mode.STARTING->"Starting…"
-            QuickTileStatePolicy.Mode.RECORDING->
-                if(current.hudVisible)"REC · HUD visible" else "REC · HUD hidden"
-            QuickTileStatePolicy.Mode.STANDBY->
-                if(current.hudVisible)"Ready · Tap REC" else "HUD hidden"
+            QuickTileStatePolicy.Mode.SAVING->"Saving recording…"
+            QuickTileStatePolicy.Mode.STOP_PENDING->"Finish previous STOP"
+            QuickTileStatePolicy.Mode.RECORDING->when {
+                !current.hudRequested->"REC · HUD off"
+                current.pausedInApp->"REC · Paused in app"
+                !current.hudAttached->"REC · HUD unavailable"
+                current.hudVisible->"REC · HUD visible"
+                else->"REC · HUD hidden"
+            }
+            QuickTileStatePolicy.Mode.STANDBY->when {
+                current.pausedInApp->"Ready · Paused in app"
+                !current.hudAttached->"HUD unavailable"
+                current.hudVisible->"Ready · Tap REC"
+                else->"HUD hidden"
+            }
             QuickTileStatePolicy.Mode.IDLE->"Off"
         }
+        val activeHud=current.hudRequested && current.hudAttached &&
+            current.mode in setOf(QuickTileStatePolicy.Mode.STANDBY,
+                QuickTileStatePolicy.Mode.RECORDING)
         qsTile?.apply{
             label="CoreMetrics HUD"
             subtitle=secondary
             contentDescription="CoreMetrics HUD, "+secondary
             stateDescription=secondary
             icon=Icon.createWithResource(this@HudTile,
-                if(current.hudVisible)R.drawable.ic_qs_cm_on
+                if(activeHud)R.drawable.ic_qs_cm_on
                 else R.drawable.ic_qs_cm_off)
-            state=if(current.hudVisible) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            state=if(activeHud) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             updateTile()
         }
     }
