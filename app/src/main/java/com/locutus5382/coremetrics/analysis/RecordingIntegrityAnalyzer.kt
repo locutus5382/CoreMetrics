@@ -36,8 +36,11 @@ object RecordingIntegrityAnalyzer {
         }
 
     fun analyze(points: List<SessionStore.Point>, status: String? = null): Result {
-        val interrupted = status?.startsWith("INTERRUPTED") == true ||
-            status == "FAILED"
+        // CSV imports preserve their original terminal outcome under an
+        // IMPORTED_ prefix. An imported interrupted run is still interrupted.
+        val outcome = status?.removePrefix("IMPORTED_")
+        val interrupted = outcome?.startsWith("INTERRUPTED") == true ||
+            outcome == "FAILED"
         if (points.size < 2) return Result(
             Verdict.INSUFFICIENT,points.size,null,0,0,null,null,null,null,null,
             "At least two readings are needed to assess continuity."
