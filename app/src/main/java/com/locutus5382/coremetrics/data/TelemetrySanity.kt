@@ -13,6 +13,10 @@ internal object TelemetrySanity {
         "battery_net_w" -> value in -100.0..100.0
         "sf_layer_fps" -> value in 0.0..1000.0
         "sf_frame_time_ms" -> value in 0.0..100_000.0
+        "thermal_headroom" -> value in 0.0..100.0
+        "swap_used_gib" -> value in 0.0..512.0
+        "mem_psi_some10" -> value in 0.0..100.0
+        "sample_duration_ms" -> value in 0.0..60_000.0
         else -> true
     }
     fun requireIncreasing(previous:Long?,current:Long) {

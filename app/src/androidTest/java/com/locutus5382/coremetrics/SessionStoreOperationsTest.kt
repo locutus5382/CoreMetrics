@@ -18,7 +18,7 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class SessionStoreOperationsTest {
-    @Test fun migratingVersionFourCreatesBatteryStatusIndex() {
+    @Test fun migratingVersionFourPreservesBatteryIndexAndAddsV6Fields() {
         val app=ApplicationProvider.getApplicationContext<Context>()
         val dbName="coremetrics_v0961_legacy_test.db"
         app.deleteDatabase(dbName)
@@ -40,13 +40,67 @@ class SessionStoreOperationsTest {
         val store=SessionStore(sandbox)
         try {
             val db=store.readableDatabase
-            assertEquals(5,db.version)
+            assertEquals(6,db.version)
             val names=mutableSetOf<String>()
             db.rawQuery("PRAGMA index_list(samples)",null).use { cursor->
                 while(cursor.moveToNext()) names.add(cursor.getString(1))
             }
             assertTrue(names.contains("samples_by_session_power"))
         }finally{
+            store.close()
+            app.deleteDatabase(dbName)
+        }
+    }
+
+    /**
+     * A v5 database with existing recorded samples must migrate in-place to
+     * v6 without losing rows. Instrumentation-only: CI compiles this test,
+     * but a connected emulator/device must execute it before release.
+     */
+    @Test fun migratingVersionFivePreservesSamplesAndAddsNullableTelemetry() {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "coremetrics_v097_migrate_v5_test.db"
+        app.deleteDatabase(dbName)
+        app.openOrCreateDatabase(dbName,Context.MODE_PRIVATE,null).use { legacy ->
+            legacy.execSQL("""CREATE TABLE samples(
+                session_id INTEGER NOT NULL,time_ms INTEGER NOT NULL,
+                cpu_temp REAL,battery_status TEXT)""")
+            legacy.execSQL("""INSERT INTO samples(session_id,time_ms,cpu_temp)
+                VALUES(77,123456,48.5)""")
+            legacy.version=5
+        }
+        val sandbox=object:ContextWrapper(app) {
+            override fun getDatabasePath(name:String):java.io.File =
+                app.getDatabasePath(dbName)
+            override fun openOrCreateDatabase(name:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(dbName,mode,factory)
+            override fun openOrCreateDatabase(name:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                errorHandler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(dbName,mode,factory,errorHandler)
+        }
+        val store=SessionStore(sandbox)
+        try {
+            val db=store.readableDatabase
+            assertEquals(6,db.version)
+            val columns=mutableSetOf<String>()
+            db.rawQuery("PRAGMA table_info(samples)",null).use { cursor ->
+                while(cursor.moveToNext())columns.add(cursor.getString(1))
+            }
+            assertTrue(columns.containsAll(listOf("thermal_status","thermal_headroom",
+                "swap_used_gib","mem_psi_some10","sample_duration_ms","sample_elapsed_ms")))
+            db.rawQuery("""SELECT session_id,time_ms,cpu_temp,thermal_status,
+                thermal_headroom FROM samples""",null).use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(77L,c.getLong(0))
+                assertEquals(123456L,c.getLong(1))
+                assertEquals(48.5,c.getDouble(2),0.00001)
+                assertTrue(c.isNull(3))
+                assertTrue(c.isNull(4))
+                assertFalse(c.moveToNext())
+            }
+        }finally {
             store.close()
             app.deleteDatabase(dbName)
         }

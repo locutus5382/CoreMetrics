@@ -85,6 +85,8 @@ internal object DeviceCapabilityProbe {
             appendLine("CPU policy7 cumulative residency ticks: "+
                 residence.cumulativeTicks+" (since kernel counter origin, NOT % load)")
         }
-        appendLine("No samples stored; a readable signal is not yet validated for v0.9.7.")
+        appendLine("This report is a one-shot capability snapshot, not a saved gameplay sample. " +
+            "v0.9.7 records supported thermal, swap and PSI signals only during REC; " +
+            "actual values still require Odin ROM validation.")
     }
 }

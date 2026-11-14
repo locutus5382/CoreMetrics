@@ -206,6 +206,6 @@ object CompareStudioAnalysis {
         append(SessionDiagnosticsAnalyzer.text(b.diagnostics,b.originMs))
         appendLine()
         appendLine("Source sessions remain unchanged. No interpolation over recording gaps, "+
-            "no game FPS or claim of better gameplay performance.")
+            "no measured game smoothness or proof of better gameplay performance.")
     }
 }

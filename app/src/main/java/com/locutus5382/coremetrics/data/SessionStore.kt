@@ -13,7 +13,7 @@ import java.io.Writer
  * :monitor owns writes, UI reads through WAL. Data never leaves this database
  * without a user-selected Android document URI.
  */
-class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 5) {
+class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 6) {
     private val leaseContext = context.applicationContext
 
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
@@ -27,7 +27,10 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val observedCpuLimits: String? = null, val busiestCorePct: Double? = null,
         val batteryPowerStatus: String? = null, val busiestCore: String? = null,
         val batteryTemp: Double? = null, val batteryPct: Int? = null,
-        val cpuClocks: String? = null, val gpuMHz: Double? = null)
+        val cpuClocks: String? = null, val gpuMHz: Double? = null,
+        val thermalStatus: Int? = null, val thermalHeadroom: Double? = null,
+        val swapUsedGiB: Double? = null, val memoryPsiSomeAvg10: Double? = null,
+        val sampleDurationMs: Double? = null, val sampleElapsedMs: Long? = null)
 
     data class Link(val id:Long,val firstId:Long,val secondId:Long,val createdAt:Long)
 
@@ -51,7 +54,10 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             battery_net_w REAL, battery_ua INTEGER, battery_mv INTEGER,
             battery_source TEXT, battery_status TEXT,
             sf_layer_fps REAL, sf_frame_ms REAL, sf_status TEXT,
-            observed_cpu_limits TEXT)""")
+            observed_cpu_limits TEXT,
+            thermal_status INTEGER, thermal_headroom REAL, swap_used_gib REAL,
+            mem_psi_some10 REAL, sample_duration_ms REAL,
+            sample_elapsed_ms INTEGER)""")
         db.execSQL("CREATE INDEX samples_by_time ON samples(session_id,time_ms)")
         // Cover battery status predicates without visiting large sample rows.
         db.execSQL("CREATE INDEX samples_by_session_power ON samples(session_id,battery_status)")
@@ -67,7 +73,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion in 1..4 && newVersion==5) {
+        require(oldVersion in 1..5 && newVersion==6) {
             "Unsupported database migration $oldVersion -> $newVersion"
         }
         if(oldVersion<2) {
@@ -90,6 +96,13 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         if(oldVersion<5) {
             db.execSQL("CREATE INDEX IF NOT EXISTS samples_by_session_power "+
                 "ON samples(session_id,battery_status)")
+        }
+        if(oldVersion<6) {
+            for((name,type) in listOf(
+                "thermal_status" to "INTEGER", "thermal_headroom" to "REAL",
+                "swap_used_gib" to "REAL", "mem_psi_some10" to "REAL",
+                "sample_duration_ms" to "REAL", "sample_elapsed_ms" to "INTEGER"
+            )) db.execSQL("ALTER TABLE samples ADD COLUMN "+name+" "+type)
         }
     }
 
@@ -218,6 +231,12 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             put("sf_frame_ms", s.surfaceFrameMs)
             put("sf_status", s.surfaceFpsStatus)
             put("observed_cpu_limits", s.observedCpuLimits)
+            put("thermal_status", s.thermalStatus)
+            put("thermal_headroom", s.thermalHeadroom)
+            put("swap_used_gib", s.swapUsedGiB)
+            put("mem_psi_some10", s.memoryPsiSomeAvg10)
+            put("sample_duration_ms", s.sampleDurationMs)
+            put("sample_elapsed_ms", s.sampleElapsedMs)
         })
     }
 
@@ -347,7 +366,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         """SELECT time_ms,cpu_temp,gpu_temp,cpu_pct,gpu_pct,ram_gib,
         battery_net_w,sf_layer_fps,app_package,
         observed_cpu_limits,busiest_pct,battery_status,busiest_core,
-        battery_temp,battery_pct,cpu_clocks,gpu_mhz
+        battery_temp,battery_pct,cpu_clocks,gpu_mhz,
+        thermal_status,thermal_headroom,swap_used_gib,mem_psi_some10,
+        sample_duration_ms,sample_elapsed_ms
         FROM samples WHERE session_id=? ORDER BY time_ms ASC LIMIT ?""",
         arrayOf(id.toString(), max.coerceIn(1,12000).toString())
     ).use { c ->
@@ -360,7 +381,10 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 value(10), if (c.isNull(11)) null else c.getString(11),
                 if(c.isNull(12))null else c.getString(12),value(13),
                 if(c.isNull(14))null else c.getInt(14),
-                if(c.isNull(15))null else c.getString(15),value(16)))
+                if(c.isNull(15))null else c.getString(15),value(16),
+                if(c.isNull(17)) null else c.getInt(17),
+                value(18),value(19),value(20),value(21),
+                if(c.isNull(22)) null else c.getLong(22)))
         }
     }
 
@@ -466,6 +490,14 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     decimal("sf_frame_ms","sf_frame_time_ms")
                     text("sf_status","sf_status")
                     text("observed_cpu_limits","observed_cpu_limits")
+                    columns.field(row,"thermal_status")?.toIntOrNull()
+                        ?.takeIf{it in 0..6}?.let{put("thermal_status",it)}
+                    decimal("thermal_headroom","thermal_headroom")
+                    decimal("swap_used_gib","swap_used_gib")
+                    decimal("mem_psi_some10","mem_psi_some10")
+                    decimal("sample_duration_ms","sample_duration_ms")
+                    columns.field(row,"sample_elapsed_ms")?.toLongOrNull()
+                        ?.takeIf{it>=0L}?.let{put("sample_elapsed_ms",it)}
                 }
                 db.insertOrThrow("samples",null,values)
                 rowCount++
@@ -506,13 +538,17 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             "battery_net_w","battery_current_ua","battery_voltage_mv",
             "battery_power_source","battery_power_status",
             "sf_layer_fps","sf_frame_time_ms","sf_status","observed_cpu_limits",
-            "graphics_driver","resolution_scale")
+            "graphics_driver","resolution_scale",
+            "thermal_status","thermal_headroom","swap_used_gib","mem_psi_some10",
+            "sample_duration_ms","sample_elapsed_ms")
         writer.append(headers.joinToString(",")).append('\n')
         readableDatabase.rawQuery(
             """SELECT time_ms,cpu_temp,gpu_temp,battery_temp,battery_pct,cpu_pct,
             busiest_pct,busiest_core,gpu_pct,gpu_mhz,ram_gib,cpu_clocks,app_package,
             battery_net_w,battery_ua,battery_mv,battery_source,battery_status,
-            sf_layer_fps,sf_frame_ms,sf_status,observed_cpu_limits
+            sf_layer_fps,sf_frame_ms,sf_status,observed_cpu_limits,
+            thermal_status,thermal_headroom,swap_used_gib,mem_psi_some10,
+            sample_duration_ms,sample_elapsed_ms
             FROM samples WHERE session_id=?
             """ + if(startMs!=null && endMs!=null)
                 "AND time_ms>=? AND time_ms<=? ORDER BY time_ms LIMIT 12000"
@@ -523,8 +559,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         ).use { c ->
             while (c.moveToNext()) {
                 val values = listOf(id.toString(),session.note?.takeIf{it.isNotBlank()} ?: session.label,session.configuration,session.status) +
-                    (0 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
-                    listOf(session.graphicsDriver.orEmpty(),session.resolutionScale.orEmpty())
+                    (0 until 22).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
+                    listOf(session.graphicsDriver.orEmpty(),session.resolutionScale.orEmpty()) +
+                    (22 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" }
                 writer.append(values.joinToString(",") { Csv.escape(it) }).append('\n')
             }
         }

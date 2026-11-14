@@ -55,7 +55,7 @@ private enum class Metric(val title:String, val unit:String) {
     CPU_TEMP("CPU °C","°C"),GPU_TEMP("GPU °C","°C"),GPU_LOAD("GPU load","%"),
     CPU_LOAD("CPU load","%"),BUSIEST_CORE("Busiest core","%"),
     P3_CLOCK("P3 clock"," GHz"),P7_CLOCK("P7 clock"," GHz"),
-    POWER("Discharge W"," W"),FPS("Layer FPS"," FPS")
+    POWER("Discharge W"," W")
 }
 
 private fun reading(p:SessionStore.Point, metric:Metric):Double? = when(metric) {
@@ -67,7 +67,6 @@ private fun reading(p:SessionStore.Point, metric:Metric):Double? = when(metric) 
     Metric.P3_CLOCK -> SessionDiagnosticsAnalyzer.clockGHz(p.cpuClocks,3)
     Metric.P7_CLOCK -> SessionDiagnosticsAnalyzer.clockGHz(p.cpuClocks,7)
     Metric.POWER -> DischargeSample.watts(p.batteryWatts,p.batteryPowerStatus)
-    Metric.FPS -> p.sfFps
 }?.takeIf { it.isFinite() }
 
 private fun f(value:Double?):String =
@@ -94,7 +93,7 @@ internal fun CompareScrubPanel(
             b.any{reading(it,metric)!=null}
         Metric.values().filter {
             when(it) {
-                Metric.FPS,Metric.P3_CLOCK,Metric.P7_CLOCK,Metric.BUSIEST_CORE ->
+                Metric.P3_CLOCK,Metric.P7_CLOCK,Metric.BUSIEST_CORE ->
                     hasValid(it)
                 else -> true
             }
@@ -135,7 +134,7 @@ internal fun CompareScrubPanel(
     var chartWidth by remember{mutableIntStateOf(900)}
     var chartHeight by remember{mutableIntStateOf(300)}
     // Only visual traces are reduced; cursor and A/B statistics keep every
-    // original point, independent of chart-only GPU/FPS filters.
+    // original point, independent of chart-only activity filters.
     val traceA=remember(a,metric,chartWidth,originA,duration) {
         ChartTraceReducer.reduce(a.map{p->
             ChartTraceReducer.Sample(p.timeMs,reading(p,metric))},
@@ -162,8 +161,7 @@ internal fun CompareScrubPanel(
             color=iceBlue,fontWeight=FontWeight.Bold)
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-            // Skip the unavailable FPS selector without rescanning every
-            // recorded point on each chart drag/recomposition.
+            // Select only measured metrics; keep chart drag allocation-free.
             selectableMetrics.forEach { candidate ->
                 FilterChip(selected=metric==candidate,onClick={metric=candidate},
                     label={Text(candidate.title)})

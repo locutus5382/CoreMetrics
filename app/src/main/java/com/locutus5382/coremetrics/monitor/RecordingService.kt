@@ -613,13 +613,11 @@ class RecordingService:Service() {
                         }
                         val sampler=DirectSampler(application)
                         val detector=ForegroundAttribution(applicationContext)
-                        val fps=FrameEstimate(null,null,0,
-                            "SURFACEFLINGER_PERMISSION_DENIED_ON_PORTAL")
                         var next=SystemClock.elapsedRealtime()
                         var lastNotice=0L
                         while(isActive && !stopping){
                             val s=withContext(Dispatchers.IO){
-                                sampler.sample(detector.current(System.currentTimeMillis()),fps)
+                                sampler.sample(detector.current(System.currentTimeMillis()))
                             }
                             withContext(Dispatchers.IO){db.add(id,s)}
                             MonitorState.latest=s

@@ -133,6 +133,10 @@ internal fun HudSettingsPanel(
                 label={Text("Rounded card · 2 lines")})
         }
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
+        Text("THERMAL STATUS DOT · WHITE = NORMAL · AMBER = CAUTION · RED = SEVERE · GREY = UNAVAILABLE",
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+        Text("Visible while recording; Android's device-wide thermal status and sparse headroom forecast, not proof of CPU/GPU throttling. No polling during READY.",
+            color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Text("VISIBLE TELEMETRY",color=iceBlue,
             style=MaterialTheme.typography.labelLarge)
         val visible=listOf(

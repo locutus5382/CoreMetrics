@@ -135,7 +135,7 @@ object SegmentAnalysis {
         appendLine("Step volatility is not time-normalized: do not compare "+
             "results sampled at different intervals.")
         appendLine("Stability is not thermal equilibrium. No claims of verified "+
-            "FPS, throttling, battery health or stutters.")
+            "game smoothness, throttling causation or battery health.")
     }
     private fun fmt(v:Double)=String.format(Locale.US,"%.2f",v)
 }

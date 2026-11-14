@@ -31,7 +31,7 @@ class ScorecardModelTest {
         assertEquals(all.size,card.series[0].samples.size)
         assertEquals("00:00 - 06:00 of original recording",card.range)
         assertTrue(card.rows.any{it.label.contains("temperature") && it.left.contains("46.0")})
-        assertTrue(card.footnotes.any{it.contains("not a measure of FPS")})
+        assertTrue(card.footnotes.any{it.contains("does not measure game smoothness")})
     }
 
     @Test fun selectedSegmentPngAndTxtShareTheExactSourceWindow() {

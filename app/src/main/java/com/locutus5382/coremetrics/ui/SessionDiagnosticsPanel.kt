@@ -63,7 +63,7 @@ internal fun SessionDiagnosticsPanel(
             DiagnosticSummary(result,report)
             DiagnosticDistributionTable(result,referenceStartMs ?: points.firstOrNull()?.timeMs ?: 0L)
             DiagnosticExplorer(result,points,referenceStartMs)
-            DiagnosticEvidence(result,report)
+            DiagnosticEvidence(result,report,points)
         }
     }
 }
@@ -355,7 +355,8 @@ private fun DiagnosticTrack(
 
 @Composable
 private fun DiagnosticEvidence(
-    result:SessionDiagnosticsAnalyzer.Result,report:BenchmarkAnalyzer.Report
+    result:SessionDiagnosticsAnalyzer.Result,report:BenchmarkAnalyzer.Report,
+    points:List<SessionStore.Point>
 ) {
     Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
         Text("EVIDENCE & LIMITATIONS",color=iceBlue,fontWeight=FontWeight.Bold)
@@ -397,11 +398,28 @@ private fun DiagnosticEvidence(
                 "are assumptions; not a verified remaining-life estimate.",
                 color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         }
-        Text("Telemetry integrity "+report.quality.score+"/100 · sampling coverage "+
-            fmtDiagnostic(report.quality.coveragePct)+"% · recording gaps "+
-            result.gapCount+" · discharge coverage "+
-            fmtDiagnostic(report.energy.coveragePct)+"%",
+        Text("Legacy comparison-input score "+report.quality.score+"/100 · "+
+            "discharge coverage "+fmtDiagnostic(report.energy.coveragePct)+"%",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+        val extra=remember(points) {
+            val status=points.mapNotNull{it.thermalStatus}.maxOrNull()
+            val headroom=points.mapNotNull{it.thermalHeadroom}
+                .filter{it.isFinite()}.maxOrNull()
+            val swap=points.mapNotNull{it.swapUsedGiB}
+                .filter{it.isFinite()}.maxOrNull()
+            val psi=points.mapNotNull{it.memoryPsiSomeAvg10}
+                .filter{it.isFinite()}.maxOrNull()
+            listOf(status?.toString()?:"—",
+                fmtDiagnostic(headroom,2),fmtDiagnostic(swap,2),fmtDiagnostic(psi,2))
+        }
+        if(extra.any{it!="—"}) {
+            Text("Optional OS readings (peaks from recorded samples):",
+                color=iceBlue,style=MaterialTheme.typography.labelMedium)
+            Text("Thermal status code: "+extra[0]+" · 10s headroom: "+extra[1],
+                color=coreText,style=MaterialTheme.typography.bodySmall)
+            Text("Swap allocated: "+extra[2]+" GiB · memory PSI some avg10: "+
+                extra[3]+"%",color=coreText,style=MaterialTheme.typography.bodySmall)
+        }
         Text("Observed CPU/GPU behavior does not prove thermal throttling, " +
             "game-frame bottlenecks or tuner identity. Missing data remain missing.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
