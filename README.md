@@ -2,11 +2,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.6.6 unified alpha — focused code-audit fixes for session analysis cache correctness, non-blocking diagnostic reports, app/export version consistency and note editing feedback. The v0.9.6.4 recorder recovery and v0.9.6.5 read-only capability probe remain unchanged.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+**Current development status: v0.9.7 telemetry intelligence alpha — focused code-audit fixes for session analysis cache correctness, non-blocking diagnostic reports, app/export version consistency and note editing feedback. The v0.9.6.4 recorder recovery and v0.9.6.5 read-only capability probe remain unchanged.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.6.6)
+## One-app Quick Start (v0.9.7)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.6.6-unified-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.6.6-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.7-telemetry-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.7-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CoreMetrics HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CoreMetrics REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -21,6 +21,14 @@
 
 ---
 
+
+## v0.9.7 — Thermal HUD and trustworthy recording integrity
+
+- A tiny independent device-wide thermal dot appears only during REC: white = no Android OS thermal alert, amber = Android mild/moderate alert or forecast headroom >=0.85, red = Android severe-or-higher alert or headroom >=1.0, grey = unavailable. It is advisory and never identifies a specific CPU/GPU throttle. There is no standalone HUD sensor polling loop and standby remains idle.
+- Rate-limited Android thermal headroom (10s between calls), thermal status, optional swap used, optional memory PSI some avg10 and per-sample collection duration are saved as nullable readings. Headroom is recorded only when freshly measured.
+- SQLite v6 adds six nullable fields with migration from v1-v5 and name-based CSV import compatibility. Historical FPS fields stay readable for old CSVs but are no longer shown as a measurement in the UI. CoreMetrics does not measure game smoothness.
+- The session summary separates recorded-sample continuity from the older composite comparison-quality score and presents at most three bounded, observational findings; avoids automatic causal throttling claims.
+- First validate source/JVM build and SQLite migration via CI. **Do not merge into main or trust device-specific values before Odin 2 Portal verification**.
 
 ## v0.9.6.6 — Audit, session-analysis correctness and diagnostic UX
 
