@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.IntentFilter
 import android.content.Intent
 import android.os.BatteryManager
+import android.os.PowerManager
+import android.os.SystemClock
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -14,6 +16,9 @@ import kotlin.math.roundToInt
 class DirectSampler(private val app: Application) {
     private val batteryPower = BatteryPowerReader(app)
     private val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+    private val powerManager = app.getSystemService(PowerManager::class.java)
+    private var lastHeadroomQueryMs = -1L
+    private var memoryPsiAvailable: Boolean? = null
     private val policyName = Regex("""policy\d+""")
     private val coreName = Regex("""cpu\d+""")
     private val whitespace = Regex("""\s+""")
@@ -135,6 +140,8 @@ class DirectSampler(private val app: Application) {
     }
 
     fun sample(appPackage: String?, frame: FrameEstimate? = null): Snapshot {
+        val sampleStartNanos = SystemClock.elapsedRealtimeNanos()
+        val sampledElapsedMs = SystemClock.elapsedRealtime()
         val now = System.currentTimeMillis()
         val lines=runCatching {
             ProcTelemetryReader.cpuLines(File("/proc/stat").reader())
@@ -152,9 +159,29 @@ class DirectSampler(private val app: Application) {
         }.toList()
         val peakLoad = CpuMath.maxCoreLoad(perCore)
         val uniqueWinner = CpuMath.uniqueBusiest(perCore)
-        val ram=runCatching {
-            ProcTelemetryReader.usedGiB(File("/proc/meminfo").reader())
+        val memory = runCatching {
+            ProcTelemetryReader.memorySnapshot(File("/proc/meminfo").reader())
         }.getOrNull()
+        if (memoryPsiAvailable == null) memoryPsiAvailable = runCatching {
+            File("/proc/pressure/memory").reader().use {
+                ProcTelemetryReader.memoryPsiSomeAvg10(it) != null
+            }
+        }.getOrDefault(false)
+        val memoryPsi = if (memoryPsiAvailable == true) runCatching {
+            File("/proc/pressure/memory").reader().use {
+                ProcTelemetryReader.memoryPsiSomeAvg10(it)
+            }
+        }.getOrNull() else null
+        // Headroom is a 10-second forecast, measured no more than once per
+        // 10 seconds. Intermediate samples remain NULL, not duplicated values.
+        val osThermalStatus = runCatching { powerManager?.currentThermalStatus }
+            .getOrNull()?.takeIf { it in 0..6 }
+        val headroom = if (lastHeadroomQueryMs < 0L ||
+            sampledElapsedMs - lastHeadroomQueryMs >= 10_000L) {
+            lastHeadroomQueryMs = sampledElapsedMs
+            runCatching { powerManager?.getThermalHeadroom(10) }
+                .getOrNull()?.toDouble()?.takeIf { it.isFinite() && it >= 0.0 }
+        } else null
         // One sticky broadcast fetch per sample. Both temperature/percentage
         // and electrical-power status interpret precisely the SAME snapshot.
         val batteryIntent = try {
@@ -162,11 +189,11 @@ class DirectSampler(private val app: Application) {
         } catch (_: Exception) { null }
         val battery = battery(batteryIntent)
         val power = batteryPower.read(batteryIntent)
-        return Snapshot(
+        val snapshot = Snapshot(
             timeMs = now, cpuTempC = thermal(true), gpuTempC = thermal(false),
             batteryTempC = battery.first, batteryPercent = battery.second,
             cpuPercent = cpuPercent, busiestPercent = peakLoad, busiestCore = uniqueWinner?.first,
-            gpuPercent = gpuLoad(), gpuMHz = gpuClock(), ramGiB = ram,
+            gpuPercent = gpuLoad(), gpuMHz = gpuClock(), ramGiB = memory?.usedRamGiB,
             cpuClockSummary = cpuClockSummary(), appPackage = appPackage,
             signedBatteryWatts = power.signedBatteryWatts,
             batteryCurrentMicroAmps = power.currentMicroAmps,
@@ -177,7 +204,15 @@ class DirectSampler(private val app: Application) {
             surfaceFrameMs = frame?.frameMs,
             surfaceFpsStatus = frame?.status ?: "OFF_BY_DEFAULT",
             observedCpuLimits = cpuLimits(),
-            perCoreLoads = perCore.joinToString(";") { it.first + ":" + it.second }
+            perCoreLoads = perCore.joinToString(";") { it.first + ":" + it.second },
+            thermalStatus = osThermalStatus,
+            thermalHeadroom = headroom,
+            swapUsedGiB = memory?.swapUsedGiB,
+            memoryPsiSomeAvg10 = memoryPsi,
+            sampleElapsedMs = sampledElapsedMs
+        )
+        return snapshot.copy(
+            sampleDurationMs = (SystemClock.elapsedRealtimeNanos() - sampleStartNanos) / 1_000_000.0
         )
     }
 }

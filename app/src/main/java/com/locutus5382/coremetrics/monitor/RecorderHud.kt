@@ -80,7 +80,7 @@ internal data class HudOptions(
                 showGpuLoad=b("hud_gpuLoad",false),
                 showRam=b("hud_ram",true),
                 showPower=b("hud_power",true),
-                showFps=b("hud_fps",false),
+                showFps=false, // Legacy setting intentionally ignored; no verified game FPS
                 showSparkline=false,
                 adaptiveColors=b(ADAPTIVE,false)
             )
@@ -96,7 +96,7 @@ internal data class HudOptions(
                 "cpuTemp" to options.showCpuTemp,"gpuTemp" to options.showGpuTemp,
                 "cpuLoad" to options.showCpuLoad,"gpuLoad" to options.showGpuLoad,
                 "ram" to options.showRam,"power" to options.showPower,
-                "fps" to options.showFps,"sparkline" to options.showSparkline
+                "sparkline" to options.showSparkline
             )) putExtra("hud_"+k,v)
         }
     }
@@ -116,7 +116,7 @@ internal data class HudOptions(
             .putBoolean(ADAPTIVE,adaptiveColors).commit()
     }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
-        showGpuLoad,showRam,showPower,showFps).count { it }
+        showGpuLoad,showRam,showPower).count { it }
 }
 
 /**
@@ -136,6 +136,9 @@ internal class RecorderHud(private val context:Context) {
     private var dockTab:LinearLayout?=null
     private var dockVisual:View?=null
     private var mainText:TextView?=null
+    private var thermalIndicator:TextView?=null
+    private var lastHeadroom:Double?=null
+    private var headroomAtElapsedMs:Long=-1L
     private var recText:TextView?=null
     private var recDot:TextView?=null
     private var recControl:LinearLayout?=null
@@ -546,6 +549,13 @@ internal class RecorderHud(private val context:Context) {
         line.addView(label,LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT))
+        // Independent device-wide warning dot; never tint CPU/GPU labels as
+        // though the platform status identified the throttling component.
+        thermalIndicator=styledLabel("●",12f).apply {
+            setPadding(dp(3f),0,dp(4f),0)
+            contentDescription="Android thermal signal unavailable"
+        }
+        line.addView(thermalIndicator)
         val rec=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -745,7 +755,7 @@ internal class RecorderHud(private val context:Context) {
                 } ?: 0f else 0f
             // Account for REC/STOP, gear, docking, lock and optional close
             // using a conservative cap; text is then bounded by free width.
-            val controls=dp(if(recording)218f else 211f)
+            val controls=dp(if(recording)236f else 211f)
             val viewport=(windowWidth()-dp(20f)).coerceAtLeast(dp(260f))
             val minimum=dp(if(drawerOpen)425f else 255f).coerceAtMost(viewport)
             val natural=longest.roundToInt()+controls+dp(16f)
@@ -808,13 +818,7 @@ internal class RecorderHud(private val context:Context) {
         // where the user expects it, but it cannot receive main-window touches.
         lockControl?.visibility=if(locked)View.INVISIBLE else View.VISIBLE
         closeControl?.visibility=if(recording)View.GONE else View.VISIBLE
-        val color=when(thermalValue?.direction) {
-            ThermalTrendFilter.Direction.RISING -> Color.rgb(255,107,0)
-            ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
-            else -> Color.rgb(255,199,0)
-        }
-        // Keep the dock's translucent neutral glass; tint only its status text.
-        (dockVisual as? TextView)?.setTextColor(color)
+        refreshThermalIndicator()
         renderTelemetry()
         renderAction()
         updateGeometry()
@@ -837,6 +841,7 @@ internal class RecorderHud(private val context:Context) {
         startedAtMs=startedMs
         if(!isRecording) {
             latest=null;thermal.reset();thermalValue=null
+            lastHeadroom=null;headroomAtElapsedMs=-1L
             metricLevels.clear()
         }
         applyAppearance()
@@ -848,18 +853,42 @@ internal class RecorderHud(private val context:Context) {
         latest=s
         thermalValue=thermal.update(s.timeMs,s.cpuTempC)
         updateLevels(s)
-        val thermalColor=when(thermalValue?.direction) {
-            ThermalTrendFilter.Direction.RISING -> Color.rgb(255,107,0)
-            ThermalTrendFilter.Direction.FALLING -> Color.rgb(56,189,248)
-            else -> Color.rgb(255,199,0)
+        // Sparse headroom measurements are kept only for the HUD, with a
+        // bounded freshness window. SQLite samples themselves stay sparse.
+        if(s.thermalHeadroom!=null && s.sampleElapsedMs!=null) {
+            lastHeadroom=s.thermalHeadroom
+            headroomAtElapsedMs=s.sampleElapsedMs
         }
-        (dockVisual as? TextView)?.setTextColor(thermalColor)
+        refreshThermalIndicator()
         // Rendering consumes only the recorder's current sample; never polls
         // hardware at an independent cadence.
         if(visible()) {
             renderTelemetry()
             if(!collapsed)updateGeometry()
         }
+    }
+
+    private fun refreshThermalIndicator() {
+        val s=latest
+        val now=s?.sampleElapsedMs
+        val freshHeadroom=if(now!=null && headroomAtElapsedMs>=0L &&
+            now-headroomAtElapsedMs in 0L..25_000L) lastHeadroom else null
+        val level=if(recording)ThermalIndicatorPolicy.level(
+            s?.thermalStatus,freshHeadroom) else ThermalIndicatorPolicy.Level.UNKNOWN
+        val color=when(level) {
+            ThermalIndicatorPolicy.Level.NORMAL -> Color.rgb(241,249,255)
+            ThermalIndicatorPolicy.Level.WARNING -> Color.rgb(255,199,0)
+            ThermalIndicatorPolicy.Level.SEVERE -> Color.rgb(255,94,104)
+            ThermalIndicatorPolicy.Level.UNKNOWN -> Color.rgb(137,151,165)
+        }
+        thermalIndicator?.apply {
+            visibility=if(recording)View.VISIBLE else View.GONE
+            setTextColor(color)
+            contentDescription=ThermalIndicatorPolicy.description(level)
+        }
+        // The dock retains its familiar badge, using the same platform status.
+        (dockVisual as? TextView)?.setTextColor(
+            if(recording)color else Color.rgb(241,249,255))
     }
 
     private fun severityColor(level:HudSeverity.Level):Int=when(level){
@@ -924,8 +953,7 @@ internal class RecorderHud(private val context:Context) {
         if(opts.showGpuLoad)add("GPU %",s?.gpuPercent?.let{"$it%"}?:"—")
         if(opts.showRam)add("RAM",fmt(s?.ramGiB," GiB"))
         if(opts.showPower)add("BAT",fmt(s?.signedBatteryWatts," W"))
-        if(opts.showFps && s?.surfaceFps!=null)
-            add("FPS",fmt(s.surfaceFps,"",0))
+        // Game FPS is not collected by the ordinary-app recorder.
         val builder=SpannableStringBuilder()
         if(items.isEmpty())builder.append("REC · telemetry")
         else items.forEachIndexed{index,pair->
@@ -966,7 +994,7 @@ internal class RecorderHud(private val context:Context) {
         if(rootRemoved){
             root=null;lastAddRequestedAt=0L
             params=null;pill=null;drawer=null;dockTab=null
-            dockVisual=null;mainText=null;recText=null;recDot=null
+            dockVisual=null;mainText=null;thermalIndicator=null;recText=null;recDot=null
             recControl=null;lockControl=null;drawerControl=null
             closeControl=null;minimizeControl=null
             drawerSwitches.clear()

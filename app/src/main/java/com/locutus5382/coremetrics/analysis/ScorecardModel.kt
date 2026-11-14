@@ -94,7 +94,7 @@ object ScorecardModel {
                     " | observed first: "+elapsed(originalFirst-bundle.sourceOriginMs)+
                     " | actual sample coverage: "+
                     formatted(bundle.benchmark.quality.coveragePct,"%",0),
-                "P95 is an upper-tail sample percentile. It is not a measure of FPS or stutter.",
+                "P95 is an upper-tail sample percentile. It does not measure game smoothness.",
                 "Battery watts are terminal discharge measurements, not CPU/GPU chip power.",
                 "Within ±2°C of median is not thermal equilibrium. Gaps are not interpolated."
             ),
@@ -147,7 +147,7 @@ object ScorecardModel {
             "Caution (1 of "+result.warnings.size+"): "+it
         } ?: "No measured differences flagged; scene equivalence still unverified."
         val notes=listOf(
-            "Same elapsed range does NOT prove equivalent scenes, workload or FPS.",
+            "Same elapsed range does NOT prove equivalent scenes or workloads.",
             "Deltas are B minus A. Lower power alone is not proof of higher game efficiency.",
             caution,
             "A/B discharge coverage: "+
@@ -172,7 +172,7 @@ object ScorecardModel {
             graphEndMs=result.window.endElapsedMs,
             footnotes=notes,
             sourceDescription=ExportVersion.sourceLabel()+
-                " · Observational comparison, not measured FPS"
+                " · Observational comparison only"
         )
     }
 }
