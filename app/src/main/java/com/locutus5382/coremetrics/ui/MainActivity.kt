@@ -1443,12 +1443,9 @@ class MainActivity : ComponentActivity() {
                                             Text((status.power ?: "Unavailable") + "  ·  " +
                                                 (status.powerStatus ?: "Start to measure"),
                                                 color=white,style=MaterialTheme.typography.bodySmall)
-                                            Text("FRAME SOURCE",color=muted)
-                                            Text(status.fpsStatus ?: "FPS probe disabled",
-                                                color=white,style=MaterialTheme.typography.bodySmall)
                                             Text("App package: " + (status.app ?: "Unavailable / Usage Access off"),
                                                 color = muted, style = MaterialTheme.typography.bodySmall)
-                                            Text("FPS is SurfaceFlinger layer-present rate only; watts are signed battery-net power. No low-percentiles or CPU watts are invented.",
+                                            Text("Battery W measures battery-terminal flow, not game-specific power.",
                                                 color = muted, style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
@@ -1718,7 +1715,7 @@ class MainActivity : ComponentActivity() {
                                              }
                                              Text("Import creates an offline session; compare elapsed time, not identical game events.",
                                                  color=muted,style=MaterialTheme.typography.bodySmall)
-                                             Text("Compare the same game and track. Equal GPU load does NOT prove equal FPS.",
+                                             Text("Compare the same game and track. GPU load alone does not prove game smoothness.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
                                                  Text("Default crop: skip first 30s (legacy details too)",
@@ -1933,8 +1930,8 @@ class MainActivity : ComponentActivity() {
                                                     Text("• "+it,color=coreSecondary,
                                                         style=MaterialTheme.typography.labelSmall)
                                                 }
-                                                Text(r.frames.note,color=coreSecondary,
-                                                    style=MaterialTheme.typography.labelSmall)
+                                                Text("Game smoothness is not independently measured by this version.",color=coreSecondary,
+                                                     style=MaterialTheme.typography.labelSmall)
                                                 OutlinedButton(onClick={
                                                     reportAId=firstId;reportBId=0L
                                                      reportSkipWarmup=skipWarmUp
@@ -2099,8 +2096,7 @@ class MainActivity : ComponentActivity() {
                                                     color=coreSecondary)
                                                 Text("The synchronized cursor and chart are above.",
                                                     color=coreSecondary)
-                                                Text("Frame rate remains unavailable if SurfaceFlinger layer access fails. " +
-                                                    "Time alignment uses first selected sample, not synchronized in-game events.",
+                                                Text("Time alignment uses each recording\'s first selected sample, not synchronized in-game events.",
                                                     color=coreSecondary,style=MaterialTheme.typography.labelSmall)
                                             } else {
                                                 Text("Select two recordings. If the gameplay filter returns nothing, " +
@@ -2234,10 +2230,8 @@ class MainActivity : ComponentActivity() {
                                             OutlinedButton(onClick = {
                                                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                                             }) { Text("Open Usage Access settings") }
-                                            Text("FPS LAB · Off by default. No PServer command is executed. " +
-                                                "An authenticated privileged read-only host and device-verified " +
-                                                "presentation timestamps are required before enabling FPS. " +
-                                                "PServerBinder visibility alone does not establish access.",
+                                            Text("CoreMetrics records device telemetry, not measured game smoothness. " +
+                                                "Use the optional game note to describe subjective stutters or smooth play.",
                                                 color=coreSecondary,
                                                 style=MaterialTheme.typography.bodySmall)
                                             HorizontalDivider(color=coreBorder)
@@ -2292,7 +2286,8 @@ class MainActivity : ComponentActivity() {
                                                 "Net battery W: Android battery current × voltage where valid.\n"+
                                                 "System RAM used: /proc/meminfo MemTotal − MemAvailable.\n"+
                                                 "Busiest core: /proc/stat interval winner, NOT core residency.\n"+
-                                                "Game FPS: not verified on the Portal; no interpolation.",
+                                                "Android thermal status is device-wide, not proof of CPU or GPU throttling.\\n"+
+                                                "Swap and memory PSI are optional OS data where permitted.",
                                                 color=coreSecondary,
                                                 style=MaterialTheme.typography.bodySmall)
                                             Text("Constant GPU MHz or integer battery temperature is not " +
