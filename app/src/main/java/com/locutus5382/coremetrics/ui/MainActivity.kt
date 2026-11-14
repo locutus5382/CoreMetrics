@@ -536,6 +536,10 @@ class MainActivity : ComponentActivity() {
             var detailPoints by remember {
                 mutableStateOf(emptyList<SessionStore.Point>())
             }
+            // A loaded sample set belongs to exactly one immutable SQLite ID.
+            // Labels, tags and warm-up selection must never trigger a new
+            // 12,000-row read; only a different selected ID does.
+            var detailLoadedId by remember { mutableLongStateOf(0L) }
             var firstId by rememberSaveable { mutableLongStateOf(0L) }
             var secondId by rememberSaveable { mutableLongStateOf(0L) }
             var activeOnly by rememberSaveable { mutableStateOf(true) }
@@ -876,6 +880,7 @@ class MainActivity : ComponentActivity() {
                 if(page!="Sessions"){
                     detailReport=null
                     detailPoints=emptyList()
+                    detailLoadedId=0L
                     detailedId=0L
                     detailTechnical=false
                     metadataEditorId=0L
@@ -897,27 +902,43 @@ class MainActivity : ComponentActivity() {
                         linkedPairs=withContext(Dispatchers.IO){database.links()}
                 }
             }
-            // Metadata edits update session labels but not original samples.
-            // Do not fetch thousands of rows again for a label edit.
-            LaunchedEffect(page,sessionList) {
-                val report=detailReport
-                if(page=="Sessions" && report!=null &&
-                    report.session.id==detailedId) {
-                    val fresh=sessionList.firstOrNull{it.id==detailedId}
-                    if(fresh!=null && fresh!=report.session)
-                        detailReport=report.copy(session=fresh)
+            // Separate immutable sample loading from derived analysis.
+            // Changing note/driver/profile or warm-up recomputes from cached
+            // samples without querying the original 12k telemetry rows.
+            LaunchedEffect(page,detailedId) {
+                detailReport=null
+                detailLoadedId=0L
+                detailPoints=emptyList()
+                if(page=="Sessions" && detailedId>0L) {
+                    val requestedId=detailedId
+                    val loaded=withContext(Dispatchers.IO){
+                        database.points(requestedId)
+                    }
+                    if(page=="Sessions" && detailedId==requestedId) {
+                        detailPoints=loaded
+                        detailLoadedId=requestedId
+                    }
                 }
             }
-            LaunchedEffect(page,detailedId,skipWarmUp) {
-                if(page=="Sessions" && detailedId>0L) {
-                    val response=withContext(Dispatchers.IO) {
-                        val session=database.sessionById(detailedId)
-                        val points=database.points(detailedId)
-                        val report=session?.let{BenchmarkAnalyzer.analyze(it,points,if(skipWarmUp)30 else 0)}
-                        report to points
+            LaunchedEffect(page,detailedId,detailLoadedId,detailPoints,
+                skipWarmUp,sessionList) {
+                val requestedId=detailedId
+                if(page=="Sessions" && requestedId>0L &&
+                    detailLoadedId==requestedId) {
+                    val session=sessionList.firstOrNull{it.id==requestedId}
+                        ?:withContext(Dispatchers.IO){
+                            database.sessionById(requestedId)
+                        }
+                    if(session!=null) {
+                        val points=detailPoints
+                        val report=withContext(Dispatchers.Default){
+                            BenchmarkAnalyzer.analyze(
+                                session,points,if(skipWarmUp)30 else 0)
+                        }
+                        if(page=="Sessions" && detailedId==requestedId &&
+                            detailLoadedId==requestedId)
+                            detailReport=report
                     }
-                    detailReport=response.first
-                    detailPoints=response.second
                 }
             }
             LaunchedEffect(page, firstId, secondId) {
@@ -1446,7 +1467,8 @@ class MainActivity : ComponentActivity() {
                                                  color=coreSecondary,
                                                  style=MaterialTheme.typography.labelSmall)
                                              if (sessionList.isEmpty()) Text("No sessions yet.", color = muted)
-                                            detailReport?.takeIf{detailedId>0L}?.let{r ->
+                                            detailReport?.takeIf{detailedId>0L &&
+                                                it.session.id==detailedId}?.let{r ->
                                                 SessionAnalysisStudio(
                                                     session=r.session,
                                                     source=detailPoints,
@@ -2271,7 +2293,18 @@ class MainActivity : ComponentActivity() {
                                             Text("RECORDER DIAGNOSTICS",color=coreCyan)
                                             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                                 OutlinedButton(onClick = {
-                                                    diagnosticReport=RecorderJournal.report(this@MainActivity)
+                                                    scope.launch {
+                                                        diagnosticReport="Collecting read-only diagnostic snapshot…"
+                                                        val result=withContext(Dispatchers.IO) {
+                                                            runCatching{
+                                                                RecorderJournal.report(this@MainActivity)
+                                                            }
+                                                        }
+                                                        diagnosticReport=result.getOrElse{
+                                                            "Diagnostics unavailable: "+
+                                                                it.javaClass.simpleName
+                                                        }
+                                                    }
                                                 }) { Text("View process-exit & lifecycle log") }
                                                 OutlinedButton(enabled=diagnosticReport.isNotEmpty(),onClick = {
                                                     val clipboard=getSystemService(ClipboardManager::class.java)
