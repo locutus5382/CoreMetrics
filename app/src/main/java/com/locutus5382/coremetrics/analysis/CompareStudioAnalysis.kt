@@ -79,7 +79,7 @@ object CompareStudioAnalysis {
             if(x!=null && y!=null && x.isFinite() && y.isFinite() &&
                 abs(y-x)>=0.05) {
                 add("B recorded "+String.format(Locale.US,"%.2f",abs(y-x))+
-                    " W "+if(y<x)"lower" else "higher"+
+                    " W "+(if(y<x)"lower" else "higher")+
                     " time-weighted battery discharge than A; equivalent game performance was not measured.")
             }
         }
