@@ -14,6 +14,15 @@ class BenchmarkAnalyzerTest {
         SessionStore.Point(t,cpu=45.0,gpu=39.0,cpuLoad=42.0,gpuLoad=40.0,
             ram=5.5,batteryWatts=w,sfFps=null,appPackage="dev.eden.eden_emulator.nightly",
             observedCpuLimits=caps,batteryPowerStatus=status)
+    @Test fun manualProfileEditMustRecomputeQualityNotOnlyCopySession() {
+        val samples=(0..25).map {p(1_000_000L+it*5_000L)}
+        val withStock=BenchmarkAnalyzer.analyze(sess(config="Stock"),samples)
+        val withUnderclock=BenchmarkAnalyzer.analyze(
+            sess(config="Underclocking"),samples)
+        assertFalse(withStock.quality.labelConflict)
+        assertTrue(withUnderclock.quality.labelConflict)
+        assertTrue(withUnderclock.quality.score<withStock.quality.score)
+    }
     @Test fun energyUsesTrapezoidOnlyOnValidDischargingIntervals() {
         val r=BenchmarkAnalyzer.analyze(sess(),listOf(p(100_000,4.0),p(102_000,6.0),
             p(104_000,4.0)))

@@ -506,6 +506,7 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(ThermalTrendFilter.Direction.UNKNOWN)
             }
             var diagnosticReport by remember { mutableStateOf("") }
+            var diagnosticsLoading by remember { mutableStateOf(false) }
             var label by rememberSaveable {
                 mutableStateOf((prefs.getString("label","")?:"")
                     .takeUnless{it=="NFS benchmark" || it=="Gameplay"} ?: "")
@@ -2292,27 +2293,43 @@ class MainActivity : ComponentActivity() {
                                             HorizontalDivider(color=coreBorder)
                                             Text("RECORDER DIAGNOSTICS",color=coreCyan)
                                             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                                OutlinedButton(onClick = {
-                                                    scope.launch {
-                                                        diagnosticReport="Collecting read-only diagnostic snapshot…"
-                                                        val result=withContext(Dispatchers.IO) {
-                                                            runCatching{
-                                                                RecorderJournal.report(this@MainActivity)
+                                                OutlinedButton(
+                                                    enabled=!diagnosticsLoading,
+                                                    onClick = {
+                                                        scope.launch {
+                                                            diagnosticsLoading=true
+                                                            try {
+                                                                val result=withContext(Dispatchers.IO){
+                                                                    runCatching{
+                                                                        RecorderJournal.report(this@MainActivity)
+                                                                    }
+                                                                }
+                                                                diagnosticReport=result.getOrElse {
+                                                                    "Diagnostics unavailable: "+
+                                                                        it.javaClass.simpleName
+                                                                }
+                                                            }finally{
+                                                                diagnosticsLoading=false
                                                             }
                                                         }
-                                                        diagnosticReport=result.getOrElse{
-                                                            "Diagnostics unavailable: "+
-                                                                it.javaClass.simpleName
-                                                        }
                                                     }
-                                                }) { Text("View process-exit & lifecycle log") }
-                                                OutlinedButton(enabled=diagnosticReport.isNotEmpty(),onClick = {
+                                                ) { Text(if(diagnosticsLoading)
+                                                    "Reading diagnostics…" else
+                                                    "View process-exit & lifecycle log") }
+                                                OutlinedButton(
+                                                    enabled=!diagnosticsLoading &&
+                                                        diagnosticReport.isNotEmpty(),
+                                                    onClick = {
                                                     val clipboard=getSystemService(ClipboardManager::class.java)
                                                     clipboard.setPrimaryClip(ClipData.newPlainText(
                                                         "CoreMetrics diagnostic report",diagnosticReport))
                                                     message="Diagnostic report copied"
                                                 }) { Text("Copy report") }
                                             }
+                                            if (diagnosticsLoading)
+                                                Text("Checking read-only Android and kernel capabilities…",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
                                             if (diagnosticReport.isNotBlank()) {
                                                 Text(diagnosticReport,color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
