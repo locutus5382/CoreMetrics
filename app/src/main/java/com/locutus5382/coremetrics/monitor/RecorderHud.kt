@@ -161,7 +161,6 @@ internal class RecorderHud(private val context:Context) {
     private var blinkOn=true
     private var locked=false
     private var collapsed=false
-    private enum class DockEdge { LEFT, RIGHT, TOP }
     private var dockEdge=DockEdge.RIGHT
     private var expandedY=0
     private var drawerOpen=false
@@ -733,17 +732,17 @@ internal class RecorderHud(private val context:Context) {
             }
             p.width=w
             p.height=h
-            p.x=when(dockEdge) {
-                DockEdge.RIGHT -> (windowWidth()-w).coerceAtLeast(0)
-                DockEdge.LEFT -> 0
-                DockEdge.TOP -> expandedX.coerceIn(0,(windowWidth()-w).coerceAtLeast(0))
-            }
-            p.y=if(top)0 else expandedY.coerceIn(0,(windowHeight()-h).coerceAtLeast(0))
+            val positioned=HudDockGeometry.place(dockEdge,
+                windowWidth(),windowHeight(),w,h,expandedX,expandedY)
+            p.x=positioned.first
+            p.y=positioned.second
         }else{
             p.height=WindowManager.LayoutParams.WRAP_CONTENT
             val text=mainText
-            val longest=text?.text?.toString()?.split('\n')
-                ?.maxOfOrNull { text.paint.measureText(it) } ?: 0f
+            val longest=if(text!=null)
+                text.text.toString().split('\n').maxOfOrNull {
+                    text.paint.measureText(it)
+                } ?: 0f else 0f
             // Account for REC/STOP, gear, docking, lock and optional close
             // using a conservative cap; text is then bounded by free width.
             val controls=dp(if(recording)218f else 211f)

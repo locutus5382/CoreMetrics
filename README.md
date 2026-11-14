@@ -2,11 +2,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.6.2 unified alpha — one canonical CoreMetrics application ID, four optional finishes, with both debug and R8-optimized test builds.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+**Current development status: v0.9.6.3 unified alpha — focused HUD usability, metadata-save and low-memory STOP stabilization, one canonical application ID, four optional finishes, debug and R8-optimized test builds.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.6.2)
+## One-app Quick Start (v0.9.6.3)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.6.2-unified-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.6.2-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.6.3-unified-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.6.3-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CoreMetrics HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CoreMetrics REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -21,6 +21,15 @@
 
 ---
 
+
+## v0.9.6.3 — HUD and lifecycle stabilization
+
+- **Quiet Frosted Glass drawer:** neutral translucent white-on-slate highlights for enabled measurements, no saturated orange/blue fills, and simple muted text with no tile background when disabled. The REC action remains identifiable by its small status dot.
+- **Adaptable HUD:** telemetry naturally sized instead of a weighted 475dp text slot. Actual overlay width varies with enabled metrics and temporarily expands for drawer controls. Three edge-dock positions (left, right, top) resize the WindowManager window itself; a labeled frosted CM/REC tab replaces the unexplained colored line.
+- **Quick Settings truthfulness:** distinguish user's HUD request, actual overlay attachment, temporary pause while CoreMetrics is on-screen, recording, saving and pending terminal STOP. Click-state refresh follows service command processing. HUD tile never starts a second recording.
+- **Durable explicit STOP:** persist stop_requested before recorder coroutine cancellation; only clear the lease after SQLite terminal status is saved. If Android kills :monitor while finalizing, the original session can be finalized WITHOUT resuming sampling; no new ID allocated.
+- **Session metadata:** inline saving/success/failure feedback and editable, persisted display of Custom graphics driver and resolution tags; keyboard Done triggers save. Invalid values are rejected, not silently converted to NULL with a success message.
+- **Release decision:** the user's Portal v0.9.6.2 data showed multiple Android LOW_MEMORY kills of the independent monitor process but successful same-session REC recovery. v0.9.6.3 improves STOP safety and UI polish; actual LMK behavior, overlay geometry and keyboard focus still require device acceptance.
 
 ## v0.9.6.2 — Packaging, streaming sampler and stability
 
