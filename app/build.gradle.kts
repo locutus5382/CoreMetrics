@@ -10,8 +10,8 @@ android {
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 27
-        versionName = "0.9.6.1-unified-alpha"
+        versionCode = 28
+        versionName = "0.9.6.2-unified-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics REC"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CoreMetrics HUD"
@@ -19,11 +19,19 @@ android {
     // One canonical app; all four finishes are selected at runtime.
     buildTypes {
         release {
-            // R8 is enabled for public/release candidates; the debug build
-            // remains unminified for accurate crash and device investigation.
+            // R8 is enabled for public/release candidates; debug remains
+            // unminified to retain stack traces and instrumentation parity.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
+        create("optimizedTest") {
+            // Identical R8/shrinker settings to release, installable using
+            // Android's debug certificate. Each CI runner may create a
+            // different certificate: never promise cross-run upgrades.
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
     compileOptions {
@@ -40,7 +48,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     testImplementation("junit:junit:4.13.2")

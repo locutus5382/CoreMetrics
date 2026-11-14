@@ -39,13 +39,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Dashboard
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.CompareArrows
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import com.locutus5382.coremetrics.R
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -2305,17 +2300,17 @@ private fun RegimeTimeline(
     }
 }
 
-private fun railIcon(label: String): ImageVector = when (label) {
-    "Live" -> Icons.Rounded.Dashboard
-    "Sessions" -> Icons.Rounded.History
-    "Compare" -> Icons.Rounded.CompareArrows
-    "HUD" -> Icons.Rounded.Tune
-    else -> Icons.Rounded.Settings
+private fun railIcon(label: String): Int = when (label) {
+    "Live" -> R.drawable.ic_nav_live
+    "Sessions" -> R.drawable.ic_nav_sessions
+    "Compare" -> R.drawable.ic_nav_compare
+    "HUD" -> R.drawable.ic_nav_hud
+    else -> R.drawable.ic_nav_settings
 }
 
 @Composable
 private fun CompactRailAction(
-    label:String,icon:ImageVector,selected:Boolean,
+    label:String,icon:Int,selected:Boolean,
     modifier:Modifier=Modifier,onClick:()->Unit
 ) {
     val finish=LocalSurfaceFinish.current
@@ -2335,7 +2330,8 @@ private fun CompactRailAction(
         horizontalAlignment=Alignment.CenterHorizontally,
         verticalArrangement=Arrangement.Center
     ) {
-        Icon(icon,contentDescription=null,modifier=Modifier.size(20.dp),
+        Icon(painter=painterResource(icon),contentDescription=null,
+            modifier=Modifier.size(20.dp),
             tint=if(selected && finish!=SurfaceFinish.SOLAR_PULSE)
                 p.accent else p.foreground)
         Text(label,color=if(selected)p.foreground else p.muted,
