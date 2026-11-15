@@ -34,6 +34,17 @@ class ScorecardModelTest {
         assertTrue(card.footnotes.any{it.contains("does not measure game smoothness")})
     }
 
+    @Test fun pngDoesNotMisrepresentLegacyComparisonScoreAsRecordingIntegrity() {
+        val raw=(0..18).filter{it !in 8..11}.map{p(it)}
+        val bundle=SegmentAnalysis.create(session(),raw,SegmentAnalysis.fullRange(raw)!!)
+        val card=ScorecardModel.single(bundle)
+        val row=card.rows.first { it.label=="Recording continuity" }
+        assertTrue(row.left.contains("PARTIAL"))
+        assertTrue(row.left.contains("1 gap(s)"))
+        assertFalse(card.rows.any{it.label=="Telemetry integrity"})
+        assertTrue(card.badgesAreCaution)
+    }
+
     @Test fun selectedSegmentPngAndTxtShareTheExactSourceWindow() {
         val all=raw()
         val selection=SegmentAnalysis.Range(1_085_000L,1_205_000L)
