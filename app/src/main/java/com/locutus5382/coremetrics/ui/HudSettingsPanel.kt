@@ -1,6 +1,7 @@
 package com.locutus5382.coremetrics.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.locutus5382.coremetrics.monitor.HudOptions
 
 /** Interactive UI only: the user toggles HUD monitoring through the same service. */
@@ -46,8 +48,8 @@ internal fun HudSettingsPanel(
         Text("CM HUD tile shows/hides the HUD without stopping active recording. "+
             "Use only one CoreMetrics variant at a time. "+
             "Start Eden first, open HUD from Quick Settings, then tap REC. Drag the pill to the " +
-            "left, right or top edge to snap into a labeled frosted dock tab. " +
-            "Tap the tab to expand, or use ‹ to dock; ⚙ opens controls. " +
+            "left, right or top edge to snap into a clearly marked CM edge tab. " +
+            "Tap the tab to expand, or use ⇥ to collapse; ⚙ opens controls. " +
             "Standby performs no telemetry sampling.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Row(Modifier.horizontalScroll(rememberScrollState()),
@@ -91,19 +93,6 @@ internal fun HudSettingsPanel(
                 color=solarGold,style=MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick=onGrantPermission){Text("Grant overlay permission")}
         }
-        Row(Modifier.fillMaxWidth().pureGlass(28).padding(12.dp),
-            verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("COREMETRICS  ·  READY",color=Color.White,
-                    style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.Bold)
-                Text("No readings until REC",color=coreSecondary,
-                    style=MaterialTheme.typography.labelSmall)
-            }
-            Box(Modifier.background(solarOrange.copy(alpha=.24f),
-                RoundedCornerShape(50)).padding(horizontal=12.dp,vertical=8.dp)) {
-                Text("● REC",color=solarGold,fontWeight=FontWeight.Bold)
-            }
-        }
         Text("GLASS TRANSPARENCY",color=iceBlue,
             style=MaterialTheme.typography.labelLarge)
         Row(verticalAlignment=Alignment.CenterVertically) {
@@ -132,8 +121,78 @@ internal fun HudSettingsPanel(
                 onClick={onChange(options.copy(layout="pro"))},
                 label={Text("Rounded card · 2 lines")})
         }
+        // A configuration preview, never a live hardware reading. Mirrors the
+        // two-row HUD, label choices and size scaling without any polling.
+        val previewScale=when(options.size) {
+            "small"->.82f
+            "large"->1.20f
+            else->1f
+        }
+        val exampleReadings=buildList {
+            if(options.showCpuTemp)add("CPU T 52.3°C")
+            if(options.showGpuTemp)add("GPU T 44.1°C")
+            if(options.showCpuLoad)add("CPU % 42%")
+            if(options.showGpuLoad)add("GPU % 58%")
+            if(options.showRam)add("RAM 5.9 GiB")
+            if(options.showPower)add("BAT 4.2 W")
+        }
+        val demoText=buildString {
+            if(exampleReadings.isEmpty())append("REC · no metrics selected")
+            exampleReadings.forEachIndexed {index,v ->
+                if(index>0)append(if(exampleReadings.size>2 && index%2==0)
+                    "\\n" else " · ")
+                append(v)
+            }
+        }.replace("\\n","\n")
+        Column(Modifier.fillMaxWidth().pureGlass(25).padding(12.dp),
+            verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("LIVE PREVIEW · ILLUSTRATIVE VALUES, NOT SENSOR READINGS",
+                color=iceBlue,style=MaterialTheme.typography.labelSmall)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
+                Column(Modifier.widthIn(min=210.dp,max=470.dp)
+                    .background(Color(0xFF0A1A36).copy(alpha=opacityDraft),
+                        RoundedCornerShape(if(options.layout=="pro")13.dp else 23.dp))
+                    .border(1.dp,Color(0xB0CEE9FA),
+                        RoundedCornerShape(if(options.layout=="pro")13.dp else 23.dp))
+                    .padding(horizontal=10.dp,vertical=8.dp),
+                    verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp),
+                        verticalAlignment=Alignment.CenterVertically) {
+                        Text(demoText,color=coreText,
+                            fontSize=(12f*previewScale).sp,
+                            lineHeight=(17f*previewScale).sp,
+                            modifier=Modifier.weight(1f))
+                        Box(Modifier.background(Color(0xFF101F36),RoundedCornerShape(8.dp))
+                            .border(2.dp,Color.White,RoundedCornerShape(8.dp))
+                            .padding(horizontal=7.dp,vertical=5.dp)) {
+                            Text("▌ OS OK",fontSize=10.sp,color=Color.White)
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(),
+                        verticalAlignment=Alignment.CenterVertically,
+                        horizontalArrangement=Arrangement.spacedBy(5.dp,Alignment.End)) {
+                        Text("● STOP 05:00",color=solarGold,
+                            fontSize=(11f*previewScale).sp)
+                        Text("⚙",color=coreText,fontSize=16.sp)
+                        Text("⇥",color=coreText,fontSize=16.sp)
+                        Text("LOCK",color=coreSecondary,fontSize=10.sp)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End,
+                verticalAlignment=Alignment.CenterVertically) {
+                Text("Collapsed edge tab  ",color=coreSecondary,
+                    style=MaterialTheme.typography.labelSmall)
+                Box(Modifier.background(Color(0xF012385B),RoundedCornerShape(10.dp))
+                    .border(2.dp,coreCyan,RoundedCornerShape(10.dp))
+                    .padding(horizontal=9.dp,vertical=7.dp)) {
+                    Text("CM\n● REC",color=coreText,fontSize=11.sp,
+                        fontWeight=FontWeight.Bold)
+                }
+            }
+        }
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
-        Text("THERMAL STATUS DOT · WHITE = NORMAL · AMBER = CAUTION · RED = SEVERE · GREY = UNAVAILABLE",
+        Text("OS THERMAL BADGE · WHITE = NONE · AMBER = CAUTION · RED = SEVERE · GREY = UNAVAILABLE",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Text("Visible while recording; Android's device-wide thermal status and sparse headroom forecast, not proof of CPU/GPU throttling. No polling during READY.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
