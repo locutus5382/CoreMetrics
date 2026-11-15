@@ -64,9 +64,10 @@ object ScorecardModel {
             ValueRow("Discharge coverage",
                 formatted(energy.coveragePct,"%",0)+" / "+
                 energy.powerCondition.label),
-            ValueRow("Telemetry integrity",
-                bundle.benchmark.quality.score.toString()+"/100 · "+
-                bundle.benchmark.quality.gapCount.toString()+" gaps"),
+            ValueRow("Recording continuity",
+                (bundle.benchmark.recordingIntegrity?.verdict?.name ?: "INSUFFICIENT")+
+                " · "+formatted(bundle.benchmark.recordingIntegrity?.continuityPct,"%",1)+
+                " · "+(bundle.benchmark.recordingIntegrity?.gaps ?: 0)+" gap(s)"),
             ValueRow("CPU within ±2°C of window P50",
                 bundle.stability.firstOrNull{it.title=="CPU temperature"}
                     ?.percentOfValidTime?.let{formatted(it,"%",0)}
@@ -74,6 +75,7 @@ object ScorecardModel {
         )
         val bad=energy.coveragePct<80.0 ||
             bundle.benchmark.quality.coveragePct<85.0 ||
+            bundle.benchmark.recordingIntegrity?.verdict!=RecordingIntegrityAnalyzer.Verdict.RELIABLE ||
             session.status !in setOf("COMPLETED","IMPORTED_COMPLETED")
         return Card(
             type=Type.SINGLE,title="SINGLE-SESSION DIAGNOSTICS",
