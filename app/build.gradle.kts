@@ -10,11 +10,11 @@ android {
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 35
-        versionName = "0.9.7.2-hud-clarity-alpha"
+        versionCode = 36
+        versionName = "0.9.7.3-interaction-polish-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
-        manifestPlaceholders["coremetricsTileLabel"] = "CoreMetrics REC"
-        manifestPlaceholders["coremetricsHudTileLabel"] = "CoreMetrics HUD"
+        manifestPlaceholders["coremetricsTileLabel"] = "CM REC"
+        manifestPlaceholders["coremetricsHudTileLabel"] = "CM HUD"
     }
     // One canonical app; all four finishes are selected at runtime.
     buildTypes {
