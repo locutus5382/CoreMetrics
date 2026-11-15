@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.7.1 offline analytics alpha — evidence-based A/B observations, improved selected-window recording-integrity cautions, initial GPU thermal and last-minute slope comparison checks, and derived timing-quality statistics. The v0.9.7 recorder, HUD ownership, sample cadence, permissions and SQLite v6 schema are unchanged.** This is a test candidate, not a public release. GitHub CI and real Odin 2 Portal acceptance are required before merging into `main`.
+**Current development status: v0.9.7.2 HUD clarity alpha — a narrower right-aligned two-row HUD, conspicuous collapsed CM/REC dock, labeled OS thermal-status badge, size-responsive HUD Studio preview, and a simpler analysis entry screen. The v0.9.7.1 recorder, sample cadence, permissions, Quick Settings behavior and SQLite v6 schema are unchanged.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.7.1)
+## One-app Quick Start (v0.9.7.2)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.7.1-analytics-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.7.1-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.7.2-hud-clarity-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.7.2-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CoreMetrics HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CoreMetrics REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -19,10 +19,19 @@
 
 **Migration warning:** Older `.v092themes`, `.v093base`, `.v093themes`, `.preview`, and other side-by-side test variants remain distinct Android packages with **separate SQLite session databases**. Installing the unified APK will NOT import their private sessions. Export any valuable CSVs and diagnostic reports from old builds first, then import CSVs into the unified application. Remove old Quick Settings tiles, revoke older variants' overlay grants and uninstall variants only AFTER preserving data. The canonical package `com.locutus5382.coremetrics` retains its own app-private data when updated with a compatible signing key; a different signing key may require uninstall/reinstall and backup first.
 
-**Validation:** See `docs/PORTAL_V0971_ANALYTICS_ACCEPTANCE.md` and `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
+**Validation:** See `docs/PORTAL_V0972_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0971_ANALYTICS_ACCEPTANCE.md` and `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
 
 ---
 
+
+## v0.9.7.2 — Readable in-game HUD and simple-first analytics
+
+- Expanded HUD shows telemetry above a short, right-aligned action row. Moving the HUD still works; its initial position stays near the right edge so touch controls do not sit across the game center.
+- Collapsed HUD uses a larger high-contrast `CM / ● REC` edge tab; OS-wide thermal policy is a labeled `▌ OS` status badge rather than a tiny dot. Neither is a CPU/GPU throttling diagnosis.
+- HUD Studio has an illustrative, size/layout/opacity/metric-responsive preview, explicitly marked **NOT LIVE**. The global `STYLE ↻` shortcut was removed; appearance stays under Settings.
+- Session analysis leads with the basic reading summary and two optional sections: **Adjust interval / export** and **Advanced diagnostics**. When a recording contains multiple observed CPU frequency ceilings, the summary warns that its full-session averages mix configurations.
+- Single-session PNGs display actual **Recording continuity** and gap counts rather than mislabeling the legacy composite comparison-input score as "Telemetry integrity". A partial recording receives a caution badge even when it has final status COMPLETED.
+- Does not alter recording recovery, existing Quick Settings tiles, firmware access, sampling cadence, database schema v6, CSV columns, network/root permissions or report-format v0.9.7. No claim of LMK immunity; see `docs/PORTAL_V0972_HUD_ACCEPTANCE.md`.
 
 ## v0.9.7.1 — Selected-window analytics and evidence guardrails
 
