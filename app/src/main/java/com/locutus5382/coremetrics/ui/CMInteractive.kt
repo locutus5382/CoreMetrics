@@ -1,8 +1,6 @@
 package com.locutus5382.coremetrics.ui
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -40,37 +37,23 @@ internal fun Modifier.cmInteractive(
     val pressed by src.collectIsPressedAsState()
     val focused by src.collectIsFocusedAsState()
     val scale by animateFloatAsState(
-        targetValue=if(pressed).96f else 1f,
-        animationSpec=spring(dampingRatio=Spring.DampingRatioMediumBouncy,
-            stiffness=Spring.StiffnessMedium),label="cmSpringPress")
+        targetValue=if(pressed).985f else 1f,
+        animationSpec=tween(durationMillis=140),label="cmShortPress")
     val shine by animateFloatAsState(
         targetValue=if(pressed||focused)1f else 0f,
-        animationSpec=tween(220),label="cmSpecularGlint")
+        animationSpec=tween(durationMillis=140),label="cmSubtleHighlight")
     this.graphicsLayer{scaleX=scale;scaleY=scale}
         .drawWithContent {
             drawContent()
             if(shine>.01f) {
                 val radius=cornerRadiusDp.dp.toPx()
-                val x=size.width*shine
-                val streak=Brush.linearGradient(
-                    listOf(Color.Transparent,
-                        accent.copy(alpha=.13f*shine),
-                        Color.White.copy(alpha=.22f*shine),
-                        Color.Transparent),
-                    start=Offset(x-size.width*.65f,0f),
-                    end=Offset(x+size.width*.12f,size.height))
-                drawRoundRect(brush=streak,
+                drawRoundRect(
+                    color=Color.White.copy(alpha=.07f*shine),
                     cornerRadius=CornerRadius(radius,radius))
                 drawRoundRect(
-                    brush=Brush.linearGradient(
-                        listOf(Color.Transparent,
-                            accent.copy(alpha=.72f*shine),
-                            Color.White.copy(alpha=.88f*shine),
-                            Color.Transparent),
-                        start=Offset(x-size.width*.62f,0f),
-                        end=Offset(x+size.width*.12f,size.height)),
+                    color=accent.copy(alpha=.16f*shine),
                     cornerRadius=CornerRadius(radius,radius),
-                    style=Stroke(width=1.5.dp.toPx()))
+                    style=Stroke(width=1.dp.toPx()))
             }
         }
         .clickable(interactionSource=src,indication=null,role=Role.Button,

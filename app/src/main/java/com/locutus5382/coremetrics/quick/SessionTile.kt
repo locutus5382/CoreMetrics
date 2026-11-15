@@ -71,17 +71,17 @@ class SessionTile:TileService(){
     private fun refresh(){
         val mode=status()
         val secondary=when(mode){
-            QuickTileStatePolicy.Mode.RECORDING->"Recording · Tap STOP"
+            QuickTileStatePolicy.Mode.RECORDING->"REC · Tap Stop"
             QuickTileStatePolicy.Mode.STARTING->"Starting…"
-            QuickTileStatePolicy.Mode.SAVING->"Saving recording…"
-            QuickTileStatePolicy.Mode.STOP_PENDING->"Finish previous STOP"
-            QuickTileStatePolicy.Mode.RECOVERABLE->"Recover session"
-            QuickTileStatePolicy.Mode.STANDBY->"Ready · Tap REC"
-            QuickTileStatePolicy.Mode.UNKNOWN->"Status unknown · Recover"
-            QuickTileStatePolicy.Mode.IDLE->"Tap to record"
+            QuickTileStatePolicy.Mode.SAVING->"Saving…"
+            QuickTileStatePolicy.Mode.STOP_PENDING->"Finish Stop"
+            QuickTileStatePolicy.Mode.RECOVERABLE->"Recover"
+            QuickTileStatePolicy.Mode.STANDBY->"Ready"
+            QuickTileStatePolicy.Mode.UNKNOWN->"Unknown"
+            QuickTileStatePolicy.Mode.IDLE->"Tap to Rec"
         }
         qsTile?.apply{
-            label="CoreMetrics REC"
+            label="CM REC"
             subtitle=secondary
             contentDescription="CoreMetrics recorder, "+secondary
             stateDescription=secondary
