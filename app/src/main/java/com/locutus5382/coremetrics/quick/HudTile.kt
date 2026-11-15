@@ -87,23 +87,23 @@ class HudTile:TileService(){
     private fun refresh(){
         val current=status()
         val secondary=when(current.mode){
-            QuickTileStatePolicy.Mode.UNKNOWN->"Status unknown · Recover"
-            QuickTileStatePolicy.Mode.RECOVERABLE->"Recover session"
+            QuickTileStatePolicy.Mode.UNKNOWN->"Unknown"
+            QuickTileStatePolicy.Mode.RECOVERABLE->"Recover"
             QuickTileStatePolicy.Mode.STARTING->"Starting…"
-            QuickTileStatePolicy.Mode.SAVING->"Saving recording…"
-            QuickTileStatePolicy.Mode.STOP_PENDING->"Finish previous STOP"
+            QuickTileStatePolicy.Mode.SAVING->"Saving…"
+            QuickTileStatePolicy.Mode.STOP_PENDING->"Finish Stop"
             QuickTileStatePolicy.Mode.RECORDING->when {
-                !current.hudRequested->"REC · HUD off"
-                current.pausedInApp->"REC · Paused in app"
-                !current.hudAttached->"REC · HUD unavailable"
-                current.hudVisible->"REC · HUD visible"
-                else->"REC · HUD hidden"
+                !current.hudRequested->"REC · Off"
+                current.pausedInApp->"REC · Paused"
+                !current.hudAttached->"REC · Unavailable"
+                current.hudVisible->"REC · Visible"
+                else->"REC · Hidden"
             }
             QuickTileStatePolicy.Mode.STANDBY->when {
-                current.pausedInApp->"Ready · Paused in app"
-                !current.hudAttached->"HUD unavailable"
-                current.hudVisible->"Ready · Tap REC"
-                else->"HUD hidden"
+                current.pausedInApp->"Ready · Paused"
+                !current.hudAttached->"Unavailable"
+                current.hudVisible->"Ready"
+                else->"Hidden"
             }
             QuickTileStatePolicy.Mode.IDLE->"Off"
         }
@@ -111,7 +111,7 @@ class HudTile:TileService(){
             current.mode in setOf(QuickTileStatePolicy.Mode.STANDBY,
                 QuickTileStatePolicy.Mode.RECORDING)
         qsTile?.apply{
-            label="CoreMetrics HUD"
+            label="CM HUD"
             subtitle=secondary
             contentDescription="CoreMetrics HUD, "+secondary
             stateDescription=secondary
