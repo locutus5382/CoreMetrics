@@ -94,10 +94,27 @@ internal fun SessionAnalysisStudio(
     }
     val loadedFully=session.count<=source.size
     var showAdvanced by rememberSaveable(session.id) { mutableStateOf(false) }
+    var showWindowTools by rememberSaveable(session.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        // Lead with conclusions, not the export controls or chart configuration.
+        // Lead with a concise summary. Window/export and technical drill-down
+        // stay available but no longer overwhelm the initial analysis view.
         bundle?.let { SessionQuickOverview(it.benchmark,it.points) }
-        Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp),
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick={ showWindowTools=!showWindowTools }) {
+                Text(if(showWindowTools) "Hide interval & exports"
+                    else "Adjust interval / export")
+            }
+            OutlinedButton(onClick={ showAdvanced=!showAdvanced }) {
+                Text(if(showAdvanced) "Hide advanced diagnostics"
+                    else "Advanced diagnostics")
+            }
+        }
+        if(!showWindowTools) Text(
+            "Measured window: "+stamp(draftStart)+"–"+stamp(draftEnd)+
+            " · Raw data unchanged · Open interval controls for PNG/CSV export.",
+            color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+        if(showWindowTools) Column(Modifier.fillMaxWidth().pureGlass(15).padding(12.dp),
             verticalArrangement=Arrangement.spacedBy(9.dp)) {
             Text("SINGLE-SESSION ANALYSIS STUDIO",
                 color=iceBlue,fontWeight=FontWeight.Bold)
@@ -205,10 +222,6 @@ internal fun SessionAnalysisStudio(
         }
         val current=bundle
         if(current!=null) {
-            OutlinedButton(onClick={ showAdvanced=!showAdvanced }) {
-                Text(if(showAdvanced) "Hide advanced analysis"
-                    else "Explore timelines and technical evidence")
-            }
             if(showAdvanced) {
                 Text("ALL METRICS BELOW APPLY TO THE SELECTED WINDOW",
                     color=iceBlue,fontWeight=FontWeight.Bold)
