@@ -61,6 +61,10 @@ internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report,
         RecordingIntegrityAnalyzer.analyze(points,report.session.status)
     }
     val findings = remember(points) { SessionObservationAnalyzer.observations(points) }
+    val observedProfiles=remember(points) {
+        points.mapNotNull {it.observedCpuLimits?.takeIf(String::isNotBlank)}
+            .distinct()
+    }
     Column(Modifier.fillMaxWidth().pureGlass(14).padding(12.dp),
         verticalArrangement=Arrangement.spacedBy(9.dp)) {
         Text("SESSION ${report.session.id} · ${report.session.configuration} · "+
@@ -87,17 +91,19 @@ internal fun SessionQuickOverview(report:BenchmarkAnalyzer.Report,
         Text("Observed continuity: "+num(integrity.continuityPct)+"% · "+
             integrity.gaps+" gaps · "+integrity.sampleCount+" readings",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+        if(observedProfiles.size>1) {
+            Text("CONFIGURATION CHANGED IN THIS RECORDING",
+                color=solarGold,fontWeight=FontWeight.Bold,
+                style=MaterialTheme.typography.bodySmall)
+            Text("Observed CPU frequency ceilings changed during the selected window. "+
+                "Whole-window summaries mix distinct hardware configurations; "+
+                "use the interval selector to inspect phases separately.",
+                color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+        }
         Text("WHAT THE RECORDING SHOWS",color=iceBlue,fontWeight=FontWeight.Bold)
         findings.forEach { finding ->
             Text("• "+finding,color=coreText,style=MaterialTheme.typography.bodySmall)
         }
-        if(integrity.samplerP95Ms!=null) Text(
-            "Collector P95: "+num(integrity.samplerP95Ms,2)+
-            " ms/tick (excludes SQLite/HUD); interval jitter P95: "+
-            num(integrity.p95JitterMs,1)+" ms"+
-            (integrity.p99JitterMs?.let{", P99: "+num(it,1)+" ms"}?:"")+
-            "; >2× target intervals: "+integrity.stepsOver2xTarget,
-            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         Text("Thermal trend: "+
             (report.thermal.slopeCPerMin?.let{
                 String.format(Locale.US,"%+.1f°C/min",it)
