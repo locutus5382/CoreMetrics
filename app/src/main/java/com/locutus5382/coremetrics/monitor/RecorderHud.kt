@@ -246,6 +246,10 @@ internal class RecorderHud(private val context:Context) {
     /** Hide only the UI. Keep the recorder/lease/foreground service alive. */
     fun setVisible(show:Boolean):String {
         val view=root ?:return "HUD_NOT_ATTACHED"
+        if(!show) {
+            view.animate().cancel()
+            view.alpha=1f;view.scaleX=1f;view.scaleY=1f
+        }
         view.visibility=if(show)View.VISIBLE else View.GONE
         unlockWindow?.visibility=if(show)View.VISIBLE else View.GONE
         if(show)applyAppearance()
@@ -1067,6 +1071,9 @@ internal class RecorderHud(private val context:Context) {
     fun hide():String {
         disposed=true
         root?.animate()?.cancel()
+        // Restore default visual properties if Android keeps the WindowManager
+        // owner attached for a later cleanup/rebind attempt.
+        root?.alpha=1f;root?.scaleX=1f;root?.scaleY=1f
         ui.removeCallbacks(blink)
         metricLevels.clear()
 
