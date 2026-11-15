@@ -1183,12 +1183,6 @@ class MainActivity : ComponentActivity() {
                                         style=MaterialTheme.typography.titleLarge,
                                         fontWeight=FontWeight.Bold)
                                 }
-                                CMActionPill("STYLE ↻") {
-                                    val choices=SurfaceFinish.values()
-                                    val next=choices[(finish.ordinal+1)%choices.size]
-                                    finish=next
-                                    prefs.edit().putString("ui_surface_finish",next.key).apply()
-                                }
                                 if(page=="Live") {
                                     CMActionPill(if(status.standby||status.running)"HUD"
                                         else "ARM HUD",primary=true) {
