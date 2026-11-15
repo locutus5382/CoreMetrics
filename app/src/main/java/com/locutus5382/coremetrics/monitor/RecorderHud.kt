@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.animation.DecelerateInterpolator
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -140,6 +141,8 @@ internal class RecorderHud(private val context:Context) {
     private var thermalIndicator:TextView?=null
     private var lastHeadroom:Double?=null
     private var headroomAtElapsedMs:Long=-1L
+    private var lastBadgeLevel:ThermalIndicatorPolicy.Level?=null
+    private var lastGeometry:List<Int>?=null
     private var recText:TextView?=null
     private var recDot:TextView?=null
     private var recControl:LinearLayout?=null
@@ -532,6 +535,7 @@ internal class RecorderHud(private val context:Context) {
                 return "HUD_OWNERSHIP_UNRESOLVED_"+cleaned
         }
         opts=options
+        lastGeometry=null;lastBadgeLevel=null
         onRecord=onRecordClick;onLock=onLockClick
         onUnlock=onUnlockClick;onClose=onDismissClick
         this.onOptionsChanged=onOptionsChanged
@@ -744,6 +748,7 @@ internal class RecorderHud(private val context:Context) {
         collapsed=true
         drawerOpen=false
         applyAppearance()
+        animateDockTransition()
         syncBlink()
     }
     private fun expand() {
@@ -760,6 +765,25 @@ internal class RecorderHud(private val context:Context) {
         p.y=if(dockEdge==DockEdge.TOP)dp(24f) else
             expandedY.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
         root?.let { runCatching{wm.updateViewLayout(it,p)} }
+        animateDockTransition()
+    }
+
+    /**
+     * Exactly one 150ms fade/scale on an explicit dock/expand gesture.
+     * WindowManager geometry, flags and touch ownership change synchronously;
+     * we never animate an entire overlay window's position or poll its state.
+     */
+    private fun animateDockTransition() {
+        val frame=root ?:return
+        if(disposed || !visible() || locked)return
+        frame.animate().cancel()
+        frame.pivotX=if(dockEdge==DockEdge.LEFT)0f else frame.width.toFloat()
+        frame.pivotY=0f
+        frame.alpha=.84f
+        frame.scaleX=.975f;frame.scaleY=.975f
+        frame.animate().alpha(1f).scaleX(1f).scaleY(1f)
+            .setDuration(150L)
+            .setInterpolator(DecelerateInterpolator()).start()
     }
 
     /** Keep one overlay window. Docking MUST change WindowManager dimensions
@@ -805,7 +829,13 @@ internal class RecorderHud(private val context:Context) {
                 else p.x.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
             p.y=p.y.coerceIn(0,(windowHeight()-dp(54f)).coerceAtLeast(0))
         }
-        if(attached())runCatching{wm.updateViewLayout(frame,p)}
+        if(attached()) {
+            val geometry=listOf(p.x,p.y,p.width,p.height)
+            if(geometry!=lastGeometry) {
+                runCatching { wm.updateViewLayout(frame,p) }
+                    .onSuccess { lastGeometry=geometry }
+            }
+        }
     }
 
     private fun changeOptions(updated:HudOptions) {
@@ -926,20 +956,24 @@ internal class RecorderHud(private val context:Context) {
         }
         thermalIndicator?.apply {
             visibility=if(recording)View.VISIBLE else View.GONE
-            text=when(level) {
-                ThermalIndicatorPolicy.Level.NORMAL -> "▌ OS OK"
-                ThermalIndicatorPolicy.Level.WARNING -> "▌ OS !"
-                ThermalIndicatorPolicy.Level.SEVERE -> "▌ OS !!"
-                ThermalIndicatorPolicy.Level.UNKNOWN -> "▌ OS ?"
+            // Rebuild the badge only on a STATE transition, not each 2/5s sample.
+            if(lastBadgeLevel!=level) {
+                text=when(level) {
+                    ThermalIndicatorPolicy.Level.NORMAL -> "▌ OS NONE"
+                    ThermalIndicatorPolicy.Level.WARNING -> "▌ OS !"
+                    ThermalIndicatorPolicy.Level.SEVERE -> "▌ OS !!"
+                    ThermalIndicatorPolicy.Level.UNKNOWN -> "▌ OS ?"
+                }
+                setTextColor(color)
+                background=GradientDrawable().apply {
+                    cornerRadius=dp(11f).toFloat()
+                    setColor(Color.argb(222,7,23,43))
+                    setStroke(dp(2f).coerceAtLeast(2),color)
+                }
+                contentDescription="Device-wide OS thermal status: "+
+                    ThermalIndicatorPolicy.description(level)
+                lastBadgeLevel=level
             }
-            setTextColor(color)
-            background=GradientDrawable().apply {
-                cornerRadius=dp(11f).toFloat()
-                setColor(Color.argb(222,7,23,43))
-                setStroke(dp(2f).coerceAtLeast(2),color)
-            }
-            contentDescription="Device-wide OS thermal status: "+
-                ThermalIndicatorPolicy.description(level)
         }
         (dockVisual as? TextView)?.setTextColor(Color.rgb(135,231,255))
     }
@@ -1032,6 +1066,7 @@ internal class RecorderHud(private val context:Context) {
 
     fun hide():String {
         disposed=true
+        root?.animate()?.cancel()
         ui.removeCallbacks(blink)
         metricLevels.clear()
 
@@ -1054,6 +1089,7 @@ internal class RecorderHud(private val context:Context) {
             opacityLabel=null;drawerRecControl=null
             latest=null;thermal.reset();thermalValue=null
             recording=false;locked=false;collapsed=false
+            lastGeometry=null;lastBadgeLevel=null
         }
         if(rootRemoved && chipRemoved){
             unbindCallbacks()
