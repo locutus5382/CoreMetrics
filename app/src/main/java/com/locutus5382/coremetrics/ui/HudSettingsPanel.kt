@@ -189,7 +189,7 @@ internal fun HudSettingsPanel(
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
         Text("OS WARNING ACCENT · AMBER = CAUTION · RED = SEVERE",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
-        Text("Visible while recording; Android's device-wide thermal status and sparse headroom forecast, not proof of CPU/GPU throttling. No polling during READY.",
+        Text("Normal or unavailable Android thermal signals do not occupy HUD space. A narrow amber/red accent appears only for a reported OS thermal warning, never for CPU temperature alone. No polling during READY.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Text("VISIBLE TELEMETRY",color=iceBlue,
             style=MaterialTheme.typography.labelLarge)
