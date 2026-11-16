@@ -43,10 +43,11 @@ internal class GpuTelemetryProbe(
         fun load(raw:String?,type:String):Int? {
             val data=raw?.trim()?:return null
             if(type=="KGSL_BUSY_RATIO") {
-                val values=data.split(Regex("""\s+"""))
-                    .mapNotNull{it.toLongOrNull()}
-                if(values.size<2 || values[1]<=0L ||
-                    values[0]<0L || values[0]>values[1])return null
+                val parts=data.split(Regex("""\s+"""))
+                if(parts.size!=2)return null
+                val values=parts.map{it.toLongOrNull() ?:return null}
+                if(values[1]<=0L || values[0]<0L ||
+                    values[0]>values[1])return null
                 return (values[0].toDouble()/values[1]*100.0)
                     .roundToInt().takeIf{it in 0..100}
             }
