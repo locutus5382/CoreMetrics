@@ -46,6 +46,16 @@ class SessionIntelligenceTest {
         assertTrue(event.detail.contains("unverified"))
     }
 
+    @Test fun idleBusiestCoreChangesAreNotCredibleSchedulingPatterns() {
+        val low=(0..40).map{i->
+            point(i*5_000L,core=if(i<20)"cpu7" else "cpu3",
+                busy=5.0)
+        }
+        assertFalse(SessionIntelligence.analyze(low).events.any{
+            it.kind==SessionIntelligence.Kind.CORE_ACTIVITY_SHIFT
+        })
+    }
+
     @Test fun sustainedGpuSaturationNeedsTwoMinutesAndValidCoverage() {
         val continuous=(0..30).map{i->point(i*5_000L,gpu=96.0)}
         val event=SessionIntelligence.analyze(continuous).events.firstOrNull{
