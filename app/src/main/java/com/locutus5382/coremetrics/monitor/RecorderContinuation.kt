@@ -9,10 +9,19 @@ package com.locutus5382.coremetrics.monitor
  * decisions or keep recording during the process downtime.
  */
 internal object RecorderContinuation {
-    fun sticky(action:String?,active:Boolean,stopping:Boolean):Boolean =
-        active && !stopping &&
+    fun sticky(action:String?,active:Boolean,stopping:Boolean,
+        nonRecoverableStandby:Boolean=false):Boolean =
+        active && !stopping && !nonRecoverableStandby &&
             action!=RecordingService.STOP &&
             action!=RecordingService.DISARM
+
+    /**
+     * An explicitly armed READY HUD may be restored once after LMK.
+     * A system-restored standby does not request another automatic restart.
+     * A fresh, explicit user ARM may start a new one-shot lease.
+     */
+    fun standbyAutoRecoverable(recovered:Boolean,requested:Boolean):Boolean =
+        requested && !recovered
 
     /** An explicitly armed READY HUD may be restored after LMK. A READY HUD
      * reached through STOP is not silently resurrected after process death.
