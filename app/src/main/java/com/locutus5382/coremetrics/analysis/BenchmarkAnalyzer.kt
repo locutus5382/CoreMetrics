@@ -164,7 +164,7 @@ object BenchmarkAnalyzer {
             .distinct()
         val labels=capGroups.map{SessionRegimeAnalyzer.label(it)}
         val observed=if(labels.isEmpty())"unavailable" else labels.joinToString(" | ")
-        val conflict=V08Analytics.profileConflict(session.configuration,labels)
+        val conflict=V08Analytics.profileConflict(session.configuration,capGroups)
         val reasons=mutableListOf<String>()
         var score=100
         if(session.status !in setOf("COMPLETED","IMPORTED_COMPLETED")) {
