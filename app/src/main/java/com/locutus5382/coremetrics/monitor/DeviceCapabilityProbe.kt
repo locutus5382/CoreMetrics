@@ -1,6 +1,10 @@
 package com.locutus5382.coremetrics.monitor
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
+import android.os.Build
 import android.os.PowerManager
 import java.io.File
 import java.text.SimpleDateFormat
@@ -40,7 +44,10 @@ internal object DeviceCapabilityProbe {
     }
 
     fun report(context:Context):String=buildString {
-        appendLine("Odin/Android read-only capability probe")
+        appendLine("Android read-only device capability probe")
+        appendLine("Hardware model: "+Build.MANUFACTURER+" / "+Build.MODEL+
+            " · Android API "+Build.VERSION.SDK_INT)
+        appendLine("Device model is context, not confirmation of specific kernel limits")
         appendLine("Timestamp: "+
             SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z",Locale.US).format(Date())+
             " (at report export; NOT at prior process exit or during gameplay)")
@@ -60,6 +67,36 @@ internal object DeviceCapabilityProbe {
                 "unavailable (unsupported/NaN)"
             else->headroom.toString()+" (normalized proximity to thermal limit)"
         })
+        // Battery counters can support future cumulative-energy sanity checks,
+        // but access/readability alone does NOT validate counter update cadence.
+        val battery=context.getSystemService(BatteryManager::class.java)
+        val batteryIntent=runCatching {
+            context.registerReceiver(null,
+                IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        }.getOrNull()
+        val voltage=batteryIntent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE,-1)
+            ?.takeIf{it in 2500..6000}
+        appendLine("Battery broadcast voltage: "+
+            (voltage?.let{it.toString()+" mV"}?:"unavailable")+
+            " (broadcast update age not guaranteed)")
+        for((title,prop,unit) in listOf(
+            Triple("Current now",BatteryManager.BATTERY_PROPERTY_CURRENT_NOW,"uA"),
+            Triple("Charge counter",BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER,"uAh"),
+            Triple("Energy counter",BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER,"nWh")
+        )) {
+            val v=runCatching {battery?.getLongProperty(prop)}.getOrNull()
+                ?.takeUnless{it==Long.MIN_VALUE || it==Int.MIN_VALUE.toLong()}
+            appendLine("Battery "+title+": "+
+                (v?.let{it.toString()+" "+unit} ?: "unavailable")+
+                " (one-shot value, NOT battery-terminal W or game energy)")
+        }
+        for(path in listOf("/sys/class/power_supply/battery/current_now",
+            "/sys/class/power_supply/battery/voltage_now")) {
+            val source=readBounded(path,128)
+            appendLine("Battery sysfs "+path.substringAfterLast('/')+": "+
+                (source.data?.trim()?.take(64)?:source.reason)+
+                " (raw kernel units; vendor validation required)")
+        }
         val meminfo=readBounded("/proc/meminfo",8192)
         val swap=meminfo.data?.let{SystemCapabilityParser.swapFieldsKiB(it)}
         appendLine("proc/meminfo: "+meminfo.reason)
@@ -86,20 +123,25 @@ internal object DeviceCapabilityProbe {
             appendLine("GPU frequency source "+label+": "+
                 (raw ?: source.reason)+" (raw kernel units; no scaling claim)")
         }
-        val policy7="/sys/devices/system/cpu/cpufreq/policy7/stats/time_in_state"
-        val cpu=readBounded(policy7,4096)
-        appendLine("CPU policy7 time_in_state: "+cpu.reason)
-        val residence=cpu.data?.let{SystemCapabilityParser.residency(it)}
-        if(residence==null) {
-            appendLine("CPU policy7 residency data: unavailable or invalid")
-        }else{
-            appendLine("CPU policy7 freq states: "+residence.states+
-                " (min/max ${residence.minKHz}/${residence.maxKHz} kHz)")
-            appendLine("CPU policy7 cumulative residency ticks: "+
-                residence.cumulativeTicks+" (since kernel counter origin, NOT % load)")
+        val root=File("/sys/devices/system/cpu/cpufreq")
+        val names=SystemCapabilityParser.cpuPolicyNames(
+            root.listFiles()?.map{it.name}.orEmpty())
+        appendLine("CPU frequency policies discovered: "+
+            names.ifEmpty{listOf("unavailable")}.joinToString(", "))
+        for(name in names) {
+            val source=readBounded(File(root,"$name/stats/time_in_state").path,4096)
+            val residence=source.data?.let{SystemCapabilityParser.residency(it)}
+            if(residence==null)
+                appendLine("CPU $name residency: "+source.reason+" / not validated")
+            else {
+                appendLine("CPU $name states: "+residence.states+
+                    " (min/max ${residence.minKHz}/${residence.maxKHz} kHz)")
+                appendLine("CPU $name cumulative ticks: "+residence.cumulativeTicks+
+                    " (NOT thread affinity, per-game performance or throttling proof)")
+            }
         }
         appendLine("This report is a one-shot capability snapshot, not a saved gameplay sample. " +
-            "v0.9.7 records supported thermal, swap and PSI signals only during REC; " +
+            "v0.9.8.3 records supported thermal, swap and PSI signals only during REC; " +
             "actual values still require Odin ROM validation.")
     }
 }
