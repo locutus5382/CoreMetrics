@@ -70,7 +70,7 @@ object SessionIntelligence {
         for(i in 6 until points.size-5) {
             if(i-lastShift<6)continue
             val window=points.subList(i-6,i+6)
-            if(window.zipWithNext().any{a,b->b.timeMs-a.timeMs>gapLimit})continue
+            if(window.zipWithNext().any{(a,b)->b.timeMs-a.timeMs>gapLimit})continue
             fun winner(half:List<SessionStore.Point>):String? {
                 val valid=half.mapNotNull{core(it.busiestCore)}
                 if(valid.size<5)return null
@@ -144,7 +144,7 @@ object SessionIntelligence {
                 while(j<points.size && points[j].timeMs-first<120_000L)j++
                 if(j>=points.size || points[j].timeMs-first>120_000L+cadence)continue
                 val slice=points.subList(i,j+1)
-                if(slice.zipWithNext().any{a,b->
+                if(slice.zipWithNext().any{(a,b)->
                     b.timeMs-a.timeMs>max(6_000L,cadence*3L/2L)})continue
                 val expected=max(2,(120_000L/cadence).toInt())
                 if(slice.size<expected*9/10)continue
