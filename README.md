@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.7.3 interaction-polish alpha — restrained 140 ms pressed feedback across existing four app themes, a one-shot 150 ms dock/expand HUD transition, skipped redundant WindowManager geometry updates, cached OS badge drawables, and shorter Quick Settings tile labels. All v0.9.7.2 HUD layouts/themes, the recorder lifecycle, sample cadence, permissions, and SQLite v6 schema are preserved.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.7.4 stability-efficiency alpha — bounded one-shot standby recovery after Android process death, full collector/SQLite/HUD/tick timing diagnostics, backoff for inaccessible read-only thermal/PSI probes, lightweight HUD drag/geometry changes, and nonblocking cosmetic settings saves. Active REC/STOP restoration, HUD themes, 2s/5s cadence, permissions, SQLite v6 and CSV format are unchanged.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.7.3)
+## One-app Quick Start (v0.9.7.4)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.7.3-interaction-polish-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.7.3-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.7.4-stability-efficiency-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.7.4-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -19,10 +19,19 @@
 
 **Migration warning:** Older `.v092themes`, `.v093base`, `.v093themes`, `.preview`, and other side-by-side test variants remain distinct Android packages with **separate SQLite session databases**. Installing the unified APK will NOT import their private sessions. Export any valuable CSVs and diagnostic reports from old builds first, then import CSVs into the unified application. Remove old Quick Settings tiles, revoke older variants' overlay grants and uninstall variants only AFTER preserving data. The canonical package `com.locutus5382.coremetrics` retains its own app-private data when updated with a compatible signing key; a different signing key may require uninstall/reinstall and backup first.
 
-**Validation:** See `docs/PORTAL_V0973_INTERACTION_ACCEPTANCE.md`, `docs/PORTAL_V0972_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0971_ANALYTICS_ACCEPTANCE.md` and `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
+**Validation:** See `docs/PORTAL_V0974_STABILITY_ACCEPTANCE.md`, `docs/PORTAL_V0973_INTERACTION_ACCEPTANCE.md`, `docs/PORTAL_V0972_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0971_ANALYTICS_ACCEPTANCE.md` and `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
 
 ---
 
+
+## v0.9.7.4 — Bounded standby recovery and observable recorder overhead
+
+- After an Android-killed user-armed standby is restored, the new standby is **not automatically restartable again**; a fresh explicit ARM enables another one-shot recovery. This prevents a chain of standby LMK restart requests while preserving existing active REC and terminal STOP reconciliation. Android OEMs may still decline the first restart.
+- Recording samples are still inserted immediately in SQLite. At most 256 recent ticks are summarized in a **single** `RECORDER_TIMING` lifecycle event when recording finishes: collector, SQLite, HUD dispatch, full tick and scheduling lateness P95. These are elapsed durations, not CPU usage or extra CSV fields.
+- Optional Android headroom and PSI reads retry with backoff after repeated unsupported/failed responses, and resume normal sampling if valid data returns. PSI 0% remains a valid reading; skipped probes stay null. The existing 10-second headroom minimum interval is preserved.
+- One-shot capability diagnostics now inspect multiple raw GPU-frequency sysfs sources, not a privileged probe or proof of frequency scaling.
+- HUD geometry cache uses primitive fields; drag updates are coalesced to one WindowManager layout request per display frame and flushed on gesture end. Cosmetic HUD preferences use `apply()`, but recorder lease and STOP intent retain synchronous `commit()`.
+- No UI theme/layout additions, FPS claims, new storage schema or unverified savings claims. See `docs/PORTAL_V0974_STABILITY_ACCEPTANCE.md`.
 
 ## v0.9.7.2 — Readable in-game HUD and simple-first analytics
 
