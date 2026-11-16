@@ -17,8 +17,13 @@ class DirectSampler(private val app: Application) {
     private val batteryPower = BatteryPowerReader(app)
     private val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
     private val powerManager = app.getSystemService(PowerManager::class.java)
-    private var lastHeadroomQueryMs = -1L
-    private var memoryPsiAvailable: Boolean? = null
+    // Optional sources never become permanently blacklisted after denial
+    // or NaN. Recheck at a bounded cadence without repeating binder/sysfs work.
+    private val headroomSchedule = ReadOnlyProbeSchedule(10_000L,120_000L)
+    private val memoryPsiSchedule = ReadOnlyProbeSchedule(5_000L,60_000L)
+    private val gpuFrequencyPaths = arrayOf(
+        "/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq",
+        "/sys/class/kgsl/kgsl-3d0/gpuclk")
     private val policyName = Regex("""policy\d+""")
     private val coreName = Regex("""cpu\d+""")
     private val whitespace = Regex("""\s+""")
@@ -101,8 +106,7 @@ class DirectSampler(private val app: Application) {
     }
 
     private fun gpuClock(): Double? {
-        for (path in listOf("/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq",
-            "/sys/class/kgsl/kgsl-3d0/gpuclk")) {
+        for (path in gpuFrequencyPaths) {
             val value = read(path)?.toLongOrNull()?.takeIf { it > 0 } ?: continue
             return if (value > 2_000_000) value / 1e6 else value / 1000.0
         }
@@ -162,25 +166,24 @@ class DirectSampler(private val app: Application) {
         val memory = runCatching {
             ProcTelemetryReader.memorySnapshot(File("/proc/meminfo").reader())
         }.getOrNull()
-        if (memoryPsiAvailable == null) memoryPsiAvailable = runCatching {
-            File("/proc/pressure/memory").reader().use {
-                ProcTelemetryReader.memoryPsiSomeAvg10(it) != null
-            }
-        }.getOrDefault(false)
-        val memoryPsi = if (memoryPsiAvailable == true) runCatching {
-            File("/proc/pressure/memory").reader().use {
-                ProcTelemetryReader.memoryPsiSomeAvg10(it)
-            }
-        }.getOrNull() else null
+        val memoryPsi = if (memoryPsiSchedule.due(sampledElapsedMs)) {
+            val reading = runCatching {
+                File("/proc/pressure/memory").reader().use {
+                    ProcTelemetryReader.memoryPsiSomeAvg10(it)
+                }
+            }.getOrNull()
+            memoryPsiSchedule.mark(sampledElapsedMs,reading!=null)
+            reading
+        } else null
         // Headroom is a 10-second forecast, measured no more than once per
         // 10 seconds. Intermediate samples remain NULL, not duplicated values.
         val osThermalStatus = runCatching { powerManager?.currentThermalStatus }
             .getOrNull()?.takeIf { it in 0..6 }
-        val headroom = if (lastHeadroomQueryMs < 0L ||
-            sampledElapsedMs - lastHeadroomQueryMs >= 10_000L) {
-            lastHeadroomQueryMs = sampledElapsedMs
-            runCatching { powerManager?.getThermalHeadroom(10) }
+        val headroom = if (headroomSchedule.due(sampledElapsedMs)) {
+            val reading = runCatching { powerManager?.getThermalHeadroom(10) }
                 .getOrNull()?.toDouble()?.takeIf { it.isFinite() && it >= 0.0 }
+            headroomSchedule.mark(sampledElapsedMs,reading!=null)
+            reading
         } else null
         // One sticky broadcast fetch per sample. Both temperature/percentage
         // and electrical-power status interpret precisely the SAME snapshot.
