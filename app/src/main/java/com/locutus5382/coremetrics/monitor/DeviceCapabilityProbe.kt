@@ -73,6 +73,19 @@ internal object DeviceCapabilityProbe {
         val psiLines=psi.data?.let{SystemCapabilityParser.psiLines(it)}.orEmpty()
         if(psiLines.isEmpty())appendLine("Memory PSI: unavailable")
         else psiLines.forEach{appendLine("Memory PSI: "+it)}
+        // Compare vendor GPU clock sources once, explicitly on diagnostic
+        // request. A readable but constant 401 MHz value is not validated as
+        // true frequency scaling merely because sysfs returns a number.
+        for((label,path) in listOf(
+            "devfreq cur_freq" to "/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq",
+            "kgsl gpuclk" to "/sys/class/kgsl/kgsl-3d0/gpuclk",
+            "devfreq max_freq" to "/sys/class/kgsl/kgsl-3d0/devfreq/max_freq"
+        )) {
+            val source=readBounded(path,128)
+            val raw=source.data?.trim()?.take(64)
+            appendLine("GPU frequency source "+label+": "+
+                (raw ?: source.reason)+" (raw kernel units; no scaling claim)")
+        }
         val policy7="/sys/devices/system/cpu/cpufreq/policy7/stats/time_in_state"
         val cpu=readBounded(policy7,4096)
         appendLine("CPU policy7 time_in_state: "+cpu.reason)

@@ -71,6 +71,8 @@ class RecordingService:Service() {
     private var destroying=false
     private var armed=false
     private var disarmAfterStop=false
+    // A restored READY HUD is intentionally non-sticky; REC remains sticky.
+    private var standbyRecoveryEligible=false
     private var appInForeground=false
     private var userWantsHud=true
     private var settings=HudOptions()
@@ -113,7 +115,11 @@ class RecordingService:Service() {
     private fun continuation(action:String?):Int {
         val active=armed || MonitorState.standby || MonitorState.running ||
             MonitorState.starting || task?.isActive==true
-        return if(RecorderContinuation.sticky(action,active,stopping))
+        val nonRecoverableStandby=MonitorState.standby &&
+            !MonitorState.running && !MonitorState.starting &&
+            !standbyRecoveryEligible
+        return if(RecorderContinuation.sticky(action,active,stopping,
+                nonRecoverableStandby))
             START_STICKY else START_NOT_STICKY
     }
     /** Temporary in-app pause is independent of the user's HUD hide choice.
@@ -154,6 +160,7 @@ class RecordingService:Service() {
     }
     private fun disarmNow(){
         armed=false
+        standbyRecoveryEligible=false
         MonitorState.standby=false
         val removal=hud.hide()
         RecorderJournal.event(this,"HUD_REMOVE",removal+" "+hud.windowIdentity())
@@ -182,8 +189,12 @@ class RecordingService:Service() {
     private fun standby(recovered:Boolean=false,recoverable:Boolean=true){
         MonitorState.clear("HUD ready · tap REC in game")
         MonitorState.standby=true
+        standbyRecoveryEligible=RecorderContinuation.standbyAutoRecoverable(
+            recovered,recoverable)
         val persisted=RecorderLease.standby(this,armedLabel,armedConfig,
-            armedInterval,recovered,recoverable)
+            armedInterval,recovered,standbyRecoveryEligible)
+        if(recovered)RecorderJournal.event(this,"STANDBY_RECOVERED_ONCE",
+            "no further automatic standby restarts until explicit ARM")
         if(!persisted)RecorderJournal.event(this,"STANDBY_LEASE_WRITE_FAILED",
             "standby remains active until process exit; no guaranteed recovery")
         hud.mode(false)
@@ -361,7 +372,7 @@ class RecordingService:Service() {
                 else hud.mode(true,MonitorState.startedAt)
                 RecorderJournal.event(this,"ARMED_NO_SAMPLING")
                 refreshTile()
-                return START_STICKY
+                return continuation(command.action)
             }
             APP_FOREGROUND, APP_BACKGROUND -> {
                 // The Activity sends these ONLY while recording/standby is
@@ -569,6 +580,7 @@ class RecordingService:Service() {
                 }
                 refreshTile()
                 task=scope.launch {
+                    val timings=RecorderTimingStats()
                     var id=0L
                     var outcome="INTERRUPTED"
                     try{
@@ -616,16 +628,27 @@ class RecordingService:Service() {
                         var next=SystemClock.elapsedRealtime()
                         var lastNotice=0L
                         while(isActive && !stopping){
+                            val tickStartNanos=SystemClock.elapsedRealtimeNanos()
+                            val startLateMs=(SystemClock.elapsedRealtime()-next)
+                                .coerceAtLeast(0L).toDouble()
                             val s=withContext(Dispatchers.IO){
                                 sampler.sample(detector.current(System.currentTimeMillis()))
                             }
+                            val collectedNanos=SystemClock.elapsedRealtimeNanos()
                             withContext(Dispatchers.IO){db.add(id,s)}
+                            val writtenNanos=SystemClock.elapsedRealtimeNanos()
                             MonitorState.latest=s
                             MonitorState.sampleCount++
-                            if(armed && hud.visible())withContext(Dispatchers.Main.immediate){
-                                runCatching{hud.update(s,MonitorState.sampleCount)}
-                                    .onFailure{RecorderJournal.event(this@RecordingService,
-                                        "HUD_UPDATE_ERROR",it.javaClass.simpleName)}
+                            var hudEndNanos=writtenNanos
+                            var updatedHud=false
+                            if(armed && hud.visible()) {
+                                updatedHud=true
+                                withContext(Dispatchers.Main.immediate){
+                                    runCatching{hud.update(s,MonitorState.sampleCount)}
+                                        .onFailure{RecorderJournal.event(this@RecordingService,
+                                            "HUD_UPDATE_ERROR",it.javaClass.simpleName)}
+                                }
+                                hudEndNanos=SystemClock.elapsedRealtimeNanos()
                             }
                             if(MonitorState.sampleCount==1L)RecorderJournal.event(
                                 this@RecordingService,"FIRST_SAMPLE_WRITTEN","id="+id)
@@ -640,6 +663,15 @@ class RecordingService:Service() {
                                     notification("● REC · "+MonitorState.sampleCount+
                                         " samples",label+" · "+config,false))
                             }
+                            // Total elapsed tick includes notifications and
+                            // periodic lease heartbeat as well as sensor/DB/HUD.
+                            // The fixed-size ring adds NO per-sample disk write.
+                            timings.record(
+                                collectorMs=(collectedNanos-tickStartNanos)/1e6,
+                                databaseMs=(writtenNanos-collectedNanos)/1e6,
+                                hudMs=if(updatedHud)(hudEndNanos-writtenNanos)/1e6 else null,
+                                totalMs=(SystemClock.elapsedRealtimeNanos()-tickStartNanos)/1e6,
+                                startLateMs=startLateMs)
                             next+=interval
                             val delayMs=next-SystemClock.elapsedRealtime()
                             if(delayMs>0L)delay(delayMs)else next=SystemClock.elapsedRealtime()
@@ -653,6 +685,9 @@ class RecordingService:Service() {
                             e.javaClass.simpleName+":"+(e.message?:""))
                     }finally{
                         withContext(NonCancellable){
+                            if(timings.count>0L)RecorderJournal.event(
+                                this@RecordingService,"RECORDER_TIMING",
+                                "id="+id+" "+timings.report())
                             // Finish the persisted row BEFORE removing its
                             // recovery lease. An LMK in this narrow window
                             // must not strand a RECORDING row without any

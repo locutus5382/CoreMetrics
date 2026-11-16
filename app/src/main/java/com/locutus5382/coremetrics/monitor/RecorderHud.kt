@@ -101,9 +101,13 @@ internal data class HudOptions(
             )) putExtra("hud_"+k,v)
         }
     }
-    fun save(context:Context):Boolean {
+    /** Cosmetic HUD options are not transaction/lease data.
+     * Avoid a synchronous disk fsync on the app or overlay main thread.
+     * Intent extras carry the new settings immediately across processes.
+     */
+    fun save(context:Context) {
         val p=context.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
-        return p.edit().putFloat(OPACITY,opacity)
+        p.edit().putFloat(OPACITY,opacity)
             .putString(SIZE,size).putString(LAYOUT,layout)
             .putString(INDICATOR,indicatorColor).putBoolean(BLINK,blink)
             .putBoolean("hud_cpuTemp",showCpuTemp)
@@ -114,7 +118,7 @@ internal data class HudOptions(
             .putBoolean("hud_power",showPower)
             .putBoolean("hud_fps",showFps)
             .putBoolean("hud_sparkline",false)
-            .putBoolean(ADAPTIVE,adaptiveColors).commit()
+            .putBoolean(ADAPTIVE,adaptiveColors).apply()
     }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
         showGpuLoad,showRam,showPower).count { it }
@@ -142,7 +146,22 @@ internal class RecorderHud(private val context:Context) {
     private var lastHeadroom:Double?=null
     private var headroomAtElapsedMs:Long=-1L
     private var lastBadgeLevel:ThermalIndicatorPolicy.Level?=null
-    private var lastGeometry:List<Int>?=null
+    // No four-element list allocation on every 2s/5s telemetry update.
+    private var appliedX=Int.MIN_VALUE
+    private var appliedY=Int.MIN_VALUE
+    private var appliedWidth=Int.MIN_VALUE
+    private var appliedHeight=Int.MIN_VALUE
+    private fun invalidateLayoutCache() {
+        appliedX=Int.MIN_VALUE;appliedY=Int.MIN_VALUE
+        appliedWidth=Int.MIN_VALUE;appliedHeight=Int.MIN_VALUE
+    }
+    private fun markLayoutApplied(p:WindowManager.LayoutParams) {
+        appliedX=p.x;appliedY=p.y
+        appliedWidth=p.width;appliedHeight=p.height
+    }
+    private fun layoutChanged(p:WindowManager.LayoutParams):Boolean =
+        p.x!=appliedX || p.y!=appliedY ||
+            p.width!=appliedWidth || p.height!=appliedHeight
     private var recText:TextView?=null
     private var recDot:TextView?=null
     private var recControl:LinearLayout?=null
@@ -539,7 +558,7 @@ internal class RecorderHud(private val context:Context) {
                 return "HUD_OWNERSHIP_UNRESOLVED_"+cleaned
         }
         opts=options
-        lastGeometry=null;lastBadgeLevel=null
+        invalidateLayoutCache();lastBadgeLevel=null
         onRecord=onRecordClick;onLock=onLockClick
         onUnlock=onUnlockClick;onClose=onDismissClick
         this.onOptionsChanged=onOptionsChanged
@@ -675,6 +694,15 @@ internal class RecorderHud(private val context:Context) {
         params=p
         var downX=0f;var downY=0f;var baseX=0;var baseY=0
         var moved=false
+        // Coalesce high-frequency drag MOVE events to one WM layout per
+        // display frame. No periodic callback while the user is not dragging.
+        var dragLayoutPending=false
+        val dragLayout=Runnable {
+            dragLayoutPending=false
+            if(root===frame && attached())runCatching {
+                wm.updateViewLayout(frame,p)
+            }.onSuccess { markLayoutApplied(p) }
+        }
         label.setOnTouchListener { _,e ->
             when(e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -693,10 +721,17 @@ internal class RecorderHud(private val context:Context) {
                     if(moved) anchoredRight=false
                     p.y=(baseY+deltaY.roundToInt())
                         .coerceIn(0,(windowHeight()-frame.height).coerceAtLeast(0))
-                    runCatching{wm.updateViewLayout(frame,p)}
+                    if(!dragLayoutPending) {
+                        dragLayoutPending=true
+                        frame.postOnAnimation(dragLayout)
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
+                    if(dragLayoutPending) {
+                        frame.removeCallbacks(dragLayout)
+                        dragLayout.run()
+                    }
                     if(moved) {
                         val closeTop=p.y<=dp(22f)
                         val closeLeft=p.x<=dp(18f)
@@ -709,7 +744,13 @@ internal class RecorderHud(private val context:Context) {
                     }
                     true
                 }
-                MotionEvent.ACTION_CANCEL -> true
+                MotionEvent.ACTION_CANCEL -> {
+                    if(dragLayoutPending) {
+                        frame.removeCallbacks(dragLayout)
+                        dragLayout.run()
+                    }
+                    true
+                }
                 else -> false
             }
         }
@@ -834,10 +875,9 @@ internal class RecorderHud(private val context:Context) {
             p.y=p.y.coerceIn(0,(windowHeight()-dp(54f)).coerceAtLeast(0))
         }
         if(attached()) {
-            val geometry=listOf(p.x,p.y,p.width,p.height)
-            if(geometry!=lastGeometry) {
+            if(layoutChanged(p)) {
                 runCatching { wm.updateViewLayout(frame,p) }
-                    .onSuccess { lastGeometry=geometry }
+                    .onSuccess { markLayoutApplied(p) }
             }
         }
     }
@@ -1096,7 +1136,7 @@ internal class RecorderHud(private val context:Context) {
             opacityLabel=null;drawerRecControl=null
             latest=null;thermal.reset();thermalValue=null
             recording=false;locked=false;collapsed=false
-            lastGeometry=null;lastBadgeLevel=null
+            invalidateLayoutCache();lastBadgeLevel=null
         }
         if(rootRemoved && chipRemoved){
             unbindCallbacks()
