@@ -142,10 +142,12 @@ internal class RecorderHud(private val context:Context) {
     private var dockTab:LinearLayout?=null
     private var dockVisual:View?=null
     private var mainText:TextView?=null
-    private var thermalIndicator:TextView?=null
+    private var thermalIndicator:View?=null
+    private var lockedSpace:View?=null
     private var lastHeadroom:Double?=null
     private var headroomAtElapsedMs:Long=-1L
     private var lastBadgeLevel:ThermalIndicatorPolicy.Level?=null
+    private var lastDockRecording:Boolean?=null
     // No four-element list allocation on every 2s/5s telemetry update.
     private var appliedX=Int.MIN_VALUE
     private var appliedY=Int.MIN_VALUE
@@ -201,7 +203,7 @@ internal class RecorderHud(private val context:Context) {
     private var disposed=false
 
     private fun shouldBlink() =
-        !disposed && recording && opts.blink && !collapsed && visible()
+        !disposed && recording && opts.blink && !collapsed && !locked && visible()
 
     private val blink=object:Runnable {
         override fun run() {
@@ -281,11 +283,11 @@ internal class RecorderHud(private val context:Context) {
      */
     private fun makeUnlockHandle(): Pair<TextView,WindowManager.LayoutParams> {
         val main=params ?:error("HUD_NO_PARAMS")
-        val icon=lockControl
-        val oldX=(main.x+(pill?.left?:0)+(controlsRow?.left?:0)+
-            (icon?.left?:dp(210f)))-dp(6f)
-        val oldY=main.y+(pill?.top?:0)+(controlsRow?.top?:0)+
-            (icon?.top?:0)-dp(5f)
+        // Stable anchor: the external unlock target sits over the rightmost
+        // 48dp reserved inside the *locked* compact telemetry card. We cannot
+        // anchor to a GONE action row because it has no meaningful coordinates.
+        val oldX=main.x+main.width-dp(48f)
+        val oldY=main.y+((root?.height?:dp(60f))-dp(48f))/2
         val handle=styledLabel("",11f).apply {
             gravity=Gravity.CENTER
             background=FlatLockChipDrawable(locked=true)
@@ -342,6 +344,7 @@ internal class RecorderHud(private val context:Context) {
                 // saved choices. The separate unlock chip stays touchable.
                 drawerOpen=false
                 applyAppearance()
+                syncBlink()
                 return "HUD_LOCKED_WITH_TOUCHABLE_UNLOCK"
             }catch(e:Exception){
                 // Restore both interaction and visual state if *either*
@@ -370,6 +373,7 @@ internal class RecorderHud(private val context:Context) {
             val chipGone=unlockWindow?.let{removeTracked(it)}?:true
             if(chipGone){unlockWindow=null;unlockParams=null}
             applyAppearance()
+            syncBlink()
             if(chipGone)"HUD_UNLOCKED_TOUCH_CONTROLS_RESTORED"
             else "HUD_UNLOCK_CHIP_REMOVE_FAILED_RETAINED"
         }catch(e:Exception){
@@ -558,7 +562,7 @@ internal class RecorderHud(private val context:Context) {
                 return "HUD_OWNERSHIP_UNRESOLVED_"+cleaned
         }
         opts=options
-        invalidateLayoutCache();lastBadgeLevel=null
+        invalidateLayoutCache();lastBadgeLevel=null;lastDockRecording=null
         onRecord=onRecordClick;onLock=onLockClick
         onUnlock=onUnlockClick;onClose=onDismissClick
         this.onOptionsChanged=onOptionsChanged
@@ -570,48 +574,48 @@ internal class RecorderHud(private val context:Context) {
         opacityLabel=null;drawerRecControl=null
         // Two compact rows: device readings above, actions along the outer
         // right edge below. Controls no longer sit in the middle of gameplay.
+        // One horizontal card: the telemetry sits beside a narrow, two-level
+        // action cluster. The bottom-left dead area of the old HUD is gone.
         val line=LinearLayout(context).apply {
-            orientation=LinearLayout.VERTICAL
-            gravity=Gravity.END
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER_VERTICAL
         }
         val readings=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
         }
         line.addView(readings,LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT))
+            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
         val actions=LinearLayout(context).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.END or Gravity.CENTER_VERTICAL
+            orientation=LinearLayout.VERTICAL
+            gravity=Gravity.CENTER
         }
         line.addView(actions,LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin=dp(3f)
-            })
-        controlsRow=actions
-        val label=styledLabel("",12f).apply {
-            setPadding(dp(7f),dp(4f),dp(8f),dp(4f))
-        }
-        mainText=label
-        // Natural-width telemetry: no weight-induced empty strip between
-        // metrics and REC/settings/lock actions. Window width is recalculated
-        // from the actual displayed lines and capped to the viewport.
-        readings.addView(label,LinearLayout.LayoutParams(
-            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
-        // A clearly labeled OS thermal-policy badge, not an invisible 12sp
-        // dot and never an attribution of CPU/GPU throttling.
-        thermalIndicator=styledLabel("▌ OS ?",10f).apply {
-            gravity=Gravity.CENTER
-            minWidth=dp(57f)
-            minHeight=dp(26f)
-            setPadding(dp(5f),dp(3f),dp(5f),dp(3f))
-            contentDescription="Android thermal policy unavailable"
-        }
-        readings.addView(thermalIndicator,LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT))
+        controlsRow=actions
+        val label=styledLabel("",12f).apply {
+            setPadding(dp(6f),dp(5f),dp(4f),dp(5f))
+        }
+        mainText=label
+        readings.addView(label,LinearLayout.LayoutParams(
+            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
+        // A dedicated, 48dp placeholder lets the independent unlock chip
+        // overlay the locked HUD without leaving a touch-blocking main window.
+        lockedSpace=View(context).apply { visibility=View.GONE }
+        readings.addView(lockedSpace,LinearLayout.LayoutParams(dp(48f),dp(48f)))
+        // Optional Android OS warning only. Normal (NONE) and unavailable
+        // signals occupy ZERO room; CPU temperature remains a numeric metric.
+        thermalIndicator=View(context).apply {
+            visibility=View.GONE
+            contentDescription="Device-wide Android thermal warning"
+            background=GradientDrawable().apply {
+                cornerRadius=dp(2f).toFloat()
+                setColor(Color.rgb(255,199,0))
+            }
+        }
+        readings.addView(thermalIndicator,0,LinearLayout.LayoutParams(
+            dp(4f),dp(48f)).apply { marginEnd=dp(2f) })
         val rec=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -624,23 +628,41 @@ internal class RecorderHud(private val context:Context) {
         recText=styledLabel("REC",11f)
         rec.addView(recDot);rec.addView(recText)
         recControl=rec
-        actions.addView(rec)
-        drawerControl=action("⚙"){drawerOpen=!drawerOpen;applyAppearance()}
-        actions.addView(drawerControl)
-        minimizeControl=action("⇥"){dock(nearestDockEdge())}.apply {
-            contentDescription="Collapse HUD to visible edge tab; tap tab to restore"
+        val topActions=LinearLayout(context).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER
         }
-        actions.addView(minimizeControl)
+        topActions.addView(rec)
+        actions.addView(topActions,LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,dp(33f)))
+        val bottomActions=LinearLayout(context).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        minimizeControl=action("⇥"){dock(nearestDockEdge())}.apply {
+            contentDescription="Collapse HUD to visible edge tab; tap tab to expand"
+            minWidth=dp(39f)
+            minHeight=dp(34f)
+        }
+        bottomActions.addView(minimizeControl)
         lockControl=action(""){onLock?.invoke()}.apply {
             background=FlatLockChipDrawable(locked=false)
             setPadding(0,0,0,0)
             minimumWidth=dp(38f)
             minimumHeight=dp(38f)
-            contentDescription="Lock HUD: let touches pass through to the game"
+            contentDescription="Lock HUD: allow game touches through telemetry"
         }
-        actions.addView(lockControl)
-        closeControl=action("×"){onClose?.invoke()}
-        actions.addView(closeControl)
+        bottomActions.addView(lockControl)
+        closeControl=action("×"){onClose?.invoke()}.apply {
+            minWidth=dp(36f)
+            minHeight=dp(34f)
+            contentDescription="Close standby HUD"
+        }
+        bottomActions.addView(closeControl)
+        actions.addView(bottomActions)
+        // HUD metric customization is in the app's HUD Studio. Do not
+        // allocate or expose the former in-game settings tray.
+        drawerControl=null
         pill=line
 
         val tab=LinearLayout(context).apply {
@@ -670,7 +692,6 @@ internal class RecorderHud(private val context:Context) {
         val frame=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
             addView(line)
-            addView(newDrawer().also{drawer=it})
             addView(tab)
         }
         root=frame
@@ -733,14 +754,15 @@ internal class RecorderHud(private val context:Context) {
                         dragLayout.run()
                     }
                     if(moved) {
-                        val closeTop=p.y<=dp(22f)
-                        val closeLeft=p.x<=dp(18f)
-                        val closeRight=p.x+p.width>=windowWidth()-dp(18f)
-                        when {
-                            closeTop->dock(DockEdge.TOP)
-                            closeLeft->dock(DockEdge.LEFT)
-                            closeRight->dock(DockEdge.RIGHT)
-                        }
+                        // Approaching a screen border PARKS the expanded HUD,
+                        // it does not collapse it. Explicit ⇥ remains available.
+                        val parked=HudDockGeometry.park(
+                            windowWidth(),windowHeight(),p.width,frame.height,
+                            p.x,p.y,margin=dp(4f),snapDistance=dp(16f))
+                        p.x=parked.x;p.y=parked.y
+                        anchoredRight=parked.anchoredRight
+                        expandedX=p.x;expandedY=p.y
+                        dragLayout.run()
                     }
                     true
                 }
@@ -780,7 +802,10 @@ internal class RecorderHud(private val context:Context) {
 
     private fun nearestDockEdge():DockEdge {
         val p=params ?:return DockEdge.RIGHT
-        if(p.y<=dp(35f))return DockEdge.TOP
+        // Horizontal edge tabs are available deliberately by using ⇥ while
+        // parked near the top; simply dragging to a corner never collapses.
+        if(p.y<=dp(22f) && p.x>dp(50f) &&
+            p.x+p.width<windowWidth()-dp(50f))return DockEdge.TOP
         return if(p.x+p.width/2<windowWidth()/2)DockEdge.LEFT else DockEdge.RIGHT
     }
     private fun dock(edge:DockEdge) {
@@ -803,13 +828,13 @@ internal class RecorderHud(private val context:Context) {
         anchoredRight=dockEdge==DockEdge.RIGHT
         applyAppearance()
         p.x=when(dockEdge) {
-            DockEdge.RIGHT -> (windowWidth()-p.width-dp(10f)).coerceAtLeast(0)
-            DockEdge.LEFT -> dp(10f)
+            DockEdge.RIGHT -> (windowWidth()-p.width-dp(4f)).coerceAtLeast(0)
+            DockEdge.LEFT -> dp(4f)
             DockEdge.TOP -> expandedX.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
         }
-        p.y=if(dockEdge==DockEdge.TOP)dp(24f) else
-            expandedY.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
-        root?.let { runCatching{wm.updateViewLayout(it,p)} }
+        p.y=expandedY.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
+        root?.let { runCatching{wm.updateViewLayout(it,p)}
+            .onSuccess { markLayoutApplied(p) } }
         animateDockTransition()
     }
 
@@ -843,11 +868,10 @@ internal class RecorderHud(private val context:Context) {
             val tab=dockTab
             tab?.layoutParams=LinearLayout.LayoutParams(w,h)
             (dockVisual as? TextView)?.apply {
-                text=if(top) (if(recording)"CM  ● REC" else "CM  READY")
-                    else (if(recording)"CM\n● REC" else "CM\nREADY")
                 layoutParams=LinearLayout.LayoutParams(
                     dp(if(top)108f else 56f),dp(if(top)44f else 82f))
             }
+            renderDockState()
             p.width=w
             p.height=h
             val positioned=HudDockGeometry.place(dockEdge,
@@ -861,23 +885,32 @@ internal class RecorderHud(private val context:Context) {
                 text.text.toString().split('\n').maxOfOrNull {
                     text.paint.measureText(it)
                 } ?: 0f else 0f
-            // Readings and actions occupy separate rows. The expanded HUD
-            // is only as wide as the longer row, not their combined widths.
-            val viewport=(windowWidth()-dp(20f)).coerceAtLeast(dp(220f))
-            val minimum=dp(if(drawerOpen)425f else 250f).coerceAtMost(viewport)
-            val natural=maxOf(longest.roundToInt()+dp(92f),
-                dp(if(recording)258f else 273f))
-            p.width=(natural+dp(12f)).coerceIn(minimum,viewport)
-            text?.maxWidth=(p.width-dp(90f)).coerceAtLeast(dp(80f))
+            // Compact side-by-side layout; reserve measured telemetry width
+            // plus only the actual right-side controls or unlock target.
+            val viewport=(windowWidth()-dp(8f)).coerceAtLeast(dp(220f))
+            val controlWidth=if(locked)dp(58f) else dp(126f)
+            val minimum=dp(if(locked)200f else 300f).coerceAtMost(viewport)
+            // One compact horizontal row. When locked, the only space on the
+            // right is the separate touchable 48dp unlock handle.
+            val natural=longest.roundToInt()+controlWidth
+            p.width=natural.coerceIn(minimum,viewport)
+            text?.maxWidth=(p.width-controlWidth).coerceAtLeast(dp(85f))
             p.x=if(anchoredRight)
-                (windowWidth()-p.width-dp(10f)).coerceAtLeast(0)
+                (windowWidth()-p.width-dp(4f)).coerceAtLeast(0)
                 else p.x.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
-            p.y=p.y.coerceIn(0,(windowHeight()-dp(54f)).coerceAtLeast(0))
+            p.y=p.y.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
         }
         if(attached()) {
             if(layoutChanged(p)) {
                 runCatching { wm.updateViewLayout(frame,p) }
-                    .onSuccess { markLayoutApplied(p) }
+                    .onSuccess {
+                        markLayoutApplied(p)
+                        // A locked card can change width as numbers grow.
+                        // Keep the separately touchable unlock chip aligned.
+                        if(locked)frame.post {
+                            if(root===frame && locked)repositionUnlockControl()
+                        }
+                    }
             }
         }
     }
@@ -898,12 +931,9 @@ internal class RecorderHud(private val context:Context) {
         val chip=unlockWindow ?:return
         val cp=unlockParams ?:return
         val p=params ?:return
-        val icon=lockControl ?:return
-        cp.x=(p.x+(pill?.left?:0)+(controlsRow?.left?:0)+
-            icon.left-dp(6f))
+        cp.x=(p.x+p.width-dp(48f))
             .coerceIn(0,(windowWidth()-dp(48f)).coerceAtLeast(0))
-        cp.y=(p.y+(pill?.top?:0)+(controlsRow?.top?:0)+
-            icon.top-dp(5f))
+        cp.y=(p.y+((root?.height?:dp(60f))-dp(48f))/2)
             .coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
         runCatching {wm.updateViewLayout(chip,cp)}
     }
@@ -912,14 +942,14 @@ internal class RecorderHud(private val context:Context) {
         val frame=root ?:return
         frame.background=if(collapsed) null else rounded(
             opts.opacity*(if(locked) .90f else 1f))
-        frame.setPadding(if(collapsed)0 else dp(6f),
-            if(collapsed)0 else dp(4f),
-            if(collapsed)0 else dp(6f),
-            if(collapsed)0 else dp(4f))
+        frame.setPadding(if(collapsed)0 else dp(5f),
+            if(collapsed)0 else dp(3f),
+            if(collapsed)0 else dp(5f),
+            if(collapsed)0 else dp(3f))
         pill?.visibility=if(collapsed)View.GONE else View.VISIBLE
         dockTab?.visibility=if(collapsed)View.VISIBLE else View.GONE
         drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
-        refreshDrawerControls()
+        if(drawer!=null)refreshDrawerControls()
         val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
         mainText?.textSize=12f*scale
         // All enabled metrics stay visible in short lines, with REC, gear,
@@ -933,7 +963,9 @@ internal class RecorderHud(private val context:Context) {
         // same vector linework, without an OS-dependent emoji glyph.
         // Retain the icon's layout width so the separate unlock chip is exactly
         // where the user expects it, but it cannot receive main-window touches.
-        lockControl?.visibility=if(locked)View.INVISIBLE else View.VISIBLE
+        controlsRow?.visibility=if(locked)View.GONE else View.VISIBLE
+        lockedSpace?.visibility=if(locked)View.VISIBLE else View.GONE
+        lockControl?.visibility=if(locked)View.GONE else View.VISIBLE
         closeControl?.visibility=if(recording)View.GONE else View.VISIBLE
         refreshThermalIndicator()
         renderTelemetry()
@@ -965,6 +997,7 @@ internal class RecorderHud(private val context:Context) {
         syncBlink()
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun update(s:Snapshot,count:Long) {
         if(!recording || !attached())return
         latest=s
@@ -980,8 +1013,11 @@ internal class RecorderHud(private val context:Context) {
         // Rendering consumes only the recorder's current sample; never polls
         // hardware at an independent cadence.
         if(visible()) {
-            renderTelemetry()
-            if(!collapsed)updateGeometry()
+            if(collapsed)renderDockState()
+            else {
+                renderTelemetry()
+                updateGeometry()
+            }
         }
     }
 
@@ -992,34 +1028,30 @@ internal class RecorderHud(private val context:Context) {
             now-headroomAtElapsedMs in 0L..25_000L) lastHeadroom else null
         val level=if(recording)ThermalIndicatorPolicy.level(
             s?.thermalStatus,freshHeadroom) else ThermalIndicatorPolicy.Level.UNKNOWN
-        val color=when(level) {
-            ThermalIndicatorPolicy.Level.NORMAL -> Color.rgb(241,249,255)
-            ThermalIndicatorPolicy.Level.WARNING -> Color.rgb(255,199,0)
-            ThermalIndicatorPolicy.Level.SEVERE -> Color.rgb(255,94,104)
-            ThermalIndicatorPolicy.Level.UNKNOWN -> Color.rgb(137,151,165)
-        }
+        // OS NONE cannot establish absence of real throttling. The Odin ROM
+        // has reported NONE with no useful headroom; do not waste 60dp on an
+        // always-on badge. Only actual policy pressure gets a colored bar.
+        val alert=recording && ThermalIndicatorPolicy.showHudAlert(level)
         thermalIndicator?.apply {
-            visibility=if(recording)View.VISIBLE else View.GONE
-            // Rebuild the badge only on a STATE transition, not each 2/5s sample.
+            visibility=if(alert)View.VISIBLE else View.GONE
             if(lastBadgeLevel!=level) {
-                text=when(level) {
-                    ThermalIndicatorPolicy.Level.NORMAL -> "▌ OS NONE"
-                    ThermalIndicatorPolicy.Level.WARNING -> "▌ OS !"
-                    ThermalIndicatorPolicy.Level.SEVERE -> "▌ OS !!"
-                    ThermalIndicatorPolicy.Level.UNKNOWN -> "▌ OS ?"
-                }
-                setTextColor(color)
                 background=GradientDrawable().apply {
-                    cornerRadius=dp(11f).toFloat()
-                    setColor(Color.argb(222,7,23,43))
-                    setStroke(dp(2f).coerceAtLeast(2),color)
+                    cornerRadius=dp(2f).toFloat()
+                    setColor(if(level==ThermalIndicatorPolicy.Level.SEVERE)
+                        Color.rgb(255,94,104) else Color.rgb(255,199,0))
                 }
-                contentDescription="Device-wide OS thermal status: "+
+                contentDescription="Android OS-wide warning: "+
                     ThermalIndicatorPolicy.description(level)
                 lastBadgeLevel=level
             }
         }
-        (dockVisual as? TextView)?.setTextColor(Color.rgb(135,231,255))
+        // This is an OS alert, not a CPU-temperature-derived throttle gauge.
+        val description=if(alert)
+            "Android device thermal alert. "+ThermalIndicatorPolicy.description(level)
+            else "CoreMetrics device telemetry"
+        mainText?.let { if(it.contentDescription!=description) {
+            it.contentDescription=description
+        } }
     }
 
     private fun severityColor(level:HudSeverity.Level):Int=when(level){
@@ -1099,7 +1131,39 @@ internal class RecorderHud(private val context:Context) {
         view.text=builder
     }
 
+    private fun renderDockState() {
+        if(!collapsed)return
+        val badge=dockVisual as? TextView ?:return
+        val time=if(recording) {
+            val elapsed=((System.currentTimeMillis()-startedAtMs)/1000)
+                .coerceAtLeast(0)
+            String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60)
+        } else ""
+        val top=dockEdge==DockEdge.TOP
+        val label=when {
+            !recording -> if(top)"CM · READY" else "CM\nREADY"
+            top -> "● REC · $time"
+            else -> "● R\n$time"
+        }
+        if(badge.text.toString()!=label)badge.text=label
+        if(lastDockRecording!=recording) {
+            val stroke=if(recording)Color.rgb(255,104,112)
+                else Color.rgb(76,211,243)
+            badge.setTextColor(if(recording)Color.rgb(255,175,180)
+                else Color.rgb(135,231,255))
+            (badge.background as? GradientDrawable)?.setStroke(
+                dp(2f).coerceAtLeast(2),stroke)
+            badge.contentDescription=if(recording)
+                "CoreMetrics recording, elapsed "+time+", tap to expand HUD"
+                else "CoreMetrics standby, tap to expand HUD"
+            lastDockRecording=recording
+        }else if(recording) {
+            badge.contentDescription="CoreMetrics recording, elapsed "+
+                time+", tap to expand HUD"
+        }
+    }
     private fun renderAction() {
+        renderDockState()
         recDot?.text=if(recording && opts.blink && !blinkOn)"○ " else "● "
         recDot?.setTextColor(accent())
         val elapsed=((System.currentTimeMillis()-startedAtMs)/1000).coerceAtLeast(0)
@@ -1136,7 +1200,7 @@ internal class RecorderHud(private val context:Context) {
             opacityLabel=null;drawerRecControl=null
             latest=null;thermal.reset();thermalValue=null
             recording=false;locked=false;collapsed=false
-            invalidateLayoutCache();lastBadgeLevel=null
+            invalidateLayoutCache();lastBadgeLevel=null;lastDockRecording=null
         }
         if(rootRemoved && chipRemoved){
             unbindCallbacks()

@@ -101,7 +101,7 @@ class DirectSampler(private val app: Application) {
                 val khz = read(policy.path + "/scaling_cur_freq")?.toLongOrNull()
                     ?.takeIf { it in 1..10_000_000 } ?: return@mapNotNull null
                 policy.name + " " + String.format(java.util.Locale.US, "%.2f GHz", khz / 1e6)
-            }?.toList().orEmpty()
+            }.toList()
         return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
     }
 

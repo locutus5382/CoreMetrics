@@ -20,6 +20,10 @@ internal object ThermalIndicatorPolicy {
         return Level.NORMAL
     }
 
+    /** Normal/NONE and unknown states do not occupy HUD space. */
+    fun showHudAlert(level:Level):Boolean =
+        level==Level.WARNING || level==Level.SEVERE
+
     fun description(level: Level): String = when(level) {
         Level.UNKNOWN -> "Android device thermal signal unavailable"
         Level.NORMAL -> "No reported Android thermal alert (not proof of no throttling)"

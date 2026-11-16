@@ -21,6 +21,17 @@ class Phase2TelemetryTest {
         assertEquals(ThermalIndicatorPolicy.Level.UNKNOWN, policy.level(-1,Double.NaN))
     }
 
+    @Test fun normalOrUnknownOsStatusNeverOccupiesHudSpace() {
+        assertFalse(ThermalIndicatorPolicy.showHudAlert(
+            ThermalIndicatorPolicy.Level.NORMAL))
+        assertFalse(ThermalIndicatorPolicy.showHudAlert(
+            ThermalIndicatorPolicy.Level.UNKNOWN))
+        assertTrue(ThermalIndicatorPolicy.showHudAlert(
+            ThermalIndicatorPolicy.Level.WARNING))
+        assertTrue(ThermalIndicatorPolicy.showHudAlert(
+            ThermalIndicatorPolicy.Level.SEVERE))
+    }
+
     @Test fun meminfoParsesRamAndSwapInOnePass() {
         val text = """SwapFree:  1024 kB
 MemAvailable: 2097152 kB

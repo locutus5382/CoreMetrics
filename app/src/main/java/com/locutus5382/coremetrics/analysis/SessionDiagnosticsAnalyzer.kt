@@ -137,10 +137,15 @@ object SessionDiagnosticsAnalyzer {
                 continue
             }
             window.addLast(p.timeMs to v)
-            while (window.isNotEmpty() && p.timeMs - window.peekFirst().first > 60_000L)
+            while (true) {
+                val oldest=window.peekFirst() ?:break
+                if (p.timeMs-oldest.first<=60_000L)break
                 window.removeFirst()
-            val span = if (window.isEmpty()) 0L
-                else window.peekLast().first - window.peekFirst().first
+            }
+            val earliest=window.peekFirst()
+            val latest=window.peekLast()
+            val span=if(earliest==null || latest==null)0L
+                else latest.first-earliest.first
             val rolling = if (window.size >= 4 && span >= 20_000L)
                 quantile(window.map { it.second }, 0.5) else null
             readings.add(Reading(p.timeMs,v,rolling,segment))

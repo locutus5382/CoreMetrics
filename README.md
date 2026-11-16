@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.7.4 stability-efficiency alpha — bounded one-shot standby recovery after Android process death, full collector/SQLite/HUD/tick timing diagnostics, backoff for inaccessible read-only thermal/PSI probes, lightweight HUD drag/geometry changes, and nonblocking cosmetic settings saves. Active REC/STOP restoration, HUD themes, 2s/5s cadence, permissions, SQLite v6 and CSV format are unchanged.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.7.5 compact-HUD alpha — a tighter horizontal telemetry pill, compact locked state with retained independent 48dp unlock target, deliberate edge collapse with 4dp corner parking, recording-red collapsed edge tab with elapsed time, and no persistent OS NONE badge. Includes a small null-safety cleanup and new pure geometry tests; v0.9.7.4 recorder reliability, timings, sensor backoff, SQLite v6 and CSV format are unchanged.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.7.4)
+## One-app Quick Start (v0.9.7.5)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.7.4-stability-efficiency-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.7.4-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.7.5-compact-hud-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.7.5-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -19,10 +19,19 @@
 
 **Migration warning:** Older `.v092themes`, `.v093base`, `.v093themes`, `.preview`, and other side-by-side test variants remain distinct Android packages with **separate SQLite session databases**. Installing the unified APK will NOT import their private sessions. Export any valuable CSVs and diagnostic reports from old builds first, then import CSVs into the unified application. Remove old Quick Settings tiles, revoke older variants' overlay grants and uninstall variants only AFTER preserving data. The canonical package `com.locutus5382.coremetrics` retains its own app-private data when updated with a compatible signing key; a different signing key may require uninstall/reinstall and backup first.
 
-**Validation:** See `docs/PORTAL_V0974_STABILITY_ACCEPTANCE.md`, `docs/PORTAL_V0973_INTERACTION_ACCEPTANCE.md`, `docs/PORTAL_V0972_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0971_ANALYTICS_ACCEPTANCE.md` and `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
+**Validation:** See `docs/PORTAL_V0975_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0974_STABILITY_ACCEPTANCE.md`, `docs/PORTAL_V0973_INTERACTION_ACCEPTANCE.md`, `docs/PORTAL_V0972_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0971_ANALYTICS_ACCEPTANCE.md` and `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
 
 ---
 
+
+## v0.9.7.5 — Compact HUD, explicit corner parking, clear REC state
+
+- Uses one side-by-side pill: 3-line metrics on the left and a small two-level STOP/REC, collapse and lock control cluster on the right, without the previous dead bottom-left region. In-game metric/opacity editing is moved to the existing HUD Studio; there is no permanently visible settings gear.
+- Locking removes the action cluster and reserves only the independently touchable 48dp unlock target over the now-compact, otherwise touch-through telemetry card. Retains Android 12+ touch safety and tracked WindowManager ownership.
+- Dragging into a corner **parks** the expanded HUD about 4dp from the screen edge. It never collapses merely because a border was touched. `⇥` is the intentional collapse control; tapping the edge tab expands. Pure parking geometry is covered by JVM tests.
+- Collapsed REC has a red outline, a visible `● R` and elapsed time updated only when an existing REC sample arrives. READY has a cyan `CM / READY` tab. No perpetual animation or extra polling loop.
+- Drops the permanently displayed `OS NONE` badge. Normal/unavailable Android thermal status gets no separate HUD indicator; only actual Android OS warnings show a thin amber/red left accent. Absolute CPU temperature does **not** define a throttling threshold.
+- HUD Studio preview/copy matches the revised controls and no longer implies OS status NONE guarantees thermal safety. CSV, analysis engine, lifecycle, permissions and sampling cadence are not changed.
 
 ## v0.9.7.4 — Bounded standby recovery and observable recorder overhead
 

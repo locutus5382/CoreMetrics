@@ -10,8 +10,8 @@ android {
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 37
-        versionName = "0.9.7.4-stability-efficiency-alpha"
+        versionCode = 38
+        versionName = "0.9.7.5-compact-hud-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CM REC"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM HUD"

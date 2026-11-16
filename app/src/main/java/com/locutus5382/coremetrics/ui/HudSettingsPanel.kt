@@ -47,9 +47,10 @@ internal fun HudSettingsPanel(
             style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
         Text("CM HUD tile shows/hides the HUD without stopping active recording. "+
             "Use only one CoreMetrics variant at a time. "+
-            "Start Eden first, open HUD from Quick Settings, then tap REC. Drag the pill to the " +
-            "left, right or top edge to snap into a clearly marked CM edge tab. " +
-            "Tap the tab to expand, or use ⇥ to collapse; ⚙ opens controls. " +
+            "Start Eden first, open HUD from Quick Settings, then tap REC. " +
+            "Drag the expanded HUD to a screen corner to park it. " +
+            "Tap ⇥ to collapse deliberately; tap the tab to expand. " +
+            "Configure the HUD metrics and appearance here, not during gameplay. " +
             "Standby performs no telemetry sampling.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Row(Modifier.horizontalScroll(rememberScrollState()),
@@ -119,10 +120,10 @@ internal fun HudSettingsPanel(
                 label={Text("Compact pill")})
             FilterChip(selected=options.layout=="pro",
                 onClick={onChange(options.copy(layout="pro"))},
-                label={Text("Rounded card · 2 lines")})
+                label={Text("Rounded card")})
         }
-        // A configuration preview, never a live hardware reading. Mirrors the
-        // two-row HUD, label choices and size scaling without any polling.
+        // Static illustrative preview for the horizontal HUD and compact lock state.
+        // There is no additional hardware sampling.
         val previewScale=when(options.size) {
             "small"->.82f
             "large"->1.20f
@@ -149,33 +150,27 @@ internal fun HudSettingsPanel(
             Text("LIVE PREVIEW · ILLUSTRATIVE VALUES, NOT SENSOR READINGS",
                 color=iceBlue,style=MaterialTheme.typography.labelSmall)
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
-                Column(Modifier.widthIn(min=210.dp,max=470.dp)
+                Row(Modifier.widthIn(min=245.dp,max=455.dp)
                     .background(Color(0xFF0A1A36).copy(alpha=opacityDraft),
                         RoundedCornerShape(if(options.layout=="pro")13.dp else 23.dp))
                     .border(1.dp,Color(0xB0CEE9FA),
                         RoundedCornerShape(if(options.layout=="pro")13.dp else 23.dp))
-                    .padding(horizontal=10.dp,vertical=8.dp),
-                    verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp),
-                        verticalAlignment=Alignment.CenterVertically) {
-                        Text(demoText,color=coreText,
-                            fontSize=(12f*previewScale).sp,
-                            lineHeight=(17f*previewScale).sp,
-                            modifier=Modifier.weight(1f))
-                        Box(Modifier.background(Color(0xFF101F36),RoundedCornerShape(8.dp))
-                            .border(2.dp,Color.White,RoundedCornerShape(8.dp))
-                            .padding(horizontal=7.dp,vertical=5.dp)) {
-                            Text("▌ OS OK",fontSize=10.sp,color=Color.White)
+                    .padding(horizontal=9.dp,vertical=7.dp),
+                    verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Text(demoText,color=coreText,
+                        fontSize=(12f*previewScale).sp,
+                        lineHeight=(17f*previewScale).sp,
+                        modifier=Modifier.weight(1f))
+                    if(locked) {
+                        Text("LOCK",fontSize=11.sp,color=solarGold)
+                    } else {
+                        Column(horizontalAlignment=Alignment.End,
+                            verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                            Text("● STOP 05:00",color=solarGold,
+                                fontSize=(11f*previewScale).sp)
+                            Text("⇥   LOCK",color=coreText,fontSize=11.sp)
                         }
-                    }
-                    Row(Modifier.fillMaxWidth(),
-                        verticalAlignment=Alignment.CenterVertically,
-                        horizontalArrangement=Arrangement.spacedBy(5.dp,Alignment.End)) {
-                        Text("● STOP 05:00",color=solarGold,
-                            fontSize=(11f*previewScale).sp)
-                        Text("⚙",color=coreText,fontSize=16.sp)
-                        Text("⇥",color=coreText,fontSize=16.sp)
-                        Text("LOCK",color=coreSecondary,fontSize=10.sp)
                     }
                 }
             }
@@ -184,17 +179,17 @@ internal fun HudSettingsPanel(
                 Text("Collapsed edge tab  ",color=coreSecondary,
                     style=MaterialTheme.typography.labelSmall)
                 Box(Modifier.background(Color(0xF012385B),RoundedCornerShape(10.dp))
-                    .border(2.dp,coreCyan,RoundedCornerShape(10.dp))
+                    .border(2.dp,Color(0xFFFF6870),RoundedCornerShape(10.dp))
                     .padding(horizontal=9.dp,vertical=7.dp)) {
-                    Text("CM\n● REC",color=coreText,fontSize=11.sp,
+                    Text("● R\n05:00",color=Color(0xFFFFAFB4),fontSize=11.sp,
                         fontWeight=FontWeight.Bold)
                 }
             }
         }
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
-        Text("OS THERMAL BADGE · WHITE = NONE · AMBER = CAUTION · RED = SEVERE · GREY = UNAVAILABLE",
+        Text("OS WARNING ACCENT · AMBER = CAUTION · RED = SEVERE",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)
-        Text("Visible while recording; Android's device-wide thermal status and sparse headroom forecast, not proof of CPU/GPU throttling. No polling during READY.",
+        Text("Normal or unavailable Android thermal signals do not occupy HUD space. A narrow amber/red accent appears only for a reported OS thermal warning, never for CPU temperature alone. No polling during READY.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Text("VISIBLE TELEMETRY",color=iceBlue,
             style=MaterialTheme.typography.labelLarge)
