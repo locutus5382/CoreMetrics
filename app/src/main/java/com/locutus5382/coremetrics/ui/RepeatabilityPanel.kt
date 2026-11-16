@@ -111,7 +111,7 @@ internal fun RepeatabilityPanel(
         if(error.isNotBlank()) Text(error,color=solarOrange,
             style=MaterialTheme.typography.bodySmall)
         val report=result?.takeIf {
-            lastRequest==actualKey to selected.sorted()
+            lastRequest==(actualKey to selected.sorted())
         }
         if(report!=null) {
             Text("Run IDs: "+report.runIds.joinToString(", ") { "#"+it },
