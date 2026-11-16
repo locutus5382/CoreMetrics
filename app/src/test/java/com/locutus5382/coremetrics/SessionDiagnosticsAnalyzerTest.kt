@@ -53,14 +53,14 @@ class SessionDiagnosticsAnalyzerTest {
         assertEquals(60.0,cpu.final60Median!!,.001)
     }
 
-    @Test fun validBatteryRuntimeUsesIntegratedDischargeOnly() {
+    @Test fun validDischargeNeverInventsRuntimeWithoutUsableCapacity() {
         val points=(0..24).map{point(it)}
         val r=diagnostics(points)
         assertEquals(4.0,r.typicalDischargeW!!,.0001)
-        assertEquals(7.7,r.fullChargeHours!!,.0001)
-        assertEquals(30.8*.69/4.0,r.remainingHours!!,.0001)
+        assertNull(r.fullChargeHours)
+        assertNull(r.remainingHours)
         assertEquals(69,r.measuredBatteryPct)
-        assertTrue(r.runtimeNote.contains("Approximate"))
+        assertTrue(r.runtimeNote.contains("capacity has not been validated"))
     }
 
     @Test fun chargingAndMissingPowerNeverBecomeGamingRuntime() {
