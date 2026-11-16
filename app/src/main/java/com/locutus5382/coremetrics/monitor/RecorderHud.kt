@@ -1,6 +1,8 @@
 package com.locutus5382.coremetrics.monitor
 
 import android.app.ActivityManager
+import com.locutus5382.coremetrics.data.SessionStore
+import org.json.JSONObject
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -64,12 +66,32 @@ internal data class HudOptions(
             "cpuTemp", "gpuTemp", "cpuLoad", "gpuLoad", "ram", "power", "fps", "sparkline")
         fun from(context: Context, intent: Intent? = null): HudOptions {
             val p = context.getSharedPreferences("coremetrics_settings", Context.MODE_PRIVATE)
-            fun f(k: String, fallback: Float): Float = if(intent?.hasExtra(k)==true)
-                intent.getFloatExtra(k,fallback) else p.getFloat(k,fallback)
-            fun s(k: String, fallback: String): String = if(intent?.hasExtra(k)==true)
-                intent.getStringExtra(k) ?: fallback else p.getString(k,fallback) ?: fallback
-            fun b(k: String, fallback: Boolean): Boolean = if(intent?.hasExtra(k)==true)
-                intent.getBooleanExtra(k,fallback) else p.getBoolean(k,fallback)
+            // Small shared SQL snapshot; legacy per-process preferences are
+            // only a migration fallback when no HUD snapshot exists yet.
+            val stored=runCatching {
+                SessionStore(context).use { db ->
+                    db.hudOptionsJson()?.let { JSONObject(it) }
+                }
+            }.getOrNull()
+            fun f(k:String,fallback:Float):Float {
+                val legacy=p.getFloat(k,fallback)
+                return if(intent?.hasExtra(k)==true)intent.getFloatExtra(k,legacy)
+                    else if(stored?.has(k)==true)
+                        stored.optDouble(k,legacy.toDouble()).toFloat() else legacy
+            }
+            fun s(k:String,fallback:String):String {
+                val legacy=p.getString(k,fallback)?:fallback
+                return if(intent?.hasExtra(k)==true)
+                    intent.getStringExtra(k)?:legacy
+                    else if(stored?.has(k)==true)
+                        stored.optString(k,legacy) else legacy
+            }
+            fun b(k:String,fallback:Boolean):Boolean {
+                val legacy=p.getBoolean(k,fallback)
+                return if(intent?.hasExtra(k)==true)intent.getBooleanExtra(k,legacy)
+                    else if(stored?.has(k)==true)
+                        stored.optBoolean(k,legacy) else legacy
+            }
             return HudOptions(
                 opacity=f(OPACITY,.57f).coerceIn(.30f,.90f),
                 size=s(SIZE,"regular").takeIf { it in setOf("small","regular","large") } ?: "regular",
@@ -105,11 +127,11 @@ internal data class HudOptions(
             )) putExtra("hud_"+k,v)
         }
     }
-    /** Cosmetic HUD options are not transaction/lease data.
-     * Avoid a synchronous disk fsync on the app or overlay main thread.
-     * Intent extras carry the new settings immediately across processes.
+    /** HUD edits are rare user actions, never per-sample writes. Persist
+     * the complete snapshot so a long-lived :monitor process and QS tile
+     * cannot observe a stale preference cache.
      */
-    fun save(context:Context) {
+    fun save(context:Context):Boolean {
         val p=context.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
         p.edit().putFloat(OPACITY,opacity)
             .putString(SIZE,size).putString(LAYOUT,layout)
@@ -124,6 +146,23 @@ internal data class HudOptions(
             .putBoolean("hud_fps",showFps)
             .putBoolean("hud_sparkline",false)
             .putBoolean(ADAPTIVE,adaptiveColors).apply()
+        val json=JSONObject()
+            .put(OPACITY,opacity.toDouble())
+            .put(SIZE,size).put(LAYOUT,layout)
+            .put(INDICATOR,indicatorColor).put(BLINK,blink)
+            .put("hud_cpuTemp",showCpuTemp)
+            .put("hud_gpuTemp",showGpuTemp)
+            .put("hud_cpuLoad",showCpuLoad)
+            .put("hud_gpuLoad",showGpuLoad)
+            .put("hud_ram",showRam)
+            .put("hud_power",showPower)
+            .put("hud_batteryTemp",showBatteryTemp)
+            .put(ADAPTIVE,adaptiveColors)
+        return runCatching {
+            SessionStore(context).use { db ->
+                db.saveHudOptionsJson(json.toString())
+            }
+        }.getOrDefault(false)
     }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
         showGpuLoad,showRam,showPower,showBatteryTemp).count { it }
