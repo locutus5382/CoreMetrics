@@ -185,7 +185,7 @@ object CompareStudioAnalysis {
                 val left=values.first
                 val right=values.second
                 if(left.isNullOrBlank() || right.isNullOrBlank()) {
-                    add(label+" is not documented in both sessions")
+                    add(label+" metadata is not documented in both sessions")
                 }else if(left!=right && testedVariable!=kind) {
                     add(label+" differs between A and B (possible confounder)")
                 }else if(left==right && testedVariable==kind) {
