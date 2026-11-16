@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.animation.DecelerateInterpolator
+import android.text.Layout
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -889,10 +890,10 @@ internal class RecorderHud(private val context:Context) {
         }else{
             p.height=WindowManager.LayoutParams.WRAP_CONTENT
             val text=mainText
+            // Include the fixed-width BAT T inline span. Plain string
+            // measureText() ignores ReplacementSpan's reserved insets.
             val longest=if(text!=null)
-                text.text.toString().split('\n').maxOfOrNull {
-                    text.paint.measureText(it)
-                } ?: 0f else 0f
+                Layout.getDesiredWidth(text.text,text.paint) else 0f
             // Compact side-by-side layout; reserve measured telemetry width
             // plus only the actual right-side controls or unlock target.
             val viewport=(windowWidth()-dp(8f)).coerceAtLeast(dp(220f))
