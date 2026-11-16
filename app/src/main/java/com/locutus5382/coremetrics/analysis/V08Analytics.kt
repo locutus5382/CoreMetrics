@@ -102,7 +102,7 @@ object V08Analytics {
             SessionRegimeAnalyzer.Sample(p.timeMs,p.observedCpuLimits,p.cpu,p.gpu,
                 p.cpuLoad,p.busiestCorePct,p.gpuLoad,p.ram,
                 p.batteryWatts,p.batteryPowerStatus)
-        }).filterNot {it.key=="P3:?|P7:?"}
+        }).filterNot {it.key.contains("?")}
             .map{ObservedPhase(it.startMs,it.endMs,it.sampleCount,it.key,it.label)}
         val keys=phases.map{it.signature}
         val selectedLower=selected.lowercase(Locale.US)
@@ -115,7 +115,7 @@ object V08Analytics {
         }
         val mismatch=profileConflict(selected,keys)
         val note=when {
-            phases.isEmpty() -> "No readable P3/P7 frequency limits"
+            phases.isEmpty() -> "No readable CPU policy frequency ceilings"
             selectedLower.contains("underclock") && stockLikeOnly ->
                 "Selected Underclocking but all readable P3/P7 ceilings are " +
                 "stock-like. Check CPU tuning; GPU-only underclocking can " +
