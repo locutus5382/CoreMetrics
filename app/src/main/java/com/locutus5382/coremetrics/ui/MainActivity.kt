@@ -86,6 +86,7 @@ import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.RecorderJournal
 import com.locutus5382.coremetrics.quick.SessionTile
 import com.locutus5382.coremetrics.quick.HudTile
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -526,6 +527,40 @@ class MainActivity : ComponentActivity() {
             }
             var hudOptions by remember { mutableStateOf(HudOptions.from(this@MainActivity)) }
             var message by remember { mutableStateOf("") }
+            // One ordered writer; QS always reads SQLite, not UI-process
+            // preferences. CONFLATED drops superseded typing updates but
+            // never reverses the order of committed changes.
+            val defaultsWrites=remember {
+                Channel<SessionStore.RecordingDefaults>(Channel.CONFLATED)
+            }
+            var defaultsLoaded by remember { mutableStateOf(false) }
+            LaunchedEffect(database) {
+                val loaded=withContext(Dispatchers.IO){database.recordingDefaults()}
+                label=loaded.label.takeUnless{it=="Gameplay"} ?: ""
+                configuration=when(loaded.configuration) {
+                    "Stock","Custom"->loaded.configuration
+                    else->"Underclocking"
+                }
+                interval=loaded.intervalMs
+                hudEnabled=loaded.hudEnabled
+                defaultsLoaded=true
+            }
+            LaunchedEffect(database) {
+                for(value in defaultsWrites) {
+                    val saved=withContext(Dispatchers.IO) {
+                        runCatching{database.saveRecordingDefaults(value)}
+                    }
+                    if(saved.getOrDefault(false)!=true)
+                        message="Could not persist recording defaults for Quick Settings"
+                }
+            }
+            LaunchedEffect(defaultsLoaded,label,configuration,interval,hudEnabled) {
+                if(defaultsLoaded)
+                    defaultsWrites.trySend(SessionStore.RecordingDefaults(
+                        label=label.trim().ifBlank{"Gameplay"},
+                        configuration=configuration,intervalMs=interval,
+                        hudEnabled=hudEnabled))
+            }
             var sessionList by remember { mutableStateOf(emptyList<SessionStore.Session>()) }
             var linkedPairs by remember {
                 mutableStateOf(emptyList<SessionStore.Link>())
