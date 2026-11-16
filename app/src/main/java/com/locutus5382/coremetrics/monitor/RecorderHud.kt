@@ -142,7 +142,8 @@ internal class RecorderHud(private val context:Context) {
     private var dockTab:LinearLayout?=null
     private var dockVisual:View?=null
     private var mainText:TextView?=null
-    private var thermalIndicator:TextView?=null
+    private var thermalIndicator:View?=null
+    private var lockedSpace:View?=null
     private var lastHeadroom:Double?=null
     private var headroomAtElapsedMs:Long=-1L
     private var lastBadgeLevel:ThermalIndicatorPolicy.Level?=null
@@ -570,48 +571,48 @@ internal class RecorderHud(private val context:Context) {
         opacityLabel=null;drawerRecControl=null
         // Two compact rows: device readings above, actions along the outer
         // right edge below. Controls no longer sit in the middle of gameplay.
+        // One horizontal card: the telemetry sits beside a narrow, two-level
+        // action cluster. The bottom-left dead area of the old HUD is gone.
         val line=LinearLayout(context).apply {
-            orientation=LinearLayout.VERTICAL
-            gravity=Gravity.END
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER_VERTICAL
         }
         val readings=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
         }
         line.addView(readings,LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT))
+            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
         val actions=LinearLayout(context).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.END or Gravity.CENTER_VERTICAL
+            orientation=LinearLayout.VERTICAL
+            gravity=Gravity.CENTER
         }
         line.addView(actions,LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin=dp(3f)
-            })
-        controlsRow=actions
-        val label=styledLabel("",12f).apply {
-            setPadding(dp(7f),dp(4f),dp(8f),dp(4f))
-        }
-        mainText=label
-        // Natural-width telemetry: no weight-induced empty strip between
-        // metrics and REC/settings/lock actions. Window width is recalculated
-        // from the actual displayed lines and capped to the viewport.
-        readings.addView(label,LinearLayout.LayoutParams(
-            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
-        // A clearly labeled OS thermal-policy badge, not an invisible 12sp
-        // dot and never an attribution of CPU/GPU throttling.
-        thermalIndicator=styledLabel("▌ OS ?",10f).apply {
-            gravity=Gravity.CENTER
-            minWidth=dp(57f)
-            minHeight=dp(26f)
-            setPadding(dp(5f),dp(3f),dp(5f),dp(3f))
-            contentDescription="Android thermal policy unavailable"
-        }
-        readings.addView(thermalIndicator,LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT))
+        controlsRow=actions
+        val label=styledLabel("",12f).apply {
+            setPadding(dp(6f),dp(5f),dp(4f),dp(5f))
+        }
+        mainText=label
+        readings.addView(label,LinearLayout.LayoutParams(
+            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
+        // A dedicated, 48dp placeholder lets the independent unlock chip
+        // overlay the locked HUD without leaving a touch-blocking main window.
+        lockedSpace=View(context).apply { visibility=View.GONE }
+        readings.addView(lockedSpace,LinearLayout.LayoutParams(dp(48f),dp(48f)))
+        // Optional Android OS warning only. Normal (NONE) and unavailable
+        // signals occupy ZERO room; CPU temperature remains a numeric metric.
+        thermalIndicator=View(context).apply {
+            visibility=View.GONE
+            contentDescription="Device-wide Android thermal warning"
+            background=GradientDrawable().apply {
+                cornerRadius=dp(2f).toFloat()
+                setColor(Color.rgb(255,199,0))
+            }
+        }
+        readings.addView(thermalIndicator,LinearLayout.LayoutParams(
+            dp(4f),dp(48f)).apply { marginStart=dp(2f) })
         val rec=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -624,23 +625,41 @@ internal class RecorderHud(private val context:Context) {
         recText=styledLabel("REC",11f)
         rec.addView(recDot);rec.addView(recText)
         recControl=rec
-        actions.addView(rec)
-        drawerControl=action("⚙"){drawerOpen=!drawerOpen;applyAppearance()}
-        actions.addView(drawerControl)
-        minimizeControl=action("⇥"){dock(nearestDockEdge())}.apply {
-            contentDescription="Collapse HUD to visible edge tab; tap tab to restore"
+        val topActions=LinearLayout(context).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER
         }
-        actions.addView(minimizeControl)
+        topActions.addView(rec)
+        actions.addView(topActions,LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,dp(33f)))
+        val bottomActions=LinearLayout(context).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        minimizeControl=action("⇥"){dock(nearestDockEdge())}.apply {
+            contentDescription="Collapse HUD to visible edge tab; tap tab to expand"
+            minWidth=dp(39f)
+            minHeight=dp(34f)
+        }
+        bottomActions.addView(minimizeControl)
         lockControl=action(""){onLock?.invoke()}.apply {
             background=FlatLockChipDrawable(locked=false)
             setPadding(0,0,0,0)
             minimumWidth=dp(38f)
             minimumHeight=dp(38f)
-            contentDescription="Lock HUD: let touches pass through to the game"
+            contentDescription="Lock HUD: allow game touches through telemetry"
         }
-        actions.addView(lockControl)
-        closeControl=action("×"){onClose?.invoke()}
-        actions.addView(closeControl)
+        bottomActions.addView(lockControl)
+        closeControl=action("×"){onClose?.invoke()}.apply {
+            minWidth=dp(36f)
+            minHeight=dp(34f)
+            contentDescription="Close standby HUD"
+        }
+        bottomActions.addView(closeControl)
+        actions.addView(bottomActions)
+        // HUD metric customization is in the app's HUD Studio. Do not
+        // allocate or expose the former in-game settings tray.
+        drawerControl=null
         pill=line
 
         val tab=LinearLayout(context).apply {
@@ -670,7 +689,6 @@ internal class RecorderHud(private val context:Context) {
         val frame=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
             addView(line)
-            addView(newDrawer().also{drawer=it})
             addView(tab)
         }
         root=frame
