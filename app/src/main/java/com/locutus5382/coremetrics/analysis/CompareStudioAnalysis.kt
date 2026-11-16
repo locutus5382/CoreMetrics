@@ -134,6 +134,18 @@ object CompareStudioAnalysis {
         val usable=a.points.size>=6 && b.points.size>=6 &&
             duration(a.points)>=20_000L && duration(b.points)>=20_000L
         val warnings=buildList {
+            // Device identity is captured at REC start, not inferred from
+            // the phone on which the report is later opened.
+            val deviceA=listOf(sessionA.deviceManufacturer,sessionA.deviceModel,
+                sessionA.deviceCode)
+            val deviceB=listOf(sessionB.deviceManufacturer,sessionB.deviceModel,
+                sessionB.deviceCode)
+            if(deviceA.any{it.isNullOrBlank()} || deviceB.any{it.isNullOrBlank()})
+                add("Original recording-device identity is incomplete; "+
+                    "cross-device comparability cannot be established")
+            else if(deviceA!=deviceB)
+                add("Different recording devices; raw temperatures, watts "+
+                    "and utilization do not establish which device performs better")
             if(!usable)add("Too few valid timestamped samples or less than 20 s of measured time")
             if(sessionA.status !in setOf("COMPLETED","IMPORTED_COMPLETED") ||
                 sessionB.status !in setOf("COMPLETED","IMPORTED_COMPLETED"))
@@ -224,6 +236,20 @@ object CompareStudioAnalysis {
                 }}.toSet()
             val sourcesA=sources(a.points)
             val sourcesB=sources(b.points)
+            fun gpuSources(points:List<SessionStore.Point>):Set<String> =
+                points.mapNotNull{it.gpuTelemetrySource?.takeIf { v->
+                    v.isNotBlank() && v!="UNAVAILABLE"
+                }}.toSet()
+            val gpuA=gpuSources(a.points)
+            val gpuB=gpuSources(b.points)
+            if(gpuA.isEmpty() || gpuB.isEmpty())
+                add("GPU telemetry source provenance is missing in one or both sessions")
+            else if(gpuA!=gpuB)
+                add("GPU telemetry sources differ; utilization/frequency "+
+                    "numbers might not be directly comparable")
+            if(gpuA.any{it.contains("READABLE_NOT_VALIDATED")} ||
+                gpuB.any{it.contains("READABLE_NOT_VALIDATED")})
+                add("GPU read paths are readable but not calibrated against device hardware")
             if(sourcesA.size>1 || sourcesB.size>1)
                 add("Battery current/voltage source changed within a recording; "+
                     "power values may not be directly comparable")
