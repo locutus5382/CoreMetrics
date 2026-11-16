@@ -66,6 +66,29 @@ object SessionRegimeAnalyzer {
         return "P3:" + fmt(caps["3"]) + "|P7:" + fmt(caps["7"])
     }
 
+    /**
+     * Reference signatures observed on the Odin 2 Portal, NOT universal CPU
+     * limits, not verified hardware settings, and not tuner identities.
+     * Do not infer "stock" on unfamiliar devices; only warn when a full
+     * known P3/P7 pair closely matches an established reference signature.
+     */
+    enum class ReferenceCaps { ODIN_STOCK_LIKE, ODIN_MEDIUM_LIKE,
+        ODIN_LARGE_LIKE, UNKNOWN }
+
+    fun referenceCaps(key:String):ReferenceCaps {
+        val match=Regex("""P3:([0-9]+(?:\\.[0-9]+)?)\\|P7:([0-9]+(?:\\.[0-9]+)?)""")
+            .matchEntire(key) ?:return ReferenceCaps.UNKNOWN
+        val p3=match.groupValues[1].toDoubleOrNull() ?:return ReferenceCaps.UNKNOWN
+        val p7=match.groupValues[2].toDoubleOrNull() ?:return ReferenceCaps.UNKNOWN
+        fun near(x:Double,y:Double)=abs(x-y)<=0.025
+        return when {
+            near(p3,2.80)&&near(p7,3.19)->ReferenceCaps.ODIN_STOCK_LIKE
+            near(p3,2.05)&&near(p7,2.09)->ReferenceCaps.ODIN_MEDIUM_LIKE
+            near(p3,1.79)&&near(p7,1.84)->ReferenceCaps.ODIN_LARGE_LIKE
+            else -> ReferenceCaps.UNKNOWN
+        }
+    }
+
     fun label(key: String): String {
         val parts = key.split('|')
         val p3 = parts.firstOrNull()?.substringAfter(':') ?: "?"
@@ -183,7 +206,8 @@ object SessionRegimeAnalyzer {
             }
         }.mapIndexed { idx, s -> s.copy(index=idx) }
         if (segments.isEmpty()) return emptyList()
-        val baseline = segments.firstOrNull { it.label.startsWith("Stock (") }
+        val baseline = segments.firstOrNull {
+            referenceCaps(it.key)==ReferenceCaps.ODIN_STOCK_LIKE }
             ?: segments.first()
         fun difference(a:Double?,b:Double?):Double? =
             if (a!=null && b!=null) a-b else null
