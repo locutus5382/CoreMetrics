@@ -164,7 +164,7 @@ object BenchmarkAnalyzer {
             .distinct()
         val labels=capGroups.map{SessionRegimeAnalyzer.label(it)}
         val observed=if(labels.isEmpty())"unavailable" else labels.joinToString(" | ")
-        val conflict=V08Analytics.profileConflict(session.configuration,labels)
+        val conflict=V08Analytics.profileConflict(session.configuration,capGroups)
         val reasons=mutableListOf<String>()
         var score=100
         if(session.status !in setOf("COMPLETED","IMPORTED_COMPLETED")) {
@@ -250,6 +250,12 @@ object BenchmarkAnalyzer {
         r.session.note?.let{ appendLine("Game/track note: "+it) }
         appendLine("Manual driver tag: "+(r.session.graphicsDriver?:"unavailable"))
         appendLine("Manual resolution tag: "+(r.session.resolutionScale?:"unavailable"))
+        appendLine("Manual test profile snapshot: "+(r.session.profileName?:"unavailable"))
+        appendLine("Manual Odin performance / fan / ClusterTune: "+
+            (r.session.performanceMode?:"unknown")+" / "+
+            (r.session.fanMode?:"unknown")+" / "+
+            (r.session.clusterTuneMode?:"unknown"))
+        appendLine("These manually supplied fields are not proof of active hardware configuration.")
         if(r.skippedWarmUpSeconds>0)appendLine(
             "Analysis excludes first ${r.skippedWarmUpSeconds} s after first recorded " +
             "sample (not verified game-loading completion). Original data unchanged.")
@@ -314,7 +320,9 @@ object BenchmarkAnalyzer {
             (a.session.resolutionScale?:"unknown")+" / "+
             (b.session.resolutionScale?:"unknown"))
         if(a.session.graphicsDriver!=b.session.graphicsDriver)
-            appendLine("CAUTION: Different or unknown driver tags; comparison is not causal.")
+            appendLine("Different/unknown driver tags: intentional for a driver test, "+
+                "otherwise a confounder. Select the tested variable in Compare Studio; "+
+                "difference alone is not a performance claim.")
         if(a.session.resolutionScale!=b.session.resolutionScale)
             appendLine("CAUTION: Different or unknown resolution tags.")
         if(a.skippedWarmUpSeconds>0 || b.skippedWarmUpSeconds>0)

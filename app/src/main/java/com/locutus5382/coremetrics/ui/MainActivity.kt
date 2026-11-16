@@ -1246,6 +1246,8 @@ class MainActivity : ComponentActivity() {
                                             "Standby performs no hardware sampling.",
                                             color=coreSecondary,
                                             style=MaterialTheme.typography.labelSmall)
+                                         if(!status.running && !status.starting)
+                                             NextRecordingProfileSelector(database)
                                         if(!status.running && !status.starting &&
                                             !status.standby && !status.pendingRecovery &&
                                             status.known) {
@@ -1579,6 +1581,14 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 if(metadataEditorId==s.id) {
                                                     SessionMetadataEditor(session=s,
+                                                         database=database,
+                                                         onSessionChanged={
+                                                             scope.launch {
+                                                                 sessionList=withContext(Dispatchers.IO) {
+                                                                     database.list()
+                                                                 }
+                                                             }
+                                                         },
                                                         onDriver={tag,ack->
                                                             scope.launch {
                                                                 val outcome=withContext(Dispatchers.IO){

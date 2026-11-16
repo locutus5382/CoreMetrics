@@ -13,14 +13,16 @@ import java.io.Writer
  * :monitor owns writes, UI reads through WAL. Data never leaves this database
  * without a user-selected Android document URI.
  */
-class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 6) {
+class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 7) {
     private val leaseContext = context.applicationContext
 
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
         val label: String, val configuration: String, val status: String, val count: Int,
         val note: String? = null,
         val graphicsDriver: String? = null, val resolutionScale: String? = null,
-        val hasExternalPower:Boolean=false, val hasDischargePower:Boolean=false)
+        val hasExternalPower:Boolean=false, val hasDischargePower:Boolean=false,
+        val performanceMode:String?=null,val fanMode:String?=null,
+        val clusterTuneMode:String?=null,val profileName:String?=null)
     data class Point(val timeMs: Long, val cpu: Double?, val gpu: Double?,
         val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
         val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
@@ -33,6 +35,25 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val sampleDurationMs: Double? = null, val sampleElapsedMs: Long? = null)
 
     data class Link(val id:Long,val firstId:Long,val secondId:Long,val createdAt:Long)
+    data class QuickProfile(
+        val id:Long,val name:String,val gameNote:String?,
+        val graphicsDriver:String?,val resolutionScale:String?,
+        val performanceMode:String?,val fanMode:String?,
+        val clusterTuneMode:String?)
+    private val performanceModes=setOf("Standard","Performance","High Performance")
+    private val fanModes=setOf("Off","Quiet","Smart","Sport","Custom")
+    private val clusterModes=setOf("Stock","Small","Medium","Large","Custom")
+    private fun cleanLabel(value:String?,max:Int=64):String? =
+        value?.trim()?.takeIf{it.isNotEmpty() && it.length<=max &&
+            it.none{c->c.code<32 || c.code==127 || c.code in 0x80..0x9f}}
+    private fun createProfileTable(db:SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS test_profiles(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            game_note TEXT, graphics_driver TEXT, resolution_scale TEXT,
+            performance_mode TEXT, fan_mode TEXT, cluster_tune_mode TEXT)""")
+    }
+
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
@@ -44,7 +65,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             started_at INTEGER NOT NULL, ended_at INTEGER,
             label TEXT NOT NULL, configuration TEXT NOT NULL,
             status TEXT NOT NULL, game_note TEXT,
-            graphics_driver TEXT, resolution_scale TEXT)""")
+            graphics_driver TEXT, resolution_scale TEXT,
+            performance_mode TEXT, fan_mode TEXT, cluster_tune_mode TEXT,
+            profile_name TEXT)""")
         db.execSQL("""CREATE TABLE samples (
             session_id INTEGER NOT NULL, time_ms INTEGER NOT NULL,
             cpu_temp REAL, gpu_temp REAL, battery_temp REAL, battery_pct INTEGER,
@@ -62,6 +85,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         // Cover battery status predicates without visiting large sample rows.
         db.execSQL("CREATE INDEX samples_by_session_power ON samples(session_id,battery_status)")
         createLinkTable(db)
+        createProfileTable(db)
     }
     private fun createLinkTable(db:SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS session_links (
@@ -73,7 +97,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion in 1..5 && newVersion==6) {
+        require(oldVersion in 1..6 && newVersion==7) {
             "Unsupported database migration $oldVersion -> $newVersion"
         }
         if(oldVersion<2) {
@@ -103,6 +127,12 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 "swap_used_gib" to "REAL", "mem_psi_some10" to "REAL",
                 "sample_duration_ms" to "REAL", "sample_elapsed_ms" to "INTEGER"
             )) db.execSQL("ALTER TABLE samples ADD COLUMN "+name+" "+type)
+        }
+        if(oldVersion<7) {
+            for(name in listOf("performance_mode","fan_mode",
+                "cluster_tune_mode","profile_name"))
+                db.execSQL("ALTER TABLE sessions ADD COLUMN "+name+" TEXT")
+            createProfileTable(db)
         }
     }
 
@@ -142,6 +172,98 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         return writableDatabase.update("sessions",ContentValues().apply {
             put("resolution_scale",accepted)
         },"id=? AND status!='RECORDING'",arrayOf(sessionId.toString()))==1
+    }
+
+    /** Named reusable presets; historical sessions copy values, not IDs. */
+    @Synchronized fun quickProfiles():List<QuickProfile> =
+        readableDatabase.rawQuery("""SELECT id,name,game_note,graphics_driver,
+            resolution_scale,performance_mode,fan_mode,cluster_tune_mode
+            FROM test_profiles ORDER BY name COLLATE NOCASE""",null).use {c->
+            buildList {while(c.moveToNext())add(decodeProfile(c))}
+        }
+    private fun decodeProfile(c:Cursor)=QuickProfile(
+        c.getLong(0),c.getString(1),
+        if(c.isNull(2))null else c.getString(2),
+        if(c.isNull(3))null else c.getString(3),
+        if(c.isNull(4))null else c.getString(4),
+        if(c.isNull(5))null else c.getString(5),
+        if(c.isNull(6))null else c.getString(6),
+        if(c.isNull(7))null else c.getString(7))
+    private fun profileById(db:SQLiteDatabase,id:Long):QuickProfile? {
+        if(id<=0L)return null
+        return db.rawQuery("""SELECT id,name,game_note,graphics_driver,
+            resolution_scale,performance_mode,fan_mode,cluster_tune_mode
+            FROM test_profiles WHERE id=? LIMIT 1""",arrayOf(id.toString())).use {c->
+            if(c.moveToFirst())decodeProfile(c)else null
+        }
+    }
+    private fun activeProfileIn(db:SQLiteDatabase):QuickProfile? {
+        val id=leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
+            .getLong("active_test_profile_id",0L)
+        return profileById(db,id)
+    }
+    @Synchronized fun activeProfileId():Long =
+        leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
+            .getLong("active_test_profile_id",0L)
+    @Synchronized fun selectActiveProfile(id:Long):Boolean {
+        if(id>0L && profileById(readableDatabase,id)==null)return false
+        return leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
+            .edit().putLong("active_test_profile_id",id.coerceAtLeast(0L)).commit()
+    }
+    @Synchronized fun saveQuickProfile(
+        id:Long=0L,name:String,gameNote:String?,graphicsDriver:String?,
+        resolutionScale:String?,performanceMode:String?,fanMode:String?,
+        clusterTuneMode:String?
+    ):Long {
+        val clean=cleanLabel(name,48) ?:error("Profile name is required (up to 48 characters)")
+        require((performanceMode==null || performanceMode in performanceModes) &&
+            (fanMode==null || fanMode in fanModes) &&
+            (clusterTuneMode==null || clusterTuneMode in clusterModes)) {
+            "Unknown manually entered test condition"
+        }
+        val driver=SessionMetadata.driver(graphicsDriver)
+        val scale=SessionMetadata.resolution(resolutionScale)
+        require((graphicsDriver==null || driver!=null) &&
+            (resolutionScale==null || scale!=null)){"Invalid driver or resolution"}
+        val values=ContentValues().apply {
+            put("name",clean)
+            put("game_note",SessionMetadata.note(gameNote))
+            put("graphics_driver",driver);put("resolution_scale",scale)
+            put("performance_mode",performanceMode);put("fan_mode",fanMode)
+            put("cluster_tune_mode",clusterTuneMode)
+        }
+        val db=writableDatabase
+        if(id>0L) {
+            check(db.update("test_profiles",values,"id=?",
+                arrayOf(id.toString()))==1){"Profile no longer exists"}
+            return id
+        }
+        return db.insertOrThrow("test_profiles",null,values)
+    }
+    @Synchronized fun deleteQuickProfile(id:Long):Boolean {
+        if(id<=0L)return false
+        val removed=writableDatabase.delete("test_profiles","id=?",
+            arrayOf(id.toString()))==1
+        if(removed && activeProfileId()==id)selectActiveProfile(0L)
+        return removed
+    }
+    /** Atomic, manual metadata application to completed sessions only.
+     * Presets may be renamed/deleted without rewriting previously saved tags.
+     */
+    @Synchronized fun applyQuickProfile(sessionId:Long,profileId:Long):Boolean {
+        if(sessionId<=0L)return false
+        val profile=profileById(readableDatabase,profileId) ?:return false
+        val values=ContentValues().apply {
+            put("profile_name",profile.name)
+            put("graphics_driver",profile.graphicsDriver)
+            put("resolution_scale",profile.resolutionScale)
+            put("performance_mode",profile.performanceMode)
+            put("fan_mode",profile.fanMode)
+            put("cluster_tune_mode",profile.clusterTuneMode)
+            if(profile.gameNote!=null)put("game_note",profile.gameNote)
+        }
+        return writableDatabase.update("sessions",values,
+            "id=? AND status!='RECORDING'",arrayOf(sessionId.toString()))==1
     }
 
     /** User-controlled associations are non-destructive; never merge raw data. */
@@ -203,6 +325,16 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     else -> "Custom"
                 })
                 put("status","RECORDING")
+                val preset=activeProfileIn(db)
+                if(preset!=null) {
+                    put("profile_name",preset.name)
+                    put("graphics_driver",preset.graphicsDriver)
+                    put("resolution_scale",preset.resolutionScale)
+                    put("performance_mode",preset.performanceMode)
+                    put("fan_mode",preset.fanMode)
+                    put("cluster_tune_mode",preset.clusterTuneMode)
+                    if(preset.gameNote!=null)put("game_note",preset.gameNote)
+                }
             })
             check(id>0)
             db.update("sessions",ContentValues().apply {
@@ -280,6 +412,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         SELECT s.id,s.started_at,s.ended_at,s.label,s.configuration,s.status,
         (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id),
         s.game_note,s.graphics_driver,s.resolution_scale,
+        s.performance_mode,s.fan_mode,s.cluster_tune_mode,s.profile_name,
         EXISTS(SELECT 1 FROM samples x WHERE x.session_id=s.id AND
             (x.battery_status LIKE 'CHARGING_OR_EXTERNAL_POWER%'
              OR x.battery_status LIKE 'FULL%' OR x.battery_status LIKE 'PLUGGED%')),
@@ -296,7 +429,11 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         if(c.isNull(7))null else c.getString(7),
         if(c.isNull(8))null else c.getString(8),
         if(c.isNull(9))null else c.getString(9),
-        c.getInt(10)!=0,c.getInt(11)!=0
+        c.getInt(14)!=0,c.getInt(15)!=0,
+        if(c.isNull(10))null else c.getString(10),
+        if(c.isNull(11))null else c.getString(11),
+        if(c.isNull(12))null else c.getString(12),
+        if(c.isNull(13))null else c.getString(13)
     )
 
     @Synchronized fun list(limit:Int=80):List<Session> =
@@ -427,6 +564,13 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                             columns.field(row,"graphics_driver")))
                         put("resolution_scale",SessionMetadata.resolution(
                             columns.field(row,"resolution_scale")))
+                        put("performance_mode",columns.field(row,"performance_mode")
+                            ?.takeIf{it in performanceModes})
+                        put("fan_mode",columns.field(row,"fan_mode")
+                            ?.takeIf{it in fanModes})
+                        put("cluster_tune_mode",columns.field(row,"cluster_tune_mode")
+                            ?.takeIf{it in clusterModes})
+                        put("profile_name",cleanLabel(columns.field(row,"profile_name")))
                         put("configuration",config)
                         put("status",ImportedSessionStatus.store(
                             columns.field(row,"status")))
@@ -540,7 +684,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             "sf_layer_fps","sf_frame_time_ms","sf_status","observed_cpu_limits",
             "graphics_driver","resolution_scale",
             "thermal_status","thermal_headroom","swap_used_gib","mem_psi_some10",
-            "sample_duration_ms","sample_elapsed_ms")
+            "sample_duration_ms","sample_elapsed_ms",
+            "performance_mode","fan_mode","cluster_tune_mode","profile_name")
         writer.append(headers.joinToString(",")).append('\n')
         readableDatabase.rawQuery(
             """SELECT time_ms,cpu_temp,gpu_temp,battery_temp,battery_pct,cpu_pct,
@@ -561,7 +706,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 val values = listOf(id.toString(),session.note?.takeIf{it.isNotBlank()} ?: session.label,session.configuration,session.status) +
                     (0 until 22).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
                     listOf(session.graphicsDriver.orEmpty(),session.resolutionScale.orEmpty()) +
-                    (22 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" }
+                    (22 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
+                    listOf(session.performanceMode.orEmpty(),session.fanMode.orEmpty(),
+                        session.clusterTuneMode.orEmpty(),session.profileName.orEmpty())
                 writer.append(values.joinToString(",") { Csv.escape(it) }).append('\n')
             }
         }

@@ -6,10 +6,10 @@ import org.junit.Test
 
 class ExportVersionTest {
     @Test fun appBuildAndReportFormatAreDistinct() {
-        assertEquals("0.9.7.5",ExportVersion.APP_VERSION)
-        assertEquals("0.9.7",ExportVersion.VERSION)
-        assertTrue(ExportVersion.sourceLabel().contains("app v0.9.7.5"))
-        assertTrue(ExportVersion.sourceLabel().contains("report format v0.9.7"))
+        assertEquals("0.9.8",ExportVersion.APP_VERSION)
+        assertEquals("0.9.8",ExportVersion.VERSION)
+        assertTrue(ExportVersion.sourceLabel().contains("app v0.9.8"))
+        assertTrue(ExportVersion.sourceLabel().contains("report format v0.9.8"))
         // Catch accidental APK/report drift on every debug/optimized CI build.
         assertEquals(ExportVersion.APP_VERSION,
             BuildConfig.VERSION_NAME.substringBefore('-'))

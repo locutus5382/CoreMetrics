@@ -11,6 +11,10 @@ import kotlin.math.min
  * All analysis is performed on original samples (never the GPU-load chart filter).
  */
 object CompareStudioAnalysis {
+    enum class TestedVariable(val label:String) {
+        DRIVER("Graphics driver"),PERFORMANCE("Odin performance"),
+        FAN("Fan"),CLUSTERTUNE("ClusterTune"),UNDECLARED("Not declared")
+    }
     data class Window(val startElapsedMs:Long,val endElapsedMs:Long) {
         init { require(startElapsedMs>=0 && endElapsedMs>startElapsedMs) }
         val seconds:Double get()=(endElapsedMs-startElapsedMs)/1000.0
@@ -33,7 +37,10 @@ object CompareStudioAnalysis {
         val sharedAvailableMs:Long,
         val observationsUsable:Boolean,
         val warnings:List<String>,
-        val observations:List<String> = emptyList()
+        val observations:List<String> = emptyList(),
+        val testedVariable:TestedVariable=TestedVariable.UNDECLARED,
+        val eventsA:List<SessionIntelligence.Event> = emptyList(),
+        val eventsB:List<SessionIntelligence.Event> = emptyList()
     ) {
         val evidenceLabel:String get()=when {
             !observationsUsable -> "INSUFFICIENT DATA"
@@ -110,7 +117,8 @@ object CompareStudioAnalysis {
 
     fun analyze(
         sessionA:SessionStore.Session,originalA:List<SessionStore.Point>,
-        sessionB:SessionStore.Session,originalB:List<SessionStore.Point>,window:Window
+        sessionB:SessionStore.Session,originalB:List<SessionStore.Point>,
+        window:Window,testedVariable:TestedVariable=TestedVariable.UNDECLARED
     ):Result {
         require(sessionA.id!=sessionB.id) { "Select different sessions" }
         val shared=sharedDuration(originalA,originalB)
@@ -120,6 +128,9 @@ object CompareStudioAnalysis {
         }
         val a=side(sessionA,originalA,window)
         val b=side(sessionB,originalB,window)
+        // Each selected window is analyzed once, off the UI thread.
+        val intelA=SessionIntelligence.analyze(a.points)
+        val intelB=SessionIntelligence.analyze(b.points)
         val usable=a.points.size>=6 && b.points.size>=6 &&
             duration(a.points)>=20_000L && duration(b.points)>=20_000L
         val warnings=buildList {
@@ -162,19 +173,47 @@ object CompareStudioAnalysis {
                 trendA.slopeCPerMin!=null && trendB.slopeCPerMin!=null &&
                 abs(trendA.slopeCPerMin-trendB.slopeCPerMin)>1.5)
                 add("Final-minute CPU temperature slopes differ by over 1.5 °C/min; thermal states may not be comparable")
-            if(sessionA.graphicsDriver.isNullOrBlank() ||
-                sessionB.graphicsDriver.isNullOrBlank() ||
-                sessionA.resolutionScale.isNullOrBlank() ||
+            // An intentionally varied TEST variable is not a confounder.
+            // Other differing or missing declared test conditions are.
+            val pairs=listOf(
+                Triple(TestedVariable.DRIVER,
+                    sessionA.graphicsDriver to sessionB.graphicsDriver,"Graphics driver"),
+                Triple(TestedVariable.PERFORMANCE,
+                    sessionA.performanceMode to sessionB.performanceMode,"Odin performance"),
+                Triple(TestedVariable.FAN,
+                    sessionA.fanMode to sessionB.fanMode,"Fan setting"),
+                Triple(TestedVariable.CLUSTERTUNE,
+                    sessionA.clusterTuneMode to sessionB.clusterTuneMode,"ClusterTune"))
+            for((kind,values,label) in pairs) {
+                val left=values.first
+                val right=values.second
+                if(left.isNullOrBlank() || right.isNullOrBlank()) {
+                    add(label+" metadata is not documented in both sessions")
+                }else if(left!=right && testedVariable!=kind) {
+                    add(label+" differs between A and B (possible confounder)")
+                }else if(left==right && testedVariable==kind) {
+                    add("The declared tested variable ("+label+
+                        ") has identical values in the selected recordings")
+                }
+            }
+            if(sessionA.resolutionScale.isNullOrBlank() ||
                 sessionB.resolutionScale.isNullOrBlank())
-                add("Graphics-driver or render-scale metadata is not recorded for both sessions")
-            if(!sessionA.graphicsDriver.isNullOrBlank() &&
-                !sessionB.graphicsDriver.isNullOrBlank() &&
-                sessionA.graphicsDriver!=sessionB.graphicsDriver)
-                add("Graphics driver tags differ")
-            if(!sessionA.resolutionScale.isNullOrBlank() &&
-                !sessionB.resolutionScale.isNullOrBlank() &&
-                sessionA.resolutionScale!=sessionB.resolutionScale)
-                add("Render scale tags differ")
+                add("Render scale is not documented in both sessions")
+            else if(sessionA.resolutionScale!=sessionB.resolutionScale)
+                add("Render scale differs (possible confounder)")
+            val activityA=intelA.periods
+            val activityB=intelB.periods
+            fun higherShare(periods:List<SessionIntelligence.Period>):Double? {
+                val count=periods.sumOf{it.samples}
+                return if(count==0)null else periods.filter{
+                    it.activity==SessionIntelligence.Activity.HIGHER
+                }.sumOf{it.samples}.toDouble()/count
+            }
+            val shareA=higherShare(activityA)
+            val shareB=higherShare(activityB)
+            if(shareA!=null && shareB!=null && abs(shareA-shareB)>0.25)
+                add("Higher-GPU-activity time differs substantially; "+
+                    "selected windows may represent different workloads")
             if(a.benchmark.energy.powerCondition!=BenchmarkAnalyzer.PowerCondition.DISCHARGING ||
                 b.benchmark.energy.powerCondition!=BenchmarkAnalyzer.PowerCondition.DISCHARGING)
                 add("At least one window is not exclusively measured during battery discharge")
@@ -202,7 +241,8 @@ object CompareStudioAnalysis {
                 add("CPU frequency ceilings changed within a selected window")
         }
         return Result(window,a,b,shared,usable,warnings,
-            if(usable) observations(a,b) else emptyList())
+            if(usable) observations(a,b) else emptyList(),testedVariable,
+            intelA.events,intelB.events)
     }
     fun delta(a:Double?,b:Double?):Double? =
         if(a!=null&&b!=null&&a.isFinite()&&b.isFinite())b-a else null
@@ -222,6 +262,19 @@ object CompareStudioAnalysis {
             fmt(r.window.endElapsedMs/1000.0)+" s from each ORIGINAL recording start")
         appendLine("Shared measured timeline: "+fmt(r.sharedAvailableMs/1000.0)+" s")
         appendLine("Window selection is relative, not a synchronization of gameplay scenes")
+        appendLine("Declared variable under test: "+r.testedVariable.label)
+        appendLine("A manual profile: "+(a.session.profileName?:"unknown")+
+            "; driver: "+(a.session.graphicsDriver?:"unknown")+
+            "; Odin: "+(a.session.performanceMode?:"unknown")+
+            "; fan: "+(a.session.fanMode?:"unknown")+
+            "; ClusterTune: "+(a.session.clusterTuneMode?:"unknown"))
+        appendLine("B manual profile: "+(b.session.profileName?:"unknown")+
+            "; driver: "+(b.session.graphicsDriver?:"unknown")+
+            "; Odin: "+(b.session.performanceMode?:"unknown")+
+            "; fan: "+(b.session.fanMode?:"unknown")+
+            "; ClusterTune: "+(b.session.clusterTuneMode?:"unknown"))
+        appendLine("Session events: A="+r.eventsA.size+", B="+r.eventsB.size+
+            " (observed or pattern; not causality)")
         appendLine("A: Session #"+a.session.id+" / "+a.session.configuration+
             " / "+a.session.status+" / "+a.points.size+" samples")
         appendLine("B: Session #"+b.session.id+" / "+b.session.configuration+

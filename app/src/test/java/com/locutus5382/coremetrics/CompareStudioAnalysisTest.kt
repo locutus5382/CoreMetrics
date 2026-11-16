@@ -29,6 +29,36 @@ class CompareStudioAnalysisTest {
         window:Window=Window(0L,200_000L)
     )=CompareStudioAnalysis.analyze(sa,pa,sb,pb,window)
 
+    @Test fun intentionallyDifferentGraphicsDriverIsNotAConfounder() {
+        val sa=session(1,driver="System").copy(
+            performanceMode="Performance",fanMode="Smart",
+            clusterTuneMode="Stock")
+        val sb=session(2,driver="Turnip").copy(
+            performanceMode="Performance",fanMode="Smart",
+            clusterTuneMode="Stock")
+        val r=CompareStudioAnalysis.analyze(
+            sa,a(),sb,b(),Window(0L,200_000L),
+            CompareStudioAnalysis.TestedVariable.DRIVER)
+        assertFalse(r.warnings.any{it.contains("Graphics driver differs")})
+        assertTrue(CompareStudioAnalysis.report(r).contains(
+            "Declared variable under test: Graphics driver"))
+        val modified=sb.copy(fanMode="Sport")
+        val withFanChange=CompareStudioAnalysis.analyze(
+            sa,a(),modified,b(),Window(0L,200_000L),
+            CompareStudioAnalysis.TestedVariable.DRIVER)
+        assertTrue(withFanChange.warnings.any{
+            it.contains("Fan setting differs")})
+    }
+
+    @Test fun sameTestConditionDoesNotBecomeAnImaginaryDifference() {
+        val sa=session(1,driver="System").copy(fanMode="Smart")
+        val sb=session(2,driver="System").copy(fanMode="Smart")
+        val r=CompareStudioAnalysis.analyze(sa,a(),sb,b(),
+            Window(0L,200_000L),CompareStudioAnalysis.TestedVariable.FAN)
+        assertTrue(r.warnings.any{
+            it.contains("identical values")})
+    }
+
     @Test fun sameElapsedWindowPreservesOriginalOriginsAndDeltas() {
         val report=analyze(window=Window(10_000L,100_000L))
         assertEquals(19,report.a.points.size)

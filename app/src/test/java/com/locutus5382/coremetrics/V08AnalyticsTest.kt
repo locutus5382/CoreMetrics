@@ -85,6 +85,22 @@ class V08AnalyticsTest {
         assertEquals(rows,V08Analytics.afterWarmUp(rows,0))
     }
 
+    @Test fun capValidationUsesRecordedKeysNotPresentationLabels() {
+        val stock="policy3 max 2.80 GHz · policy7 max 3.19 GHz"
+        val reduced="policy3 max 1.79 GHz · policy7 max 1.84 GHz"
+        val stockKey=com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer.key(stock)
+        val reducedKey=com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer.key(reduced)
+        assertTrue(com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer.label(stockKey)
+            .startsWith("Observed cap"))
+        assertTrue(V08Analytics.profileConflict("Underclocking",listOf(stockKey)))
+        assertTrue(V08Analytics.profileConflict("Stock",listOf(stockKey,reducedKey)))
+        assertFalse(V08Analytics.profileConflict("Underclocking",listOf(reducedKey)))
+        assertFalse(V08Analytics.profileConflict("Stock",listOf(
+            "P3:2.44|P7:2.91")))
+        assertFalse(V08Analytics.profileConflict("Underclocking",listOf(
+            "P3:?|P7:?")))
+    }
+
     @Test fun unknownAndMultipleCeilingsRetainPhases() {
         val stock="policy3 max 2.80 GHz · policy7 max 3.19 GHz"
         val large="policy3 max 1.79 GHz · policy7 max 1.84 GHz"

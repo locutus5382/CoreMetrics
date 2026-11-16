@@ -17,6 +17,8 @@ import com.locutus5382.coremetrics.data.SessionStore
 /** Manually entered context. Never infer driver/resolution from sampling. */
 @Composable
 internal fun SessionMetadataEditor(session:SessionStore.Session,
+    database:SessionStore,
+    onSessionChanged:()->Unit,
     onDriver:(String?,(Boolean,String)->Unit)->Unit,
     onResolution:(String?,(Boolean,String)->Unit)->Unit,
     onNote:(String?,(Boolean,String)->Unit)->Unit,onConfig:(String)->Unit,
@@ -174,6 +176,13 @@ internal fun SessionMetadataEditor(session:SessionStore.Session,
                 Text("Save resolution")
             }
         }
+        HorizontalDivider()
+        Text("Saved test profile: "+(session.profileName?:"Not specified")+
+            " · Odin: "+(session.performanceMode?:"?")+
+            " · Fan: "+(session.fanMode?:"?")+
+            " · ClusterTune: "+(session.clusterTuneMode?:"?"),
+            color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+        QuickTestProfilesPanel(database,session.id,onSessionChanged)
         HorizontalDivider()
         Text("Deleting permanently removes samples and linked A/B pairs.",
             color=coreSecondary,style=MaterialTheme.typography.labelSmall)

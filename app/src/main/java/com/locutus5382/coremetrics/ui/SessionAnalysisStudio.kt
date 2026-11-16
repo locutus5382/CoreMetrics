@@ -98,7 +98,10 @@ internal fun SessionAnalysisStudio(
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         // Lead with a concise summary. Window/export and technical drill-down
         // stay available but no longer overwhelm the initial analysis view.
-        bundle?.let { SessionQuickOverview(it.benchmark,it.points) }
+        bundle?.let {
+            SessionQuickOverview(it.benchmark,it.points)
+            SessionEventsPanel(it.points)
+        }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick={ showWindowTools=!showWindowTools }) {
