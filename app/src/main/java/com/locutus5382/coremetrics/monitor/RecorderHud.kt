@@ -101,9 +101,13 @@ internal data class HudOptions(
             )) putExtra("hud_"+k,v)
         }
     }
-    fun save(context:Context):Boolean {
+    /** Cosmetic HUD options are not transaction/lease data.
+     * Avoid a synchronous disk fsync on the app or overlay main thread.
+     * Intent extras carry the new settings immediately across processes.
+     */
+    fun save(context:Context) {
         val p=context.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
-        return p.edit().putFloat(OPACITY,opacity)
+        p.edit().putFloat(OPACITY,opacity)
             .putString(SIZE,size).putString(LAYOUT,layout)
             .putString(INDICATOR,indicatorColor).putBoolean(BLINK,blink)
             .putBoolean("hud_cpuTemp",showCpuTemp)
@@ -114,7 +118,7 @@ internal data class HudOptions(
             .putBoolean("hud_power",showPower)
             .putBoolean("hud_fps",showFps)
             .putBoolean("hud_sparkline",false)
-            .putBoolean(ADAPTIVE,adaptiveColors).commit()
+            .putBoolean(ADAPTIVE,adaptiveColors).apply()
     }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
         showGpuLoad,showRam,showPower).count { it }
