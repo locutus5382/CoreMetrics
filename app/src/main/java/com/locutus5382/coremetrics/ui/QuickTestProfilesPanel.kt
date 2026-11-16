@@ -60,7 +60,7 @@ internal fun QuickTestProfilesPanel(
         performance="Not specified";fan="Not specified";cluster="Not specified"
         confirmDelete=false
     }
-    fun action(success:String,block:()->Unit) {
+    fun action(success:String,onSuccess:()->Unit={},block:()->Unit) {
         if(busy)return
         busy=true
         scope.launch {
@@ -69,11 +69,12 @@ internal fun QuickTestProfilesPanel(
             }
             busy=false
             result.fold(
-                onSuccess={ feedback=success;refresh++;onSessionChanged() },
+                onSuccess={
+                    feedback=success;refresh++;onSessionChanged();onSuccess()
+                },
                 onFailure={feedback="Not saved: "+(it.message?:it.javaClass.simpleName)})
         }
     }
-    fun selectedProfileId():Long = selectedId
     Column(Modifier.fillMaxWidth().pureGlass(12).padding(11.dp),
         verticalArrangement=Arrangement.spacedBy(7.dp)) {
         Text("QUICK TEST PROFILES · MANUAL CONDITIONS",
@@ -117,14 +118,21 @@ internal fun QuickTestProfilesPanel(
                         if(it=="Handheld 1x"||it=="Docked"||it.startsWith("Custom: "))
                             it else "Custom: "+it
                     }
-                    action("Profile saved") {
-                        database.saveQuickProfile(id=selectedProfileId(),
-                            name=name,gameNote=game.ifBlank{null},
+                    // Capture one immutable UI snapshot BEFORE crossing to
+                    // Dispatchers.IO; no Compose state read in the worker.
+                    val id=selectedId
+                    val chosenName=name
+                    val chosenGame=game.ifBlank{null}
+                    val chosenPerformance=performance.takeUnless{it=="Not specified"}
+                    val chosenFan=fan.takeUnless{it=="Not specified"}
+                    val chosenCluster=cluster.takeUnless{it=="Not specified"}
+                    action("Profile saved",block={
+                        database.saveQuickProfile(id=id,
+                            name=chosenName,gameNote=chosenGame,
                             graphicsDriver=parsedDriver,resolutionScale=parsedScale,
-                            performanceMode=performance.takeUnless{it=="Not specified"},
-                            fanMode=fan.takeUnless{it=="Not specified"},
-                            clusterTuneMode=cluster.takeUnless{it=="Not specified"})
-                    }
+                            performanceMode=chosenPerformance,
+                            fanMode=chosenFan,clusterTuneMode=chosenCluster)
+                    })
                 }){Text(if(selectedId>0)"Update" else "Save preset")}
             OutlinedButton(enabled=!busy && selectedId>0,
                 onClick={val id=selectedId
@@ -149,10 +157,12 @@ internal fun QuickTestProfilesPanel(
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick={confirmDelete=false}){Text("Cancel")}
                     Button(enabled=!busy,onClick={val id=selectedId
-                        action("Shortcut deleted; past sessions preserved"){
-                            check(database.deleteQuickProfile(id)){"Preset no longer exists"}
-                        }
-                        clear()
+                        action("Shortcut deleted; past sessions preserved",
+                            block={
+                                check(database.deleteQuickProfile(id)){
+                                    "Preset no longer exists"
+                                }
+                            },onSuccess={clear()})
                     }){Text("Delete shortcut")}
                 }
             }else OutlinedButton(onClick={confirmDelete=true}) {

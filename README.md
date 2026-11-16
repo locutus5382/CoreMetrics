@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.8.1 Battery HUD alpha — optional BAT T reading (off by default), no outline below 39°C, yellow WARM outline at 39°C, orange HOT outline after >42°C for 15 real seconds, time-based release hysteresis, and separate Android-reported battery-health OVERHEAT indicator. The v0.9.8 analysis engine, Quick Test Profiles, SQLite v7, recorder, Quick Settings and compact HUD remain unchanged.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.8.2 Stability & Analysis Validation alpha — SQLite v8 cross-process recording defaults and active Quick Test Profile, Quick Settings/monitor session consistency, immutable profile editor snapshots, absolute GPU-load comparability warnings, activity-pattern noise filtering, and up-front long-session analysis truncation disclosure. The v0.9.8.1 optional BAT T and current recorder/HUD functionality are preserved.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.8.1)
+## One-app Quick Start (v0.9.8.2)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.8.1-battery-hud-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.8.1-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.8.2-stability-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.8.2-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,15 @@
 
 ---
 
+
+## v0.9.8.2 — Stability & Analysis Validation
+
+- SQLite **v8** adds one authoritative, cross-process recording-settings row (label, configuration, cadence, auto-HUD, next test-profile ID and HUD option JSON). The old per-process preferences are a **one-time migration input** only. Both Quick Settings tiles and the monitor service read this same database; explicit Intent extras still take precedence.
+- The selected Quick Test Profile is saved in a real SQL transaction and snapshotted during the existing session-start transaction. Deleting a selected preset resets only the future selection. Earlier sessions retain their strings, even when a shortcut is renamed.
+- Compose Save captures immutable values before switching to Dispatchers.IO; UI deletion clears editor fields only after confirmed success. UI defaults go through a single ordered SQL writer, and ARM awaits durability before optionally closing the Activity.
+- A/B analysis no longer compares percentages of *relative* high GPU activity computed against incompatible within-run quartiles. It now reports a caution for non-overlapping absolute GPU-load interquartile ranges. No performance-equivalence claim is made from load alone.
+- Busiest system CPU core shifts require nontrivial observed load. Incomplete 12,000-row analysis now shows an obvious top-level warning; long-session segment exports remain disabled, and full-session CSV export is unchanged.
+- v0.9.8 analysis, no-root telemetry, v0.9.8.1 BAT T, current compact HUD, REC/STOP/LMK safeguards and report-format v0.9.8 are retained. **Validation:** `docs/PORTAL_V0982_STABILITY_ACCEPTANCE.md`. Android instrumentation is assembled in CI but must still run on a device.
 
 ## v0.9.8.1 — Optional BAT T warmth advisories and battery-health alert
 

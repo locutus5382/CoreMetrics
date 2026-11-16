@@ -201,19 +201,23 @@ object CompareStudioAnalysis {
                 add("Render scale is not documented in both sessions")
             else if(sessionA.resolutionScale!=sessionB.resolutionScale)
                 add("Render scale differs (possible confounder)")
-            val activityA=intelA.periods
-            val activityB=intelB.periods
-            fun higherShare(periods:List<SessionIntelligence.Period>):Double? {
-                val count=periods.sumOf{it.samples}
-                return if(count==0)null else periods.filter{
-                    it.activity==SessionIntelligence.Activity.HIGHER
-                }.sumOf{it.samples}.toDouble()/count
+            // SessionIntelligence uses each *recording's own* quartiles
+            // to label higher/lower activity. Those relative labels cannot
+            // be directly compared across independent workloads. Compare
+            // absolute distributions on the same 0..100% scale instead.
+            fun middleHalf(points:List<SessionStore.Point>):Pair<Double,Double>? {
+                val load=points.mapNotNull { it.gpuLoad?.takeIf { v ->
+                    v.isFinite() && v in 0.0..100.0
+                } }.sorted()
+                if(load.size<8)return null
+                return load[(load.lastIndex)/4] to load[(load.lastIndex*3)/4]
             }
-            val shareA=higherShare(activityA)
-            val shareB=higherShare(activityB)
-            if(shareA!=null && shareB!=null && abs(shareA-shareB)>0.25)
-                add("Higher-GPU-activity time differs substantially; "+
-                    "selected windows may represent different workloads")
+            val rangeA=middleHalf(a.points)
+            val rangeB=middleHalf(b.points)
+            if(rangeA!=null && rangeB!=null &&
+                (rangeA.second<rangeB.first || rangeB.second<rangeA.first))
+                add("Middle 50% GPU-load ranges do not overlap across the "+
+                    "selected windows; workload equivalence is unverified")
             if(a.benchmark.energy.powerCondition!=BenchmarkAnalyzer.PowerCondition.DISCHARGING ||
                 b.benchmark.energy.powerCondition!=BenchmarkAnalyzer.PowerCondition.DISCHARGING)
                 add("At least one window is not exclusively measured during battery discharge")

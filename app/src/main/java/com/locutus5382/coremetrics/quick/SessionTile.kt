@@ -9,6 +9,7 @@ import android.service.quicksettings.TileService
 import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
+import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.R
 import android.graphics.drawable.Icon
@@ -49,15 +50,16 @@ class SessionTile:TileService(){
                     startForegroundService(Intent(this,RecordingService::class.java)
                         .setAction(RecordingService.RECOVER))
                 QuickTileStatePolicy.RecordAction.START->{
-                    val prefs=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
+                    // A fresh SQLite SELECT, never a cached per-process
+                    // preference copy. If storage is unavailable, fail closed.
+                    val defaults=SessionStore(applicationContext).use {
+                        it.recordingDefaults()
+                    }
                     startForegroundService(Intent(this,RecordingService::class.java)
                         .setAction(RecordingService.START)
-                        .putExtra(RecordingService.INTERVAL,
-                            prefs.getLong("interval_ms",5000L))
-                        .putExtra(RecordingService.LABEL,
-                            prefs.getString("label","Gameplay")?:"Gameplay")
-                        .putExtra(RecordingService.CONFIG,
-                            prefs.getString("configuration","Stock")?:"Stock"))
+                        .putExtra(RecordingService.INTERVAL,defaults.intervalMs)
+                        .putExtra(RecordingService.LABEL,defaults.label)
+                        .putExtra(RecordingService.CONFIG,defaults.configuration))
                 }
                 else->Unit
             }

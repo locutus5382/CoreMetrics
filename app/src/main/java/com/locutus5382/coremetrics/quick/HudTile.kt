@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import com.locutus5382.coremetrics.R
 import android.graphics.drawable.Icon
+import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
 
 /** Independent HUD visibility/standby switch. Never stops an active recording. */
@@ -63,13 +64,12 @@ class HudTile:TileService(){
             }
             val i=Intent(this,RecordingService::class.java).setAction(actionCode)
             if(action==QuickTileStatePolicy.HudAction.ARM){
-                val prefs=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
-                i.putExtra(RecordingService.LABEL,
-                    prefs.getString("label","Gameplay")?:"Gameplay")
-                    .putExtra(RecordingService.CONFIG,
-                        prefs.getString("configuration","Stock")?:"Stock")
-                    .putExtra(RecordingService.INTERVAL,
-                        prefs.getLong("interval_ms",5000L))
+                val defaults=SessionStore(applicationContext).use {
+                    it.recordingDefaults()
+                }
+                i.putExtra(RecordingService.LABEL,defaults.label)
+                    .putExtra(RecordingService.CONFIG,defaults.configuration)
+                    .putExtra(RecordingService.INTERVAL,defaults.intervalMs)
             }
             if(action==QuickTileStatePolicy.HudAction.ARM ||
                 action==QuickTileStatePolicy.HudAction.RECOVER)
