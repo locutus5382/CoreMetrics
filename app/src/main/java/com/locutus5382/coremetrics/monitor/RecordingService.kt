@@ -55,6 +55,7 @@ class RecordingService:Service() {
         const val LABEL="label"
         const val CONFIG="configuration"
         const val INTERVAL="interval"
+        const val AUTO_HUD="hud_auto_enabled"
         private const val RECOVERY_ID="recovery_id"
         private const val RECOVERY_HUD="recovery_hud"
         private const val RECOVERY_LOCK="recovery_lock"
@@ -565,7 +566,7 @@ class RecordingService:Service() {
                 MonitorState.starting=true
                 MonitorState.standby=false
                 val wantsHud=if(restored)command.getBooleanExtra(RECOVERY_HUD,false)
-                    else armed || defaults.hudEnabled
+                    else armed || command.getBooleanExtra(AUTO_HUD,defaults.hudEnabled)
                 userWantsHud=wantsHud
                 if(wantsHud && hud.permissionGranted()){
                     settings=HudOptions.from(this,command)
