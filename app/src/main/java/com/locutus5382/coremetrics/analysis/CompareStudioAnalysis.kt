@@ -128,6 +128,9 @@ object CompareStudioAnalysis {
         }
         val a=side(sessionA,originalA,window)
         val b=side(sessionB,originalB,window)
+        // Each selected window is analyzed once, off the UI thread.
+        val intelA=SessionIntelligence.analyze(a.points)
+        val intelB=SessionIntelligence.analyze(b.points)
         val usable=a.points.size>=6 && b.points.size>=6 &&
             duration(a.points)>=20_000L && duration(b.points)>=20_000L
         val warnings=buildList {
@@ -198,8 +201,8 @@ object CompareStudioAnalysis {
                 add("Render scale is not documented in both sessions")
             else if(sessionA.resolutionScale!=sessionB.resolutionScale)
                 add("Render scale differs (possible confounder)")
-            val activityA=SessionIntelligence.analyze(a.points).periods
-            val activityB=SessionIntelligence.analyze(b.points).periods
+            val activityA=intelA.periods
+            val activityB=intelB.periods
             fun higherShare(periods:List<SessionIntelligence.Period>):Double? {
                 val count=periods.sumOf{it.samples}
                 return if(count==0)null else periods.filter{
@@ -237,11 +240,9 @@ object CompareStudioAnalysis {
             if(a.observedCaps.size>1||b.observedCaps.size>1)
                 add("CPU frequency ceilings changed within a selected window")
         }
-        val eventsA=SessionIntelligence.analyze(a.points).events
-        val eventsB=SessionIntelligence.analyze(b.points).events
         return Result(window,a,b,shared,usable,warnings,
             if(usable) observations(a,b) else emptyList(),testedVariable,
-            eventsA,eventsB)
+            intelA.events,intelB.events)
     }
     fun delta(a:Double?,b:Double?):Double? =
         if(a!=null&&b!=null&&a.isFinite()&&b.isFinite())b-a else null
