@@ -32,7 +32,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val cpuClocks: String? = null, val gpuMHz: Double? = null,
         val thermalStatus: Int? = null, val thermalHeadroom: Double? = null,
         val swapUsedGiB: Double? = null, val memoryPsiSomeAvg10: Double? = null,
-        val sampleDurationMs: Double? = null, val sampleElapsedMs: Long? = null)
+        val sampleDurationMs: Double? = null, val sampleElapsedMs: Long? = null,
+        val batteryPowerSource:String?=null)
 
     /**
      * Single cross-process source for recording-critical QS settings.
@@ -608,7 +609,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         observed_cpu_limits,busiest_pct,battery_status,busiest_core,
         battery_temp,battery_pct,cpu_clocks,gpu_mhz,
         thermal_status,thermal_headroom,swap_used_gib,mem_psi_some10,
-        sample_duration_ms,sample_elapsed_ms
+        sample_duration_ms,sample_elapsed_ms,battery_source
         FROM samples WHERE session_id=? ORDER BY time_ms ASC LIMIT ?""",
         arrayOf(id.toString(), max.coerceIn(1,12000).toString())
     ).use { c ->
@@ -624,7 +625,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 if(c.isNull(15))null else c.getString(15),value(16),
                 if(c.isNull(17)) null else c.getInt(17),
                 value(18),value(19),value(20),value(21),
-                if(c.isNull(22)) null else c.getLong(22)))
+                if(c.isNull(22)) null else c.getLong(22),
+                if(c.isNull(23)) null else c.getString(23)))
         }
     }
 
