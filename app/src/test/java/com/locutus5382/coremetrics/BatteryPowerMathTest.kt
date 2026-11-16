@@ -12,6 +12,24 @@ class BatteryPowerMathTest {
     @Test fun chargingIsNegativeNetBatteryPower() {
         assertEquals(-2.1, BatteryPowerMath.signedDischargeWatts(500_000,4200)!!, 0.000001)
     }
+    @Test fun mixedSourcesMustNotPretendTheirTimingIsSynchronized() {
+        assertEquals(
+            "CURRENT=BATTERY_PROPERTY_CURRENT_NOW; VOLTAGE=ACTION_BATTERY_CHANGED; SNAPSHOT_AGE_UNVERIFIED",
+            BatteryPowerMath.source(true,true,true,true))
+        assertEquals(
+            "CURRENT=SYSFS_CURRENT_NOW; VOLTAGE=SYSFS_VOLTAGE_NOW; SNAPSHOT_AGE_UNVERIFIED",
+            BatteryPowerMath.source(false,false,true,true))
+        assertEquals("UNAVAILABLE",BatteryPowerMath.source(true,true,false,true))
+    }
+    @Test fun contradictoryCurrentPolarityNeverBecomesDischargeEvidence() {
+        org.junit.Assert.assertTrue(BatteryPowerMath.signConflict(950_000L,false))
+        org.junit.Assert.assertTrue(BatteryPowerMath.signConflict(-950_000L,true))
+        org.junit.Assert.assertFalse(BatteryPowerMath.signConflict(-950_000L,false))
+        org.junit.Assert.assertFalse(BatteryPowerMath.signConflict(20_000L,false))
+        org.junit.Assert.assertFalse(BatteryPowerMath.signConflict(null,false))
+        org.junit.Assert.assertFalse(BatteryPowerMath.signConflict(950_000L,null))
+    }
+
     @Test fun noGuessIfUnitsNotValid() {
         assertNull(BatteryPowerMath.signedDischargeWatts(null,4200))
         assertNull(BatteryPowerMath.signedDischargeWatts(-100_000,4))
