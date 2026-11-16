@@ -754,14 +754,21 @@ internal class RecorderHud(private val context:Context) {
                         dragLayout.run()
                     }
                     if(moved) {
-                        val closeTop=p.y<=dp(22f)
-                        val closeLeft=p.x<=dp(18f)
-                        val closeRight=p.x+p.width>=windowWidth()-dp(18f)
-                        when {
-                            closeTop->dock(DockEdge.TOP)
-                            closeLeft->dock(DockEdge.LEFT)
-                            closeRight->dock(DockEdge.RIGHT)
-                        }
+                        // Approaching a screen border PARKS the expanded HUD,
+                        // it does not collapse it. Explicit ⇥ remains available.
+                        val margin=dp(4f)
+                        val right=(windowWidth()-p.width-margin)
+                            .coerceAtLeast(margin)
+                        val left=p.x<=dp(16f)
+                        val nearRight=p.x>=right-dp(16f)
+                        val top=p.y<=dp(16f)
+                        if(left)p.x=margin
+                        else if(nearRight)p.x=right
+                        if(top)p.y=margin
+                        // Honor the user's location on later text updates.
+                        anchoredRight=nearRight
+                        expandedX=p.x;expandedY=p.y
+                        dragLayout.run()
                     }
                     true
                 }
@@ -801,7 +808,10 @@ internal class RecorderHud(private val context:Context) {
 
     private fun nearestDockEdge():DockEdge {
         val p=params ?:return DockEdge.RIGHT
-        if(p.y<=dp(35f))return DockEdge.TOP
+        // Horizontal edge tabs are available deliberately by using ⇥ while
+        // parked near the top; simply dragging to a corner never collapses.
+        if(p.y<=dp(22f) && p.x>dp(50f) &&
+            p.x+p.width<windowWidth()-dp(50f))return DockEdge.TOP
         return if(p.x+p.width/2<windowWidth()/2)DockEdge.LEFT else DockEdge.RIGHT
     }
     private fun dock(edge:DockEdge) {
@@ -824,13 +834,13 @@ internal class RecorderHud(private val context:Context) {
         anchoredRight=dockEdge==DockEdge.RIGHT
         applyAppearance()
         p.x=when(dockEdge) {
-            DockEdge.RIGHT -> (windowWidth()-p.width-dp(10f)).coerceAtLeast(0)
-            DockEdge.LEFT -> dp(10f)
+            DockEdge.RIGHT -> (windowWidth()-p.width-dp(4f)).coerceAtLeast(0)
+            DockEdge.LEFT -> dp(4f)
             DockEdge.TOP -> expandedX.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
         }
-        p.y=if(dockEdge==DockEdge.TOP)dp(24f) else
-            expandedY.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
-        root?.let { runCatching{wm.updateViewLayout(it,p)} }
+        p.y=expandedY.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
+        root?.let { runCatching{wm.updateViewLayout(it,p)}
+            .onSuccess { markLayoutApplied(p) } }
         animateDockTransition()
     }
 
