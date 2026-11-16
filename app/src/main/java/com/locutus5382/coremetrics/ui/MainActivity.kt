@@ -86,6 +86,7 @@ import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.RecorderJournal
 import com.locutus5382.coremetrics.quick.SessionTile
 import com.locutus5382.coremetrics.quick.HudTile
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -103,6 +104,11 @@ private val white = Color(0xFFF0F5FA)
 private val muted = Color(0xFFA8C4D1)
 private val glow = Color(0xFF18445A)
 private val pages = listOf("Live", "Sessions", "Compare", "HUD", "Settings")
+
+private data class RecordingDefaultsWrite(
+    val settings:SessionStore.RecordingDefaults,
+    val confirmed:CompletableDeferred<Boolean>?=null
+)
 
 private data class AbWindowExportRequest(
     val sessionAId:Long,val sessionBId:Long,
@@ -527,11 +533,11 @@ class MainActivity : ComponentActivity() {
             }
             var hudOptions by remember { mutableStateOf(HudOptions.from(this@MainActivity)) }
             var message by remember { mutableStateOf("") }
-            // One ordered writer; QS always reads SQLite, not UI-process
-            // preferences. CONFLATED drops superseded typing updates but
-            // never reverses the order of committed changes.
+            // All recording defaults use one serial actor. A confirmed ARM
+            // message is a durable ordering barrier: older typing updates
+            // cannot overwrite it after standby starts.
             val defaultsWrites=remember {
-                Channel<SessionStore.RecordingDefaults>(Channel.CONFLATED)
+                Channel<RecordingDefaultsWrite>(Channel.UNLIMITED)
             }
             var defaultsLoaded by remember { mutableStateOf(false) }
             LaunchedEffect(database) {
@@ -546,20 +552,31 @@ class MainActivity : ComponentActivity() {
                 defaultsLoaded=true
             }
             LaunchedEffect(database) {
-                for(value in defaultsWrites) {
-                    val saved=withContext(Dispatchers.IO) {
-                        runCatching{database.saveRecordingDefaults(value)}
+                for(initial in defaultsWrites) {
+                    // Coalesce superseded plain typing edits, but never
+                    // discard an ARM confirmation barrier.
+                    var request=initial
+                    while(request.confirmed==null) {
+                        val queued=defaultsWrites.tryReceive().getOrNull()?:break
+                        request=queued
                     }
-                    if(saved.getOrDefault(false)!=true)
+                    val saved=withContext(Dispatchers.IO) {
+                        runCatching {
+                            database.saveRecordingDefaults(request.settings)
+                        }.getOrDefault(false)
+                    }
+                    request.confirmed?.complete(saved)
+                    if(!saved)
                         message="Could not persist recording defaults for Quick Settings"
                 }
             }
             LaunchedEffect(defaultsLoaded,label,configuration,interval,hudEnabled) {
                 if(defaultsLoaded)
-                    defaultsWrites.trySend(SessionStore.RecordingDefaults(
-                        label=label.trim().ifBlank{"Gameplay"},
-                        configuration=configuration,intervalMs=interval,
-                        hudEnabled=hudEnabled))
+                    defaultsWrites.trySend(RecordingDefaultsWrite(
+                        SessionStore.RecordingDefaults(
+                            label=label.trim().ifBlank{"Gameplay"},
+                            configuration=configuration,intervalMs=interval,
+                            hudEnabled=hudEnabled)))
             }
             var sessionList by remember { mutableStateOf(emptyList<SessionStore.Session>()) }
             var linkedPairs by remember {
@@ -1072,10 +1089,9 @@ class MainActivity : ComponentActivity() {
                     label.trim().ifBlank{"Gameplay"},configuration,interval,hudEnabled)
                 val selectedHud=hudOptions
                 scope.launch {
-                    val saved=withContext(Dispatchers.IO) {
-                        runCatching{database.saveRecordingDefaults(request)}
-                    }
-                    if(saved.getOrDefault(false)!=true) {
+                    val confirmed=CompletableDeferred<Boolean>()
+                    defaultsWrites.send(RecordingDefaultsWrite(request,confirmed))
+                    if(!confirmed.await()) {
                         message="Could not save recording defaults; standby not started"
                         return@launch
                     }
