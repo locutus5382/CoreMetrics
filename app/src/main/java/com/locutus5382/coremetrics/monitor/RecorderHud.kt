@@ -147,6 +147,7 @@ internal class RecorderHud(private val context:Context) {
     private var lastHeadroom:Double?=null
     private var headroomAtElapsedMs:Long=-1L
     private var lastBadgeLevel:ThermalIndicatorPolicy.Level?=null
+    private var lastDockRecording:Boolean?=null
     // No four-element list allocation on every 2s/5s telemetry update.
     private var appliedX=Int.MIN_VALUE
     private var appliedY=Int.MIN_VALUE
@@ -202,7 +203,7 @@ internal class RecorderHud(private val context:Context) {
     private var disposed=false
 
     private fun shouldBlink() =
-        !disposed && recording && opts.blink && !collapsed && visible()
+        !disposed && recording && opts.blink && !collapsed && !locked && visible()
 
     private val blink=object:Runnable {
         override fun run() {
@@ -282,11 +283,11 @@ internal class RecorderHud(private val context:Context) {
      */
     private fun makeUnlockHandle(): Pair<TextView,WindowManager.LayoutParams> {
         val main=params ?:error("HUD_NO_PARAMS")
-        val icon=lockControl
-        val oldX=(main.x+(pill?.left?:0)+(controlsRow?.left?:0)+
-            (icon?.left?:dp(210f)))-dp(6f)
-        val oldY=main.y+(pill?.top?:0)+(controlsRow?.top?:0)+
-            (icon?.top?:0)-dp(5f)
+        // Stable anchor: the external unlock target sits over the rightmost
+        // 48dp reserved inside the *locked* compact telemetry card. We cannot
+        // anchor to a GONE action row because it has no meaningful coordinates.
+        val oldX=main.x+main.width-dp(48f)
+        val oldY=main.y+((root?.height?:dp(60f))-dp(48f))/2
         val handle=styledLabel("",11f).apply {
             gravity=Gravity.CENTER
             background=FlatLockChipDrawable(locked=true)
@@ -343,6 +344,7 @@ internal class RecorderHud(private val context:Context) {
                 // saved choices. The separate unlock chip stays touchable.
                 drawerOpen=false
                 applyAppearance()
+                syncBlink()
                 return "HUD_LOCKED_WITH_TOUCHABLE_UNLOCK"
             }catch(e:Exception){
                 // Restore both interaction and visual state if *either*
@@ -371,6 +373,7 @@ internal class RecorderHud(private val context:Context) {
             val chipGone=unlockWindow?.let{removeTracked(it)}?:true
             if(chipGone){unlockWindow=null;unlockParams=null}
             applyAppearance()
+            syncBlink()
             if(chipGone)"HUD_UNLOCKED_TOUCH_CONTROLS_RESTORED"
             else "HUD_UNLOCK_CHIP_REMOVE_FAILED_RETAINED"
         }catch(e:Exception){
@@ -611,8 +614,8 @@ internal class RecorderHud(private val context:Context) {
                 setColor(Color.rgb(255,199,0))
             }
         }
-        readings.addView(thermalIndicator,LinearLayout.LayoutParams(
-            dp(4f),dp(48f)).apply { marginStart=dp(2f) })
+        readings.addView(thermalIndicator,0,LinearLayout.LayoutParams(
+            dp(4f),dp(48f)).apply { marginEnd=dp(2f) })
         val rec=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
@@ -881,16 +884,18 @@ internal class RecorderHud(private val context:Context) {
                 } ?: 0f else 0f
             // Readings and actions occupy separate rows. The expanded HUD
             // is only as wide as the longer row, not their combined widths.
-            val viewport=(windowWidth()-dp(20f)).coerceAtLeast(dp(220f))
-            val minimum=dp(if(drawerOpen)425f else 250f).coerceAtMost(viewport)
-            val natural=maxOf(longest.roundToInt()+dp(92f),
-                dp(if(recording)258f else 273f))
-            p.width=(natural+dp(12f)).coerceIn(minimum,viewport)
-            text?.maxWidth=(p.width-dp(90f)).coerceAtLeast(dp(80f))
+            val viewport=(windowWidth()-dp(8f)).coerceAtLeast(dp(220f))
+            val controlWidth=if(locked)dp(58f) else dp(126f)
+            val minimum=dp(if(locked)200f else 300f).coerceAtMost(viewport)
+            // One compact horizontal row. When locked, the only space on the
+            // right is the separate touchable 48dp unlock handle.
+            val natural=longest.roundToInt()+controlWidth
+            p.width=natural.coerceIn(minimum,viewport)
+            text?.maxWidth=(p.width-controlWidth).coerceAtLeast(dp(85f))
             p.x=if(anchoredRight)
-                (windowWidth()-p.width-dp(10f)).coerceAtLeast(0)
+                (windowWidth()-p.width-dp(4f)).coerceAtLeast(0)
                 else p.x.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
-            p.y=p.y.coerceIn(0,(windowHeight()-dp(54f)).coerceAtLeast(0))
+            p.y=p.y.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
         }
         if(attached()) {
             if(layoutChanged(p)) {
@@ -916,12 +921,9 @@ internal class RecorderHud(private val context:Context) {
         val chip=unlockWindow ?:return
         val cp=unlockParams ?:return
         val p=params ?:return
-        val icon=lockControl ?:return
-        cp.x=(p.x+(pill?.left?:0)+(controlsRow?.left?:0)+
-            icon.left-dp(6f))
+        cp.x=(p.x+p.width-dp(48f))
             .coerceIn(0,(windowWidth()-dp(48f)).coerceAtLeast(0))
-        cp.y=(p.y+(pill?.top?:0)+(controlsRow?.top?:0)+
-            icon.top-dp(5f))
+        cp.y=(p.y+((root?.height?:dp(60f))-dp(48f))/2)
             .coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
         runCatching {wm.updateViewLayout(chip,cp)}
     }
@@ -930,10 +932,10 @@ internal class RecorderHud(private val context:Context) {
         val frame=root ?:return
         frame.background=if(collapsed) null else rounded(
             opts.opacity*(if(locked) .90f else 1f))
-        frame.setPadding(if(collapsed)0 else dp(6f),
-            if(collapsed)0 else dp(4f),
-            if(collapsed)0 else dp(6f),
-            if(collapsed)0 else dp(4f))
+        frame.setPadding(if(collapsed)0 else dp(5f),
+            if(collapsed)0 else dp(3f),
+            if(collapsed)0 else dp(5f),
+            if(collapsed)0 else dp(3f))
         pill?.visibility=if(collapsed)View.GONE else View.VISIBLE
         dockTab?.visibility=if(collapsed)View.VISIBLE else View.GONE
         drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
@@ -951,7 +953,9 @@ internal class RecorderHud(private val context:Context) {
         // same vector linework, without an OS-dependent emoji glyph.
         // Retain the icon's layout width so the separate unlock chip is exactly
         // where the user expects it, but it cannot receive main-window touches.
-        lockControl?.visibility=if(locked)View.INVISIBLE else View.VISIBLE
+        controlsRow?.visibility=if(locked)View.GONE else View.VISIBLE
+        lockedSpace?.visibility=if(locked)View.VISIBLE else View.GONE
+        lockControl?.visibility=if(locked)View.GONE else View.VISIBLE
         closeControl?.visibility=if(recording)View.GONE else View.VISIBLE
         refreshThermalIndicator()
         renderTelemetry()
