@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.8.3 Measurement Integrity & Reproducibility alpha — explicit current/voltage provenance and conflict handling, one-shot battery counter/device capability diagnostics, optional repeat-run A/A analysis (2–5 runs), up to 100,000-sample streaming CSV import, and an experimental portable ZIP archive with additive transactional restoration. The v0.9.8.2 cross-process settings, analysis safeguards, v0.9.8.1 BAT T and compact HUD remain intact.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.9.0 Device & Measurement Foundation alpha — Android device identity recorded with each session, dynamically discovered CPU policies, conservative KGSL/Mali GPU reader adapters with explicit provenance, a one-shot compatibility check and removal of unsafe fixed 30.8 Wh runtime predictions. SQLite v9 adds only nullable fields; existing telemetry and HUD remain untouched where not explicitly noted.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.8.3)
+## One-app Quick Start (v0.9.9.0)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.8.3-measurement-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.8.3-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.9.0-device-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.0-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,16 @@
 
 ---
 
+
+## v0.9.9.0 — Device & Measurement Foundation (portability)
+
+- **No fixed battery capacity.** The previously hardcoded 30.8 Wh Odin runtime estimate was removed from session diagnostics and CPU-cap phases. Current actual battery-terminal power and time-integrated Wh remain reported when valid. Read-only `energy_full_design` and optional `charge_full_design` plus a separate nominal voltage provide one-shot, explicitly *unvalidated* design-capacity candidates. No hidden `PowerProfile` reflection.
+- **Discovered CPU policies:** active recorder reads available `policyN` directories, rather than assuming 0/3/7, and emits `CPU_POLICIES:` cap readings. The parser understands their actual numeric IDs, but does not infer an architecture or identify who applied a cap. Historical P3/P7 sessions remain legible. Missing and incomplete readings remain unknown.
+- **KGSL/Mali source adapters:** strict parsers for supported read-only Qualcomm KGSL GPU percent/ratio and Arm Mali percent nodes, plus frequency-only GPU devfreq candidates. No fabricated utilization from frequency, no root, and no unconditional claim that readable sysfs paths are calibrated. A bounded recheck handles transiently unavailable nodes.
+- **Recording origin & measurement sources:** SQLite **v9** stores Android manufacturer, model, device code and API with each new recording, plus per-sample `gpu_source`. Header-mapped CSV adds nullable provenance fields at the end. The portable archive retains the original recording-device identity after restore; opening on a second phone never rewrites its provenance.
+- **A/B and A/A cautions:** device identity missing/different and GPU sources missing/different/unvalidated are explicitly disclosed in observational analysis. Existing driver comparisons remain noncausal and do not claim frame performance.
+- **Settings → Device telemetry compatibility:** an on-demand, offline read-only diagnostic listing hardware policies, related core IDs, battery counter/design Wh candidates and GPU-source status. It does not poll during standby or add any new background services.
+- **Validation:** `docs/PORTAL_V0990_DEVICE_COMPAT_ACCEPTANCE.md`. Device/ROM behavior must be tested on real hardware; CI assembles instrumentation but does not execute it.
 
 ## v0.9.8.3 — Measurement Integrity & Reproducibility
 
