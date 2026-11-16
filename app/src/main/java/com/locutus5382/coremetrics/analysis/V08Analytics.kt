@@ -28,15 +28,14 @@ object V08Analytics {
             .filterNot { it==SessionRegimeAnalyzer.ReferenceCaps.UNKNOWN }
         if(known.isEmpty())return false
         val choice=selected.lowercase(Locale.US)
-        val reference=SessionRegimeAnalyzer.ReferenceCaps
         return (choice.contains("stock") && known.any {
-            it==reference.ODIN_MEDIUM_LIKE || it==reference.ODIN_LARGE_LIKE
+            it==SessionRegimeAnalyzer.ReferenceCaps.ODIN_MEDIUM_LIKE || it==SessionRegimeAnalyzer.ReferenceCaps.ODIN_LARGE_LIKE
         }) || (choice.contains("medium") && known.any {
-            it==reference.ODIN_LARGE_LIKE
+            it==SessionRegimeAnalyzer.ReferenceCaps.ODIN_LARGE_LIKE
         }) || (choice.contains("large") && known.any {
-            it==reference.ODIN_MEDIUM_LIKE
+            it==SessionRegimeAnalyzer.ReferenceCaps.ODIN_MEDIUM_LIKE
         }) || (choice.contains("underclock") && known.all {
-            it==reference.ODIN_STOCK_LIKE
+            it==SessionRegimeAnalyzer.ReferenceCaps.ODIN_STOCK_LIKE
         })
     }
 
