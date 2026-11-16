@@ -31,7 +31,8 @@ internal object RecorderLease {
         return p.edit()
             .putBoolean("active",true).putBoolean("recording",recording)
             .putBoolean("stop_requested",false)
-            .putBoolean("standby_recovery",if(recording)false else standbyRecovery)
+            .putBoolean("standby_recovery",if(recording)false else
+                RecorderContinuation.standbyAutoRecoverable(restored,standbyRecovery))
             .putLong("id",id).putString("label",label.take(64))
             .putString("config",config.take(40))
             .putLong("interval",if(interval==2000L)2000L else 5000L)
