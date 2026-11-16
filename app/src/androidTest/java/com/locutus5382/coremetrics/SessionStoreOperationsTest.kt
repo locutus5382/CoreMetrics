@@ -24,6 +24,10 @@ class SessionStoreOperationsTest {
         app.deleteDatabase(dbName)
         app.openOrCreateDatabase(dbName,Context.MODE_PRIVATE,null).use {legacy->
             legacy.execSQL("CREATE TABLE samples(session_id INTEGER, battery_status TEXT)")
+            legacy.execSQL("""CREATE TABLE sessions(
+                id INTEGER PRIMARY KEY,started_at INTEGER,ended_at INTEGER,
+                label TEXT,configuration TEXT,status TEXT,game_note TEXT,
+                graphics_driver TEXT,resolution_scale TEXT)""")
             legacy.version=4
         }
         val sandbox=object:ContextWrapper(app) {
@@ -40,7 +44,7 @@ class SessionStoreOperationsTest {
         val store=SessionStore(sandbox)
         try {
             val db=store.readableDatabase
-            assertEquals(6,db.version)
+            assertEquals(7,db.version)
             val names=mutableSetOf<String>()
             db.rawQuery("PRAGMA index_list(samples)",null).use { cursor->
                 while(cursor.moveToNext()) names.add(cursor.getString(1))
@@ -65,6 +69,10 @@ class SessionStoreOperationsTest {
             legacy.execSQL("""CREATE TABLE samples(
                 session_id INTEGER NOT NULL,time_ms INTEGER NOT NULL,
                 cpu_temp REAL,battery_status TEXT)""")
+            legacy.execSQL("""CREATE TABLE sessions(
+                id INTEGER PRIMARY KEY,started_at INTEGER,ended_at INTEGER,
+                label TEXT,configuration TEXT,status TEXT,game_note TEXT,
+                graphics_driver TEXT,resolution_scale TEXT)""")
             legacy.execSQL("""INSERT INTO samples(session_id,time_ms,cpu_temp)
                 VALUES(77,123456,48.5)""")
             legacy.version=5
@@ -83,7 +91,7 @@ class SessionStoreOperationsTest {
         val store=SessionStore(sandbox)
         try {
             val db=store.readableDatabase
-            assertEquals(6,db.version)
+            assertEquals(7,db.version)
             val columns=mutableSetOf<String>()
             db.rawQuery("PRAGMA table_info(samples)",null).use { cursor ->
                 while(cursor.moveToNext())columns.add(cursor.getString(1))
@@ -104,6 +112,49 @@ class SessionStoreOperationsTest {
             store.close()
             app.deleteDatabase(dbName)
         }
+    }
+
+    @Test fun migratingV6AddsProfileColumnsWithoutTouchingSavedSamples() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val name="coremetrics_v098_v6_to_v7_test.db"
+        app.deleteDatabase(name)
+        app.openOrCreateDatabase(name,Context.MODE_PRIVATE,null).use{legacy->
+            legacy.execSQL("""CREATE TABLE sessions(
+                id INTEGER PRIMARY KEY,started_at INTEGER,ended_at INTEGER,
+                label TEXT,configuration TEXT,status TEXT,game_note TEXT,
+                graphics_driver TEXT,resolution_scale TEXT)""")
+            legacy.execSQL("""INSERT INTO sessions VALUES(
+                9,1000,5000,'Session 9','Stock','COMPLETED',
+                'NFS','Custom: T30','Handheld 1x')""")
+            legacy.execSQL("CREATE TABLE samples(session_id INTEGER,time_ms INTEGER)")
+            legacy.execSQL("INSERT INTO samples VALUES(9,2000)")
+            legacy.version=6
+        }
+        val sandbox=object:ContextWrapper(app) {
+            override fun getDatabasePath(nameIgnored:String):java.io.File =
+                app.getDatabasePath(name)
+            override fun openOrCreateDatabase(nameIgnored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory)
+            override fun openOrCreateDatabase(nameIgnored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                errorHandler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory,errorHandler)
+        }
+        val store=SessionStore(sandbox)
+        try {
+            assertEquals(7,store.readableDatabase.version)
+            assertEquals(1L,store.storedSampleCount(9))
+            assertEquals("Custom: T30",store.sessionById(9)?.graphicsDriver)
+            assertNull(store.sessionById(9)?.fanMode)
+            val preset=store.saveQuickProfile(name="R2 Warm",gameNote="NFS",
+                graphicsDriver="Custom: Steven R2",resolutionScale="Handheld 1x",
+                performanceMode="Performance",fanMode="Smart",clusterTuneMode="Stock")
+            assertTrue(store.applyQuickProfile(9,preset))
+            assertEquals("Smart",store.sessionById(9)?.fanMode)
+            assertTrue(store.deleteQuickProfile(preset))
+            assertEquals("R2 Warm",store.sessionById(9)?.profileName)
+        }finally{store.close();app.deleteDatabase(name)}
     }
 
     @Test fun metadataAndDeletionAreAtomicAndActiveRecordingIsProtected() {
