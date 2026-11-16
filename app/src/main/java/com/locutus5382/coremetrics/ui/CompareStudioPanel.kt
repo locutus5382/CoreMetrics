@@ -41,6 +41,9 @@ internal fun CompareStudioPanel(
             style=MaterialTheme.typography.bodySmall)
         return
     }
+    var testedVariable by remember(sessionA.id,sessionB.id) {
+        mutableStateOf(CompareStudioAnalysis.TestedVariable.UNDECLARED)
+    }
     val shared=remember(pointsA,pointsB) {
         CompareStudioAnalysis.sharedDuration(pointsA,pointsB)
     }
@@ -77,12 +80,12 @@ internal fun CompareStudioPanel(
     }
     val computation by produceState<AnalysisComputation<CompareStudioAnalysis.Result>>(
         initialValue=AnalysisComputation.Loading,
-        sessionA,pointsA,sessionB,pointsB,applied
+        sessionA,pointsA,sessionB,pointsB,applied,testedVariable
     ) {
         value=withContext(Dispatchers.Default) {
             try {
                 AnalysisComputation.Ready(CompareStudioAnalysis.analyze(
-                    sessionA,pointsA,sessionB,pointsB,applied))
+                    sessionA,pointsA,sessionB,pointsB,applied,testedVariable))
             } catch(e:kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch(e:Exception) {
@@ -106,6 +109,19 @@ internal fun CompareStudioPanel(
             Text("Same elapsed-time interval, not necessarily the same game scene. "+
                 "All Δ values use B − A.",
                 color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+            Text("VARIABLE UNDER TEST (USER DECLARATION)",
+                color=coreSecondary,style=MaterialTheme.typography.labelMedium)
+            Row(Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                CompareStudioAnalysis.TestedVariable.entries.forEach{variable->
+                    FilterChip(selected=testedVariable==variable,
+                        onClick={testedVariable=variable},
+                        label={Text(variable.label)})
+                }
+            }
+            Text("Differences in this variable are intended; other settings "+
+                "remain comparability cautions. Game FPS is not measured.",
+                color=coreSecondary,style=MaterialTheme.typography.labelSmall)
             if(result==null) {
                 when(val status=computation) {
                     is AnalysisComputation.Failed ->
@@ -127,6 +143,12 @@ internal fun CompareStudioPanel(
                         color=coreSecondary,style=MaterialTheme.typography.bodySmall)
                 }
                 if(ready) {
+                    if(result.eventsA.isNotEmpty() || result.eventsB.isNotEmpty())
+                        Text("Detected events in selected window · A "+
+                            result.eventsA.size+" / B "+result.eventsB.size+
+                            " (observed/pattern, not proof of cause)",
+                            color=coreSecondary,
+                            style=MaterialTheme.typography.labelSmall)
                     if(result.observations.isNotEmpty()) {
                         Column(Modifier.fillMaxWidth().pureGlass(12).padding(10.dp),
                             verticalArrangement=Arrangement.spacedBy(5.dp)) {
