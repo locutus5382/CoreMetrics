@@ -756,17 +756,11 @@ internal class RecorderHud(private val context:Context) {
                     if(moved) {
                         // Approaching a screen border PARKS the expanded HUD,
                         // it does not collapse it. Explicit ⇥ remains available.
-                        val margin=dp(4f)
-                        val right=(windowWidth()-p.width-margin)
-                            .coerceAtLeast(margin)
-                        val left=p.x<=dp(16f)
-                        val nearRight=p.x>=right-dp(16f)
-                        val top=p.y<=dp(16f)
-                        if(left)p.x=margin
-                        else if(nearRight)p.x=right
-                        if(top)p.y=margin
-                        // Honor the user's location on later text updates.
-                        anchoredRight=nearRight
+                        val parked=HudDockGeometry.park(
+                            windowWidth(),windowHeight(),p.width,frame.height,
+                            p.x,p.y,margin=dp(4f),snapDistance=dp(16f))
+                        p.x=parked.x;p.y=parked.y
+                        anchoredRight=parked.anchoredRight
                         expandedX=p.x;expandedY=p.y
                         dragLayout.run()
                     }
@@ -891,8 +885,8 @@ internal class RecorderHud(private val context:Context) {
                 text.text.toString().split('\n').maxOfOrNull {
                     text.paint.measureText(it)
                 } ?: 0f else 0f
-            // Readings and actions occupy separate rows. The expanded HUD
-            // is only as wide as the longer row, not their combined widths.
+            // Compact side-by-side layout; reserve measured telemetry width
+            // plus only the actual right-side controls or unlock target.
             val viewport=(windowWidth()-dp(8f)).coerceAtLeast(dp(220f))
             val controlWidth=if(locked)dp(58f) else dp(126f)
             val minimum=dp(if(locked)200f else 300f).coerceAtMost(viewport)
@@ -948,7 +942,7 @@ internal class RecorderHud(private val context:Context) {
         pill?.visibility=if(collapsed)View.GONE else View.VISIBLE
         dockTab?.visibility=if(collapsed)View.VISIBLE else View.GONE
         drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
-        refreshDrawerControls()
+        if(drawer!=null)refreshDrawerControls()
         val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
         mainText?.textSize=12f*scale
         // All enabled metrics stay visible in short lines, with REC, gear,
@@ -1128,6 +1122,7 @@ internal class RecorderHud(private val context:Context) {
     }
 
     private fun renderDockState() {
+        if(!collapsed)return
         val badge=dockVisual as? TextView ?:return
         val elapsed=((System.currentTimeMillis()-startedAtMs)/1000).coerceAtLeast(0)
         val time=String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60)
