@@ -161,7 +161,7 @@ object BenchmarkAnalyzer {
         val weightedW=if(dischargeMs>0L)wh*3_600_000.0/dischargeMs else null
         val mWhPerMinute=if(dischargeMs>0L)wh*60_000_000.0/dischargeMs else null
         val capGroups=pts.map { SessionRegimeAnalyzer.key(it.observedCpuLimits) }
-            .filterNot { it=="P3:?|P7:?" }
+            .filterNot { it.contains("?") }
             .distinct()
         val labels=capGroups.map{SessionRegimeAnalyzer.label(it)}
         val observed=if(labels.isEmpty())"unavailable" else labels.joinToString(" | ")
