@@ -903,7 +903,14 @@ internal class RecorderHud(private val context:Context) {
         if(attached()) {
             if(layoutChanged(p)) {
                 runCatching { wm.updateViewLayout(frame,p) }
-                    .onSuccess { markLayoutApplied(p) }
+                    .onSuccess {
+                        markLayoutApplied(p)
+                        // A locked card can change width as numbers grow.
+                        // Keep the separately touchable unlock chip aligned.
+                        if(locked)frame.post {
+                            if(root===frame && locked)repositionUnlockControl()
+                        }
+                    }
             }
         }
     }
@@ -1024,8 +1031,7 @@ internal class RecorderHud(private val context:Context) {
         // OS NONE cannot establish absence of real throttling. The Odin ROM
         // has reported NONE with no useful headroom; do not waste 60dp on an
         // always-on badge. Only actual policy pressure gets a colored bar.
-        val alert=recording && (level==ThermalIndicatorPolicy.Level.WARNING ||
-            level==ThermalIndicatorPolicy.Level.SEVERE)
+        val alert=recording && ThermalIndicatorPolicy.showHudAlert(level)
         thermalIndicator?.apply {
             visibility=if(alert)View.VISIBLE else View.GONE
             if(lastBadgeLevel!=level) {
