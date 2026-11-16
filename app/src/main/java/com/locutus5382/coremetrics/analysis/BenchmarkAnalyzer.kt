@@ -247,6 +247,16 @@ object BenchmarkAnalyzer {
         appendLine("COREMETRICS | BENCHMARK ASSESSMENT (OBSERVATIONAL)")
         appendLine("Session #${r.session.id}: ${r.session.label} · ${r.session.configuration}")
         appendLine("Session status: ${r.session.status}; samples ${r.sampleCount}")
+        appendLine("Recorded device: "+listOfNotNull(
+            r.session.deviceManufacturer,r.session.deviceModel,
+            r.session.deviceCode).joinToString(" / ").ifBlank{"unknown"}+
+            " · Android API "+(r.session.androidApi?.toString()?:"unknown"))
+        val gpuSources=r.points.mapNotNull{
+            it.gpuTelemetrySource?.takeIf { v->v.isNotBlank() }
+        }.distinct()
+        appendLine("GPU source(s): "+gpuSources.joinToString("; ")
+            .ifBlank{"not recorded / unavailable"})
+        appendLine("Readable GPU paths are not necessarily calibrated or comparable.")
         r.session.note?.let{ appendLine("Game/track note: "+it) }
         appendLine("Manual driver tag: "+(r.session.graphicsDriver?:"unavailable"))
         appendLine("Manual resolution tag: "+(r.session.resolutionScale?:"unavailable"))
