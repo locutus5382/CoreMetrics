@@ -72,7 +72,14 @@ object SessionIntelligence {
             val window=points.subList(i-6,i+6)
             if(window.zipWithNext().any{(a,b)->b.timeMs-a.timeMs>gapLimit})continue
             fun winner(half:List<SessionStore.Point>):String? {
-                val valid=half.mapNotNull{core(it.busiestCore)}
+                // Identity alone is misleading when the "busiest" core is
+                // nearly idle. Demand a measured, meaningful system core
+                // load in >=5/6 samples before announcing a shift.
+                val valid=half.mapNotNull{p->
+                    p.busiestCorePct?.takeIf{
+                        it.isFinite() && it in 35.0..100.0
+                    }?.let{core(p.busiestCore)}
+                }
                 if(valid.size<5)return null
                 return valid.groupingBy{it}.eachCount().maxByOrNull{it.value}
                     ?.takeIf{it.value>=4}?.key
