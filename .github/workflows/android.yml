@@ -1,4 +1,4 @@
-name: CoreMetrics v0.9.8.1 Battery temperature HUD build
+name: CoreMetrics v0.9.8.2 Stability & Analysis Validation build
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -32,10 +32,10 @@ jobs:
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.8.1-battery-hud-debug
+          name: CoreMetrics-v0.9.8.2-stability-debug
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Upload R8-optimized installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.8.1-optimized-test
+          name: CoreMetrics-v0.9.8.2-optimized-test
           path: app/build/outputs/apk/optimizedTest/app-optimizedTest.apk
