@@ -26,6 +26,27 @@ object BatteryPowerMath {
         if (voltageMilliVolts !in 2500L..6000L) return null
         return -currentMicroAmps.toDouble() * voltageMilliVolts / 1_000_000_000.0
     }
+
+    /** Contradictory Android current/status signals cannot be valid
+     * discharge-comparison samples. Tolerate small near-zero fluctuations.
+     * OEM sign conventions require real device validation.
+     */
+    fun signConflict(currentMicroAmps:Long?,charging:Boolean?):Boolean =
+        currentMicroAmps!=null && when(charging) {
+            false -> currentMicroAmps>200_000L
+            true -> currentMicroAmps < -200_000L
+            null -> false
+        }
+
+    /** Provenance strings never imply that voltage broadcast has the
+     * same update age as BatteryManager.current_now.
+     */
+    fun source(currentApi:Boolean,voltageBroadcast:Boolean,
+        currentAvailable:Boolean,voltageAvailable:Boolean):String =
+        if(!currentAvailable || !voltageAvailable)"UNAVAILABLE"
+        else "CURRENT="+(if(currentApi)"BATTERY_PROPERTY_CURRENT_NOW" else "SYSFS_CURRENT_NOW")+
+            "; VOLTAGE="+(if(voltageBroadcast)"ACTION_BATTERY_CHANGED" else "SYSFS_VOLTAGE_NOW")+
+            "; SNAPSHOT_AGE_UNVERIFIED"
 }
 
 class BatteryPowerReader(private val context: Context) {
@@ -61,16 +82,21 @@ class BatteryPowerReader(private val context: Context) {
         } catch (_: Exception) { null }
         val voltageApi = state?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)
             ?.toLong()?.takeIf { it in 2500L..6000L }
+        // Read sysfs only when its corresponding Android source is absent.
+        // These two source readings may have different ages; do not describe
+        // their product as synchronized or as a CPU/GPU-only measurement.
         val current = currentApi ?: sysfs("/sys/class/power_supply/battery/current_now")
-        val voltage = voltageApi ?: sysfs("/sys/class/power_supply/battery/voltage_now")
-            ?.div(1000L)
-        val source = when {
-            currentApi != null && voltageApi != null -> "ANDROID_BATTERY_MANAGER"
-            current != null && voltage != null -> "ANDROID_SYSFS_READONLY"
-            else -> "UNAVAILABLE"
-        }
-        val power = BatteryPowerMath.signedDischargeWatts(current, voltage)
+        val voltageSysfs = if(voltageApi==null)
+            sysfs("/sys/class/power_supply/battery/voltage_now")
+                ?.div(1000L)?.takeIf { it in 2500L..6000L } else null
+        val voltage = voltageApi ?: voltageSysfs
+        val source = BatteryPowerMath.source(
+            currentApi!=null,voltageApi!=null,current!=null,voltage!=null)
+        val conflict=BatteryPowerMath.signConflict(current,charging)
+        val power = if(conflict)null
+            else BatteryPowerMath.signedDischargeWatts(current,voltage)
         val status = when {
+            conflict -> "CURRENT_SIGN_STATUS_CONFLICT; BATTERY_NET_ONLY"
             power == null -> "CURRENT_OR_VOLTAGE_UNAVAILABLE"
             charging == true -> "CHARGING_OR_EXTERNAL_POWER; BATTERY_NET_ONLY"
             charging == null -> "BATTERY_STATUS_UNKNOWN; BATTERY_NET_ONLY"

@@ -218,6 +218,22 @@ object CompareStudioAnalysis {
                 (rangeA.second<rangeB.first || rangeB.second<rangeA.first))
                 add("Middle 50% GPU-load ranges do not overlap across the "+
                     "selected windows; workload equivalence is unverified")
+            fun sources(points:List<SessionStore.Point>):Set<String> =
+                points.mapNotNull{it.batteryPowerSource?.takeIf{value->
+                    value.isNotBlank() && value!="UNAVAILABLE"
+                }}.toSet()
+            val sourcesA=sources(a.points)
+            val sourcesB=sources(b.points)
+            if(sourcesA.size>1 || sourcesB.size>1)
+                add("Battery current/voltage source changed within a recording; "+
+                    "power values may not be directly comparable")
+            else if(sourcesA.isNotEmpty() && sourcesB.isNotEmpty() &&
+                sourcesA!=sourcesB)
+                add("Battery measurement provenance differs between A/B")
+            if(sourcesA.any{it.contains("SNAPSHOT_AGE_UNVERIFIED")} ||
+                sourcesB.any{it.contains("SNAPSHOT_AGE_UNVERIFIED")})
+                add("Current and voltage readings may have different update ages; "+
+                    "the recorded watts are battery-terminal estimates")
             if(a.benchmark.energy.powerCondition!=BenchmarkAnalyzer.PowerCondition.DISCHARGING ||
                 b.benchmark.energy.powerCondition!=BenchmarkAnalyzer.PowerCondition.DISCHARGING)
                 add("At least one window is not exclusively measured during battery discharge")

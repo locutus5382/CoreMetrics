@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.8.2 Stability & Analysis Validation alpha — SQLite v8 cross-process recording defaults and active Quick Test Profile, Quick Settings/monitor session consistency, immutable profile editor snapshots, absolute GPU-load comparability warnings, activity-pattern noise filtering, and up-front long-session analysis truncation disclosure. The v0.9.8.1 optional BAT T and current recorder/HUD functionality are preserved.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.8.3 Measurement Integrity & Reproducibility alpha — explicit current/voltage provenance and conflict handling, one-shot battery counter/device capability diagnostics, optional repeat-run A/A analysis (2–5 runs), up to 100,000-sample streaming CSV import, and an experimental portable ZIP archive with additive transactional restoration. The v0.9.8.2 cross-process settings, analysis safeguards, v0.9.8.1 BAT T and compact HUD remain intact.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.8.2)
+## One-app Quick Start (v0.9.8.3)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.8.2-stability-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.8.2-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.8.3-measurement-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.8.3-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,16 @@
 
 ---
 
+
+## v0.9.8.3 — Measurement Integrity & Reproducibility
+
+- **Battery power measurement evidence:** Stored `battery_power_source` now distinguishes the actual current and voltage origins and explicitly marks their update-age synchronization as unverified. Large current polarity / charging-status contradictions produce missing wattage rather than false battery discharge. Source changes generate comparison cautions; CPU/GPU power and game FPS remain unmeasured.
+- **On-demand capability probe:** one-shot battery current, charge counter and energy counter availability; dynamic, bounded CPU frequency-policy discovery and cumulative `time_in_state` counters. No extra per-tick sensor queries, unsupported counter assumptions or universal CPU/GPU critical limits.
+- **A/A repeatability:** Compare tab offers a collapsed-by-default 2–5-run panel for sessions with the same Quick Test Profile. Reports medians of **run-level** measurements and observed ranges, rejects truncated runs, warns on mismatched tags and battery provenance. No FPS, hypothesis test, confidence interval, workload-equivalence claim or automatic driver ranking.
+- **Longer CSV import:** streaming atomic import now supports up to 100,000 samples/session with a clear safety limit. The 12,000-sample **on-screen preview limit remains** and is prominently disclosed; full-session CSV export remains streaming.
+- **Portable data archive (alpha):** Settings → Export archive ZIP / Append from archive ZIP. Versioned manifest plus raw session CSVs, profiles, manual tags and A/B links. Restore uses new session IDs and remaps links in an outer rollback transaction; no overwrites or delete operations. Device/HUD defaults included only for reference, NOT applied on a new Android device. Explicit size limits apply; **do not rely on this until actual Android instrumentation restore/corruption tests have run**.
+- SQLite remains schema **v8** and telemetry CSV header remains compatible. Existing recorder, QS, BAT T and HUD operations were not redesigned.
+- **Validation:** `docs/PORTAL_V0983_MEASUREMENT_ACCEPTANCE.md`. v0.9.8.3 is a development alpha; a successful CI unit test/build does NOT mean on-device restore, sensor provenance or lifecycle behavior has been verified.
 
 ## v0.9.8.2 — Stability & Analysis Validation
 

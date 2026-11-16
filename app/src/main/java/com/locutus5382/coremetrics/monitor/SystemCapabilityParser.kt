@@ -2,6 +2,16 @@ package com.locutus5382.coremetrics.monitor
 
 /** Pure parsing for read-only, on-demand kernel capability diagnostics. */
 internal object SystemCapabilityParser {
+    /** CPU policy directories are hardware/ROM dependent: never assume
+     * that an arbitrary Android device uses Odin policy0/3/7 layout.
+     * Cap one-shot discovery to avoid unbounded probing on odd sysfs views.
+     */
+    fun cpuPolicyNames(names:List<String>):List<String> =
+        names.asSequence()
+            .filter{it.matches(Regex("""policy[0-9]{1,3}"""))}
+            .distinct().sortedBy{it.removePrefix("policy").toIntOrNull()?:Int.MAX_VALUE}
+            .take(16).toList()
+
     data class Swap(val totalKiB:Long,val freeKiB:Long) {
         val usedKiB:Long get()=totalKiB-freeKiB
     }

@@ -71,6 +71,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
 import com.locutus5382.coremetrics.analysis.SessionDiagnosticsAnalyzer
 import com.locutus5382.coremetrics.analysis.SegmentAnalysis
+import com.locutus5382.coremetrics.data.SessionArchive
 import com.locutus5382.coremetrics.analysis.CompareStudioAnalysis
 import com.locutus5382.coremetrics.analysis.ScorecardModel
 import com.locutus5382.coremetrics.analysis.ScorecardExportRequest
@@ -856,6 +857,51 @@ class MainActivity : ComponentActivity() {
                             (it.message?:it.javaClass.simpleName)+
                             (if(removedPartial)"" else
                                 " · Cannot remove incomplete file; check chosen folder")
+                    })
+                }
+            }
+            val backupFile=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/zip")
+            ) { uri ->
+                if(uri!=null)scope.launch {
+                    val outcome=withContext(Dispatchers.IO) {
+                        runCatching {
+                            contentResolver.openOutputStream(uri)?.use { stream ->
+                                SessionArchive.export(database,stream)
+                            } ?:error("Cannot create portable ZIP document")
+                        }
+                    }
+                    message=outcome.fold(onSuccess={report->
+                        "Archive exported: "+report.sessions+" recordings, "+
+                            report.samples+" samples, "+report.profiles+
+                            " presets and "+report.links+" associations"
+                    },onFailure={error->
+                        "Archive export failed: "+(error.message?:"Unknown error")+
+                            " · Remove any incomplete ZIP in the selected folder"
+                    })
+                }
+            }
+            val restoreFile=rememberLauncherForActivityResult(
+                ActivityResultContracts.OpenDocument()
+            ) { uri ->
+                if(uri!=null)scope.launch {
+                    val outcome=withContext(Dispatchers.IO) {
+                        runCatching {
+                            contentResolver.openInputStream(uri)?.use { stream ->
+                                SessionArchive.restore(database,stream)
+                            } ?:error("Cannot read selected archive")
+                        }
+                    }
+                    outcome.fold(onSuccess={report->
+                        message="Archive restored additively: "+report.sessions+
+                            " new sessions, "+report.samples+" samples, "+
+                            report.profiles+" presets and "+report.links+" links"
+                        sessionList=withContext(Dispatchers.IO){database.list()}
+                        linkedPairs=withContext(Dispatchers.IO){database.links()}
+                        page="Sessions"
+                    },onFailure={error->
+                        message="Archive restore cancelled with no new sessions: "+
+                            (error.message?:error.javaClass.simpleName)
                     })
                 }
             }
@@ -1792,6 +1838,18 @@ class MainActivity : ComponentActivity() {
                                                  color=muted,style=MaterialTheme.typography.bodySmall)
                                              Text("Compare the same game and track. GPU load alone does not prove game smoothness.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
+                                             var repeatabilityOpen by rememberSaveable {
+                                                 mutableStateOf(false)
+                                             }
+                                             OutlinedButton(onClick={
+                                                 repeatabilityOpen=!repeatabilityOpen
+                                             }) {
+                                                 Text(if(repeatabilityOpen)
+                                                     "Hide A/A repeatability"
+                                                     else "Analyze repeated test runs (2–5)")
+                                             }
+                                             if(repeatabilityOpen)
+                                                 RepeatabilityPanel(database,sessionList,skipWarmUp)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
                                                  Text("Default crop: skip first 30s (legacy details too)",
                                                      Modifier.weight(1f),color=coreText,
@@ -2265,6 +2323,37 @@ class MainActivity : ComponentActivity() {
                                                 showSetup=true
                                                 page="Live"
                                             }){Text("Review permissions and privacy setup")}
+                                            Text("PORTABLE ARCHIVE · EXPERIMENT BACKUP",color=iceBlue,
+                                                style=MaterialTheme.typography.titleSmall)
+                                            Text("Export a versioned ZIP containing raw session CSVs, "+
+                                                "historical metadata, Quick Test Profiles and A/B links. "+
+                                                "Restore adds new session IDs; it never deletes or overwrites "+
+                                                "existing recordings. Device/HUD settings are archived "+
+                                                "for reference but are not applied to a different device.",
+                                                color=coreSecondary,
+                                                style=MaterialTheme.typography.bodySmall)
+                                            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                OutlinedButton(
+                                                    enabled=!status.running && !status.starting &&
+                                                        !status.standby,
+                                                    onClick={
+                                                        backupFile.launch(
+                                                            "CoreMetrics-archive-"+System.currentTimeMillis()+".zip")
+                                                    }){Text("Export archive ZIP")}
+                                                OutlinedButton(
+                                                    enabled=!status.running && !status.starting &&
+                                                        !status.standby,
+                                                    onClick={
+                                                        restoreFile.launch(arrayOf(
+                                                            "application/zip","application/octet-stream"))
+                                                    }){Text("Append from archive ZIP")}
+                                            }
+                                            Text("Archive restore is alpha. A malformed ZIP is rejected "+
+                                                "inside a SQLite rollback. Verify a backup on a test "+
+                                                "installation before relying on it as your sole copy.",
+                                                color=solarOrange,
+                                                style=MaterialTheme.typography.bodySmall)
+                                            HorizontalDivider(color=coreBorder)
                                             Text("SUPPORT COREMETRICS",color=iceBlue,
                                                 style=MaterialTheme.typography.titleSmall)
                                             Text("CoreMetrics is free, offline and fully functional. "+
