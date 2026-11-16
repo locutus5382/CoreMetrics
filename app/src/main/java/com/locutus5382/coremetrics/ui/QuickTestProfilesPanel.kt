@@ -60,7 +60,7 @@ internal fun QuickTestProfilesPanel(
         performance="Not specified";fan="Not specified";cluster="Not specified"
         confirmDelete=false
     }
-    fun action(success:String,block:()->Unit,onSuccess:()->Unit={}) {
+    fun action(success:String,onSuccess:()->Unit={},block:()->Unit) {
         if(busy)return
         busy=true
         scope.launch {
