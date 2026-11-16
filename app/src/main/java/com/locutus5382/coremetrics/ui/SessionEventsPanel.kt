@@ -59,7 +59,18 @@ internal fun SessionEventsPanel(points:List<SessionStore.Point>) {
                 "Absence of an event is not proof that conditions were normal.",
                 color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         } else {
-            val shown=if(expanded)events.take(40) else events.take(3)
+            val shown=if(expanded)events.take(40) else events.sortedWith(
+                compareBy<SessionIntelligence.Event> {
+                    when(it.kind) {
+                        SessionIntelligence.Kind.OS_THERMAL_PRESSURE -> 0
+                        SessionIntelligence.Kind.RECORDING_GAP -> 1
+                        SessionIntelligence.Kind.CAP_CHANGED -> 2
+                        SessionIntelligence.Kind.MEMORY_PRESSURE -> 3
+                        SessionIntelligence.Kind.SATURATION -> 4
+                        SessionIntelligence.Kind.CORE_ACTIVITY_SHIFT -> 5
+                        SessionIntelligence.Kind.ACTIVITY_SHIFT -> 6
+                    }
+                }.thenBy { it.offsetMs }).take(3)
             shown.forEach{e->
                 val m=e.offsetMs/60_000L
                 val sec=(e.offsetMs/1_000L)%60L
