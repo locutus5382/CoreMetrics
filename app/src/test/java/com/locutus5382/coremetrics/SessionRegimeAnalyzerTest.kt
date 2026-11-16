@@ -27,7 +27,7 @@ class SessionRegimeAnalyzerTest {
         assertTrue(r[2].label.startsWith("Observed cap"))
         assertEquals(-2.0,r[2].deltaMeanDischargeW!!,0.001)
         assertEquals(-33.3333,r[2].deltaDischargePct!!,0.01)
-        assertEquals(30.8/4.0,r[2].projectedHours!!,0.001)
+        assertNull(r[2].projectedHours) // no assumed 30.8 Wh battery
     }
 
     @Test fun activeFilterDoesNotBridgeRegimesAndNoChargingProjection() {
