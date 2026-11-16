@@ -76,7 +76,7 @@ object SessionRegimeAnalyzer {
         ODIN_LARGE_LIKE, UNKNOWN }
 
     fun referenceCaps(key:String):ReferenceCaps {
-        val match=Regex("""P3:([0-9]+(?:\\.[0-9]+)?)\\|P7:([0-9]+(?:\\.[0-9]+)?)""")
+        val match=Regex("""P3:([0-9]+(?:\.[0-9]+)?)\|P7:([0-9]+(?:\.[0-9]+)?)""")
             .matchEntire(key) ?:return ReferenceCaps.UNKNOWN
         val p3=match.groupValues[1].toDoubleOrNull() ?:return ReferenceCaps.UNKNOWN
         val p7=match.groupValues[2].toDoubleOrNull() ?:return ReferenceCaps.UNKNOWN
