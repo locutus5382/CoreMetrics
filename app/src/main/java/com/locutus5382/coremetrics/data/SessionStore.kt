@@ -13,14 +13,16 @@ import java.io.Writer
  * :monitor owns writes, UI reads through WAL. Data never leaves this database
  * without a user-selected Android document URI.
  */
-class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 6) {
+class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 7) {
     private val leaseContext = context.applicationContext
 
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
         val label: String, val configuration: String, val status: String, val count: Int,
         val note: String? = null,
         val graphicsDriver: String? = null, val resolutionScale: String? = null,
-        val hasExternalPower:Boolean=false, val hasDischargePower:Boolean=false)
+        val hasExternalPower:Boolean=false, val hasDischargePower:Boolean=false,
+        val performanceMode:String?=null,val fanMode:String?=null,
+        val clusterTuneMode:String?=null,val profileName:String?=null)
     data class Point(val timeMs: Long, val cpu: Double?, val gpu: Double?,
         val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
         val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
@@ -33,6 +35,25 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val sampleDurationMs: Double? = null, val sampleElapsedMs: Long? = null)
 
     data class Link(val id:Long,val firstId:Long,val secondId:Long,val createdAt:Long)
+    data class QuickProfile(
+        val id:Long,val name:String,val gameNote:String?,
+        val graphicsDriver:String?,val resolutionScale:String?,
+        val performanceMode:String?,val fanMode:String?,
+        val clusterTuneMode:String?)
+    private val performanceModes=setOf("Standard","Performance","High Performance")
+    private val fanModes=setOf("Off","Quiet","Smart","Sport","Custom")
+    private val clusterModes=setOf("Stock","Small","Medium","Large","Custom")
+    private fun cleanLabel(value:String?,max:Int=64):String? =
+        value?.trim()?.takeIf{it.isNotEmpty() && it.length<=max &&
+            it.none{c->c.code<32 || c.code==127 || c.code in 0x80..0x9f}}
+    private fun createProfileTable(db:SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS test_profiles(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            game_note TEXT, graphics_driver TEXT, resolution_scale TEXT,
+            performance_mode TEXT, fan_mode TEXT, cluster_tune_mode TEXT)""")
+    }
+
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
@@ -44,7 +65,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             started_at INTEGER NOT NULL, ended_at INTEGER,
             label TEXT NOT NULL, configuration TEXT NOT NULL,
             status TEXT NOT NULL, game_note TEXT,
-            graphics_driver TEXT, resolution_scale TEXT)""")
+            graphics_driver TEXT, resolution_scale TEXT,
+            performance_mode TEXT, fan_mode TEXT, cluster_tune_mode TEXT,
+            profile_name TEXT)""")
         db.execSQL("""CREATE TABLE samples (
             session_id INTEGER NOT NULL, time_ms INTEGER NOT NULL,
             cpu_temp REAL, gpu_temp REAL, battery_temp REAL, battery_pct INTEGER,
@@ -62,6 +85,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         // Cover battery status predicates without visiting large sample rows.
         db.execSQL("CREATE INDEX samples_by_session_power ON samples(session_id,battery_status)")
         createLinkTable(db)
+        createProfileTable(db)
     }
     private fun createLinkTable(db:SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS session_links (
@@ -73,7 +97,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion in 1..5 && newVersion==6) {
+        require(oldVersion in 1..6 && newVersion==7) {
             "Unsupported database migration $oldVersion -> $newVersion"
         }
         if(oldVersion<2) {
@@ -103,6 +127,12 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 "swap_used_gib" to "REAL", "mem_psi_some10" to "REAL",
                 "sample_duration_ms" to "REAL", "sample_elapsed_ms" to "INTEGER"
             )) db.execSQL("ALTER TABLE samples ADD COLUMN "+name+" "+type)
+        }
+        if(oldVersion<7) {
+            for(name in listOf("performance_mode","fan_mode",
+                "cluster_tune_mode","profile_name"))
+                db.execSQL("ALTER TABLE sessions ADD COLUMN "+name+" TEXT")
+            createProfileTable(db)
         }
     }
 
@@ -280,6 +310,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         SELECT s.id,s.started_at,s.ended_at,s.label,s.configuration,s.status,
         (SELECT COUNT(*) FROM samples x WHERE x.session_id=s.id),
         s.game_note,s.graphics_driver,s.resolution_scale,
+        s.performance_mode,s.fan_mode,s.cluster_tune_mode,s.profile_name,
         EXISTS(SELECT 1 FROM samples x WHERE x.session_id=s.id AND
             (x.battery_status LIKE 'CHARGING_OR_EXTERNAL_POWER%'
              OR x.battery_status LIKE 'FULL%' OR x.battery_status LIKE 'PLUGGED%')),
@@ -296,7 +327,11 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         if(c.isNull(7))null else c.getString(7),
         if(c.isNull(8))null else c.getString(8),
         if(c.isNull(9))null else c.getString(9),
-        c.getInt(10)!=0,c.getInt(11)!=0
+        c.getInt(14)!=0,c.getInt(15)!=0,
+        if(c.isNull(10))null else c.getString(10),
+        if(c.isNull(11))null else c.getString(11),
+        if(c.isNull(12))null else c.getString(12),
+        if(c.isNull(13))null else c.getString(13)
     )
 
     @Synchronized fun list(limit:Int=80):List<Session> =
