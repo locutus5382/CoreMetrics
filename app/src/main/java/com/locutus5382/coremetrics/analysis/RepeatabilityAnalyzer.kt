@@ -95,6 +95,36 @@ object RepeatabilityAnalyzer {
                 cautions+="Session #"+run.session.id+
                     " has reduced recording-quality evidence"
         }
+        fun medianCadence(points:List<SessionStore.Point>):Double? {
+            val intervals=points.sortedBy{it.timeMs}
+                .zipWithNext { a,b->(b.timeMs-a.timeMs).toDouble() }
+                .filter{it>0.0 && it<=30_000.0}
+            return median(intervals)
+        }
+        val cadences=runs.mapNotNull{medianCadence(it.points)}
+        if(cadences.size>=2 && cadences.minOrNull()!!>0 &&
+            cadences.maxOrNull()!!/cadences.minOrNull()!!>=1.5)
+            cautions+="Sampling intervals differ; telemetry-sample percentiles "+
+                "do not have the same temporal resolution."
+        val durations=runs.mapNotNull{run->
+            run.points.takeIf{it.size>=2}?.let{points->
+                (points.maxOf{it.timeMs}-points.minOf{it.timeMs}).toDouble()
+            }
+        }
+        if(durations.size>=2 && durations.minOrNull()!!>0 &&
+            durations.maxOrNull()!!/durations.minOrNull()!!>1.25)
+            cautions+="Recording durations differ by more than 25%; "+
+                "the observed periods may represent different workloads."
+        val initialCpu=runs.mapNotNull{run->
+            val firstTime=run.points.minOfOrNull{it.timeMs}?:return@mapNotNull null
+            median(run.points.filter{
+                it.timeMs-firstTime in 0L..20_000L
+            }.mapNotNull{it.cpu})
+        }
+        if(initialCpu.size>=2 &&
+            initialCpu.maxOrNull()!!-initialCpu.minOrNull()!!>5.0)
+            cautions+="Initial CPU sensor temperatures differ by more than "+
+                "5°C; thermal starting conditions are not matched."
         fun runMedian(i:Int,selector:(SessionStore.Point)->Double?):Double? {
             val samples=runs[i].points.sortedBy{it.timeMs}
             val firstTime=samples.firstOrNull()?.timeMs ?:return null
