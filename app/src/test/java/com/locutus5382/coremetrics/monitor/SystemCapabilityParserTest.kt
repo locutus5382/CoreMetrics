@@ -21,6 +21,16 @@ class SystemCapabilityParserTest {
         assertNull(SystemCapabilityParser.swapUsedKiB(
             "SwapTotal: invalid kB\nSwapFree: 0 kB"))
     }
+    @Test fun discoversOnlyBoundedNumericCpuPolicyNames() {
+        val requested=listOf("policy7","policy0","policy3","policy3",
+            "not_policy1","policy1234","policy-4","policyx")
+        assertEquals(listOf("policy0","policy3","policy7"),
+            SystemCapabilityParser.cpuPolicyNames(requested))
+        assertEquals(16,(0..40).map{"policy"+it}
+            .let(SystemCapabilityParser::cpuPolicyNames).size)
+        assertTrue(SystemCapabilityParser.cpuPolicyNames(emptyList()).isEmpty())
+    }
+
     @Test fun frequencyResidencyValidatesCountsAndNeverAssumesUtilization() {
         val r=SystemCapabilityParser.residency(
             "300000 120\n672000 250\n2841600 30\n")
