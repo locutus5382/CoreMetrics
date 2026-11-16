@@ -250,6 +250,41 @@ class SessionStoreOperationsTest {
         }finally{store.close();app.deleteDatabase(name)}
     }
 
+    @Test fun streamingLongCsvImportPreservesAllRowsBeyondPreviewLimit() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val dbName="coremetrics_v0983_long_import_test.db"
+        app.deleteDatabase(dbName)
+        val context=object:ContextWrapper(app) {
+            override fun getDatabasePath(ignored:String):java.io.File =
+                app.getDatabasePath(dbName)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(dbName,mode,factory)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                handler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(dbName,mode,factory,handler)
+        }
+        val store=SessionStore(context)
+        try {
+            val count=12_025
+            val csv=StringBuilder("game_label,configuration,status,sample_epoch_ms,cpu_temp_c,gpu_temp_c\n")
+            for(i in 0 until count)
+                csv.append("NFS,Stock,COMPLETED,")
+                    .append(1_700_000_000_000L+i*2_000L)
+                    .append(",55.1,45.2\n")
+            val id=store.importCsv(java.io.StringReader(csv.toString()))
+            assertEquals(count.toLong(),store.storedSampleCount(id))
+            assertEquals(count,store.sessionById(id)?.count)
+            assertEquals(12_000,store.points(id).size)
+            val output=java.io.StringWriter()
+            store.exportCsv(id,output)
+            assertEquals(count+1,output.toString().lineSequence()
+                .count{it.isNotBlank()})
+            assertTrue(store.sessionById(id)?.status=="IMPORTED_COMPLETED")
+        }finally{store.close();app.deleteDatabase(dbName)}
+    }
+
     @Test fun metadataAndDeletionAreAtomicAndActiveRecordingIsProtected() {
         val app=ApplicationProvider.getApplicationContext<Context>()
         val dbName="coremetrics_v096_instrumentation_test.db"
