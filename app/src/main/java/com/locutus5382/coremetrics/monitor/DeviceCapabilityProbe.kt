@@ -103,7 +103,9 @@ internal object DeviceCapabilityProbe {
             readBounded("/sys/class/power_supply/battery/energy_full_design",128).data)
         val chargeDesign=BatteryDesignCapacity.fromChargeMicroAhAndNominalMicroV(
             readBounded("/sys/class/power_supply/battery/charge_full_design",128).data,
-            readBounded("/sys/class/power_supply/battery/voltage_min_design",128).data)
+            // voltage_min_design is the minimum/cutoff voltage, NOT nominal
+            // pack voltage. Do not multiply design charge by it.
+            readBounded("/sys/class/power_supply/battery/voltage_nominal",128).data)
         val design=energyDesign?:chargeDesign
         appendLine("Battery design energy candidate: "+
             (design?.let{
