@@ -629,10 +629,14 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     /**
-     * SAF file import is atomic and never touches an existing recording.
-     * Maximum 12k rows; one import becomes a new independently selectable session.
-     * The existing schema and recorder process remain unchanged.
+     * Streaming, bounded and atomic SAF import. Unlike the on-screen analysis
+     * preview, this no longer stops at the 12,000-sample display limit.
+     * CSV parsing is record-bounded and each row goes straight to SQLite;
+     * partial imports are rolled back on parse, limit or storage failure.
      */
+    companion object {
+        const val MAX_CSV_IMPORT_SAMPLES = 100_000
+    }
     @Synchronized fun importCsv(reader: java.io.Reader): Long {
         val csv=CsvRecordReader(reader)
         val header=csv.next() ?: error("CSV file is empty")
@@ -647,7 +651,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             while(true) {
                 val row=csv.next() ?: break
                 if(row.size!=columns.width) error("CSV row has unexpected column count")
-                if(rowCount>=12_000) error("CSV exceeds 12,000 sample import limit")
+                if(rowCount>=MAX_CSV_IMPORT_SAMPLES)
+                    error("CSV exceeds the explicit "+MAX_CSV_IMPORT_SAMPLES+
+                        "-sample import safety limit; nothing was imported")
                 val now=columns.time(row)
                 TelemetrySanity.requireIncreasing(
                     if(rowCount==0)null else lastTime,now)
