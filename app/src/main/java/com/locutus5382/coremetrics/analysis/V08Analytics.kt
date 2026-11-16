@@ -22,25 +22,30 @@ object V08Analytics {
     /** Same read-only selected-vs-observed rule across Live, recorded
      * profiles, and benchmark quality. Generic Underclocking could mean
      * GPU-only tuning, so mismatches are review prompts, not test failures. */
-    fun profileConflict(selected:String,labels:List<String>):Boolean {
-        if(labels.isEmpty())return false
+    fun profileConflict(selected:String,capKeys:List<String>):Boolean {
+        if(capKeys.isEmpty())return false
+        val known=capKeys.map { SessionRegimeAnalyzer.referenceCaps(it) }
+            .filterNot { it==SessionRegimeAnalyzer.ReferenceCaps.UNKNOWN }
+        if(known.isEmpty())return false
         val choice=selected.lowercase(Locale.US)
-        return (choice.contains("stock") && labels.any{
-            it.startsWith("Medium UC") || it.startsWith("Large UC")
-        }) || (choice.contains("medium") && labels.any{
-            it.startsWith("Large UC")
-        }) || (choice.contains("large") && labels.any{
-            it.startsWith("Medium UC")
-        }) || (choice.contains("underclock") && labels.all{
-            it.startsWith("Stock (")
+        val reference=SessionRegimeAnalyzer.ReferenceCaps
+        return (choice.contains("stock") && known.any {
+            it==reference.ODIN_MEDIUM_LIKE || it==reference.ODIN_LARGE_LIKE
+        }) || (choice.contains("medium") && known.any {
+            it==reference.ODIN_LARGE_LIKE
+        }) || (choice.contains("large") && known.any {
+            it==reference.ODIN_MEDIUM_LIKE
+        }) || (choice.contains("underclock") && known.all {
+            it==reference.ODIN_STOCK_LIKE
         })
     }
 
     /** A single Live snapshot is valid for an observed-ceiling caution;
      * no 3-sample debounce or tuner identity is inferred here. */
     fun liveProfileWarning(selected:String,rawLimits:String?):String? {
-        val label=SessionRegimeAnalyzer.label(SessionRegimeAnalyzer.key(rawLimits))
-        if(!profileConflict(selected,listOf(label)))return null
+        val key=SessionRegimeAnalyzer.key(rawLimits)
+        val label=SessionRegimeAnalyzer.label(key)
+        if(!profileConflict(selected,listOf(key)))return null
         return if(selected.lowercase(Locale.US).contains("underclock"))
             "CHECK CPU LIMITS: Underclocking selected, but measured P3/P7 " +
             "ceilings are stock-like. GPU-only tuning may still be active."
@@ -97,15 +102,16 @@ object V08Analytics {
                 p.batteryWatts,p.batteryPowerStatus)
         }).filterNot {it.key=="P3:?|P7:?"}
             .map{ObservedPhase(it.startMs,it.endMs,it.sampleCount,it.key,it.label)}
-        val names=phases.map{it.description}
+        val keys=phases.map{it.signature}
         val selectedLower=selected.lowercase(Locale.US)
         // A generic "Underclocking" label may describe GPU-only tuning,
         // so this is a warning to CHECK the configured CPU caps, never proof
         // that a particular tuner failed or was disabled.
-        val stockLikeOnly=names.isNotEmpty() && names.all {
-            it.startsWith("Stock (")
+        val stockLikeOnly=keys.isNotEmpty() && keys.all {
+            SessionRegimeAnalyzer.referenceCaps(it)==
+                SessionRegimeAnalyzer.ReferenceCaps.ODIN_STOCK_LIKE
         }
-        val mismatch=profileConflict(selected,names)
+        val mismatch=profileConflict(selected,keys)
         val note=when {
             phases.isEmpty() -> "No readable P3/P7 frequency limits"
             selectedLower.contains("underclock") && stockLikeOnly ->
