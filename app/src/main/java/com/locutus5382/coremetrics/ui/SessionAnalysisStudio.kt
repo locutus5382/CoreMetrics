@@ -96,6 +96,12 @@ internal fun SessionAnalysisStudio(
     var showAdvanced by rememberSaveable(session.id) { mutableStateOf(false) }
     var showWindowTools by rememberSaveable(session.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        if(!loadedFully) Text(
+            "INCOMPLETE ANALYSIS: "+source.size+" of "+session.count+
+            " stored samples are loaded. Results below cover only the first "+
+            "samples, not the complete recording. Use full-session CSV export "+
+            "or shorten the session; selected-window exports are disabled.",
+            color=solarOrange,style=MaterialTheme.typography.bodySmall)
         // Lead with a concise summary. Window/export and technical drill-down
         // stay available but no longer overwhelm the initial analysis view.
         bundle?.let {
