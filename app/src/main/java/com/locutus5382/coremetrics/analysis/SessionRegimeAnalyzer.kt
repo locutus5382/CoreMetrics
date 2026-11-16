@@ -70,13 +70,8 @@ object SessionRegimeAnalyzer {
         val parts = key.split('|')
         val p3 = parts.firstOrNull()?.substringAfter(':') ?: "?"
         val p7 = parts.getOrNull(1)?.substringAfter(':') ?: "?"
-        return when {
-            p3 == "2.80" && p7 == "3.19" -> "Stock (2.80 / 3.19 GHz)"
-            p3 == "2.05" && p7 == "2.09" -> "Medium UC (2.05 / 2.09 GHz)"
-            p3 == "1.79" && p7 == "1.84" -> "Large UC (1.79 / 1.84 GHz)"
-            p3 == "?" && p7 == "?" -> "Limits unavailable"
-            else -> "Observed cap (P3 $p3 / P7 $p7 GHz)"
-        }
+        return if(p3=="?" && p7=="?") "Limits unavailable"
+            else "Observed cap (P3 $p3 / P7 $p7 GHz)"
     }
 
     fun analyze(
