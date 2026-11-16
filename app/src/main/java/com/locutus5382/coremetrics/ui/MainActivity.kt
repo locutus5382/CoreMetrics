@@ -1066,28 +1066,42 @@ class MainActivity : ComponentActivity() {
                     })
                     return
                 }
-                // Commit metadata before :monitor process sees the HUD click.
-                prefs.edit().putString("label",label.trim())
-                    .putString("configuration",configuration)
-                    .putLong("interval_ms",interval).commit()
-                hudOptions.save(this@MainActivity)
-                val i=HudOptions.addExtras(
-                    Intent(this@MainActivity,RecordingService::class.java)
-                        .setAction(RecordingService.ARM)
-                        .putExtra(RecordingService.LABEL,label.trim().ifBlank{"Gameplay"})
-                        .putExtra(RecordingService.CONFIG,configuration)
-                        .putExtra(RecordingService.INTERVAL,interval),hudOptions)
-                runCatching{startForegroundService(i)}.fold(
-                    onSuccess={
-                        lastObservedMonitorActive=true
-                        message="Standby requested · no recording until REC"
-                        if(closeUiOnArm) {
-                            appVisible=false
-                            notifyAppVisible(false)
-                            this@MainActivity.finish()
-                        }
-                    },
-                    onFailure={message="Standby failed: "+it.javaClass.simpleName})
+                // Commit the cross-process defaults BEFORE closing the UI,
+                // then send explicit extras. No stale QS state after ARM.
+                val request=SessionStore.RecordingDefaults(
+                    label.trim().ifBlank{"Gameplay"},configuration,interval,hudEnabled)
+                val selectedHud=hudOptions
+                scope.launch {
+                    val saved=withContext(Dispatchers.IO) {
+                        runCatching{database.saveRecordingDefaults(request)}
+                    }
+                    if(saved.getOrDefault(false)!=true) {
+                        message="Could not save recording defaults; standby not started"
+                        return@launch
+                    }
+                    prefs.edit().putString("label",request.label)
+                        .putString("configuration",request.configuration)
+                        .putLong("interval_ms",request.intervalMs).apply()
+                    selectedHud.save(this@MainActivity)
+                    val i=HudOptions.addExtras(
+                        Intent(this@MainActivity,RecordingService::class.java)
+                            .setAction(RecordingService.ARM)
+                            .putExtra(RecordingService.LABEL,request.label)
+                            .putExtra(RecordingService.CONFIG,request.configuration)
+                            .putExtra(RecordingService.INTERVAL,request.intervalMs),
+                        selectedHud)
+                    runCatching{startForegroundService(i)}.fold(
+                        onSuccess={
+                            lastObservedMonitorActive=true
+                            message="Standby requested · no recording until REC"
+                            if(closeUiOnArm) {
+                                appVisible=false
+                                notifyAppVisible(false)
+                                this@MainActivity.finish()
+                            }
+                        },
+                        onFailure={message="Standby failed: "+it.javaClass.simpleName})
+                }
             }
             fun unlockHud() {
                 runCatching { startService(Intent(this@MainActivity,
