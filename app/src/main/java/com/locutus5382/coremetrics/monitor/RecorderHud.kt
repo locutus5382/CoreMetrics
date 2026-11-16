@@ -47,6 +47,7 @@ internal data class HudOptions(
     val showGpuLoad: Boolean = false,
     val showRam: Boolean = true,
     val showPower: Boolean = true,
+    val showBatteryTemp: Boolean = false,
     val showFps: Boolean = false,
     val showSparkline: Boolean = false, // legacy preference ignored; no HUD graphs
     val adaptiveColors: Boolean = false
@@ -81,6 +82,7 @@ internal data class HudOptions(
                 showGpuLoad=b("hud_gpuLoad",false),
                 showRam=b("hud_ram",true),
                 showPower=b("hud_power",true),
+                showBatteryTemp=b("hud_batteryTemp",false),
                 showFps=false, // Legacy setting intentionally ignored; no verified game FPS
                 showSparkline=false,
                 adaptiveColors=b(ADAPTIVE,false)
@@ -97,6 +99,7 @@ internal data class HudOptions(
                 "cpuTemp" to options.showCpuTemp,"gpuTemp" to options.showGpuTemp,
                 "cpuLoad" to options.showCpuLoad,"gpuLoad" to options.showGpuLoad,
                 "ram" to options.showRam,"power" to options.showPower,
+                "batteryTemp" to options.showBatteryTemp,
                 "sparkline" to options.showSparkline
             )) putExtra("hud_"+k,v)
         }
@@ -116,12 +119,13 @@ internal data class HudOptions(
             .putBoolean("hud_gpuLoad",showGpuLoad)
             .putBoolean("hud_ram",showRam)
             .putBoolean("hud_power",showPower)
+            .putBoolean("hud_batteryTemp",showBatteryTemp)
             .putBoolean("hud_fps",showFps)
             .putBoolean("hud_sparkline",false)
             .putBoolean(ADAPTIVE,adaptiveColors).apply()
     }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
-        showGpuLoad,showRam,showPower).count { it }
+        showGpuLoad,showRam,showPower,showBatteryTemp).count { it }
 }
 
 /**
@@ -182,6 +186,8 @@ internal class RecorderHud(private val context:Context) {
     private var params:WindowManager.LayoutParams?=null
     private var opts=HudOptions()
     private var latest:Snapshot?=null
+    private val batteryTemperature=BatteryTemperatureAdvisory()
+    private var batteryTemperatureState=BatteryTemperatureAdvisory.State.UNAVAILABLE
     private val thermal=ThermalTrendFilter()
     private var thermalValue:ThermalTrendFilter.Reading?=null
     private var recording=false
@@ -425,6 +431,7 @@ internal class RecorderHud(private val context:Context) {
             "CPU T" to opts.showCpuTemp,"GPU T" to opts.showGpuTemp,
             "CPU %" to opts.showCpuLoad,"GPU %" to opts.showGpuLoad,
             "W" to opts.showPower,
+            "BAT T" to opts.showBatteryTemp,
             "RAM" to opts.showRam)
         drawerSwitches.forEach { (name,view) ->
             paintDrawerToggle(view,name,selected[name]==true)
@@ -990,6 +997,8 @@ internal class RecorderHud(private val context:Context) {
         startedAtMs=startedMs
         if(!isRecording) {
             latest=null;thermal.reset();thermalValue=null
+            batteryTemperature.reset()
+            batteryTemperatureState=BatteryTemperatureAdvisory.State.UNAVAILABLE
             lastHeadroom=null;headroomAtElapsedMs=-1L
             metricLevels.clear()
         }
@@ -1001,6 +1010,9 @@ internal class RecorderHud(private val context:Context) {
     fun update(s:Snapshot,count:Long) {
         if(!recording || !attached())return
         latest=s
+        // BAT T uses the existing sampler timestamp; no independent timer.
+        batteryTemperatureState=batteryTemperature.update(
+            s.batteryTempC,s.sampleElapsedMs)
         thermalValue=thermal.update(s.timeMs,s.cpuTempC)
         updateLevels(s)
         // Sparse headroom measurements are kept only for the HUD, with a
@@ -1116,6 +1128,10 @@ internal class RecorderHud(private val context:Context) {
         if(opts.showGpuLoad)add("GPU %",s?.gpuPercent?.let{"$it%"}?:"—")
         if(opts.showRam)add("RAM",fmt(s?.ramGiB," GiB"))
         if(opts.showPower)add("BAT",fmt(s?.signedBatteryWatts," W"))
+        if(opts.showBatteryTemp) {
+            val valid=s?.batteryTempC?.takeIf { it.isFinite() && it in -10.0..90.0 }
+            add("BAT T",fmt(valid,"°C"))
+        }
         // Game FPS is not collected by the ordinary-app recorder.
         val builder=SpannableStringBuilder()
         if(items.isEmpty())builder.append("REC · telemetry")
@@ -1124,7 +1140,13 @@ internal class RecorderHud(private val context:Context) {
                 if(items.size>2 && index%2==0)"\n" else " · ")
             val begin=builder.length
             builder.append(pair.first)
-            if(pair.second!=HudSeverity.Level.NORMAL)
+            if(pair.first.startsWith("BAT T ")) {
+                // The BAT T warning outline is confined to this token, with
+                // constant reserved width even when normal; no layout jump.
+                builder.setSpan(BatteryTemperatureSpan(batteryTemperatureState,
+                    context.resources.displayMetrics.density),begin,
+                    builder.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }else if(pair.second!=HudSeverity.Level.NORMAL)
                 builder.setSpan(ForegroundColorSpan(severityColor(pair.second)),
                     begin,builder.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
