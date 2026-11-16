@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.7.5 compact-HUD alpha — a tighter horizontal telemetry pill, compact locked state with retained independent 48dp unlock target, deliberate edge collapse with 4dp corner parking, recording-red collapsed edge tab with elapsed time, and no persistent OS NONE badge. Includes a small null-safety cleanup and new pure geometry tests; v0.9.7.4 recorder reliability, timings, sensor backoff, SQLite v6 and CSV format are unchanged.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.8 Analysis Intelligence alpha — reusable manual Quick Test Profiles captured at REC start, SQLite v7 migration, session event detection and activity-period suggestions, 120-second sustained utilization detection, OS thermal/memory-pressure observations and context-aware A/B cautions. All v0.9.7.5 compact HUD, foreground recorder, LMK recovery and 2s/5s sampler behavior are preserved.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.7.5)
+## One-app Quick Start (v0.9.8)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.7.5-compact-hud-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.7.5-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.8-analysis-intelligence-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.8-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -19,10 +19,19 @@
 
 **Migration warning:** Older `.v092themes`, `.v093base`, `.v093themes`, `.preview`, and other side-by-side test variants remain distinct Android packages with **separate SQLite session databases**. Installing the unified APK will NOT import their private sessions. Export any valuable CSVs and diagnostic reports from old builds first, then import CSVs into the unified application. Remove old Quick Settings tiles, revoke older variants' overlay grants and uninstall variants only AFTER preserving data. The canonical package `com.locutus5382.coremetrics` retains its own app-private data when updated with a compatible signing key; a different signing key may require uninstall/reinstall and backup first.
 
-**Validation:** See `docs/PORTAL_V0975_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0974_STABILITY_ACCEPTANCE.md`, `docs/PORTAL_V0973_INTERACTION_ACCEPTANCE.md`, `docs/PORTAL_V0972_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0971_ANALYTICS_ACCEPTANCE.md` and `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
+**Validation:** See `docs/PORTAL_V098_ANALYSIS_ACCEPTANCE.md`, `docs/PORTAL_V0975_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0974_STABILITY_ACCEPTANCE.md`, `docs/PORTAL_V0973_INTERACTION_ACCEPTANCE.md`, `docs/PORTAL_V0972_HUD_ACCEPTANCE.md`, `docs/PORTAL_V0971_ANALYTICS_ACCEPTANCE.md` and `docs/PORTAL_V097_TELEMETRY_ACCEPTANCE.md` (and the earlier v0.9.6.1 checklist for onboarding and migration). Source review and successful GitHub unit builds do not substitute for 8 GB Odin 2 Portal real-game testing.
 
 ---
 
+
+## v0.9.8 — Analysis Intelligence and reusable test conditions
+
+- **Quick Test Profiles:** user-created/editable/deletable named shortcuts for game/track, graphics driver/version, render scale, Odin performance mode, fan profile and ClusterTune label. Live offers a next-REC selector; Sessions → Edit can apply a profile to a completed session. Preset changes/deletions do **not** rewrite historical data. Manual metadata is not proof that the hardware setting was active.
+- SQLite schema **v7** introduces a reusable `test_profiles` table and four nullable per-session snapshot fields. Additive migration from v1–v6 preserves existing data. CSV exports gain `performance_mode`, `fan_mode`, `cluster_tune_mode`, `profile_name` columns at the END, preserving backwards-compatible header-mapped imports.
+- **Significant events:** offline CPU P3/P7 cap transitions, system busiest-core distribution shifts, relative higher/lower GPU activity periods, continuity gaps, OS thermal pressure and consecutive high system memory PSI readings. A 120-second sustained utilization event requires >=95% load in >=95% valid samples with >=90% expected coverage and no large gap; these are NOT FPS, game-thread migrations or causality.
+- Single-session analysis keeps its existing conclusion-first view and adds a compact event timeline. A/B comparison now asks which variable is intentionally changed (driver, Odin power, fan, ClusterTune) and warns about other known or missing test conditions without pretending game scenes are synchronized.
+- Report-format version **v0.9.8**; session CSV metadata extended, TXT analysis stays offline, current PNG scorecards and A/B timeline retained. No new sensor reads, root requirement, HUD redesign, or recorder timing/persistence changes.
+- Device-specific thermal warnings and optional battery-temperature HUD display remain a separate v0.9.8.x decision, dependent on ROM validation. DUKO PNG/PDF reports are deferred to v0.9.9.
 
 ## v0.9.7.5 — Compact HUD, explicit corner parking, clear REC state
 
