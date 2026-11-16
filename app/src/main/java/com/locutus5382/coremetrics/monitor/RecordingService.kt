@@ -650,14 +650,6 @@ class RecordingService:Service() {
                                 }
                                 hudEndNanos=SystemClock.elapsedRealtimeNanos()
                             }
-                            // Fixed-size in-memory diagnostics; never an extra
-                            // SQLite write, sensor read or continuous HUD timer.
-                            timings.record(
-                                collectorMs=(collectedNanos-tickStartNanos)/1e6,
-                                databaseMs=(writtenNanos-collectedNanos)/1e6,
-                                hudMs=if(updatedHud)(hudEndNanos-writtenNanos)/1e6 else null,
-                                totalMs=(SystemClock.elapsedRealtimeNanos()-tickStartNanos)/1e6,
-                                startLateMs=startLateMs)
                             if(MonitorState.sampleCount==1L)RecorderJournal.event(
                                 this@RecordingService,"FIRST_SAMPLE_WRITTEN","id="+id)
                             val elapsed=SystemClock.elapsedRealtime()
@@ -671,6 +663,15 @@ class RecordingService:Service() {
                                     notification("● REC · "+MonitorState.sampleCount+
                                         " samples",label+" · "+config,false))
                             }
+                            // Total elapsed tick includes notifications and
+                            // periodic lease heartbeat as well as sensor/DB/HUD.
+                            // The fixed-size ring adds NO per-sample disk write.
+                            timings.record(
+                                collectorMs=(collectedNanos-tickStartNanos)/1e6,
+                                databaseMs=(writtenNanos-collectedNanos)/1e6,
+                                hudMs=if(updatedHud)(hudEndNanos-writtenNanos)/1e6 else null,
+                                totalMs=(SystemClock.elapsedRealtimeNanos()-tickStartNanos)/1e6,
+                                startLateMs=startLateMs)
                             next+=interval
                             val delayMs=next-SystemClock.elapsedRealtime()
                             if(delayMs>0L)delay(delayMs)else next=SystemClock.elapsedRealtime()
