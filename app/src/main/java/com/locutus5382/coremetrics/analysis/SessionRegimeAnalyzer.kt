@@ -8,7 +8,8 @@ import kotlin.math.abs
  * even if the same limit returns later in the recording.
  */
 object SessionRegimeAnalyzer {
-    const val NOMINAL_BATTERY_WH = 30.8  // Odin 2 Portal estimate, NOT measured usable capacity
+    // No fixed pack Wh. Projected runtime requires externally validated
+    // usable energy and is therefore unavailable at this stage.
     private const val MIN_RUN_SAMPLES = 3
     private val capPattern = Regex("""policy(3|7)\s+max\s+([0-9]+(?:\.[0-9]+)?)\s+GHz""")
 
@@ -201,7 +202,7 @@ object SessionRegimeAnalyzer {
                     meanGpuLoadPct=mean(stats.map { it.gpuLoadPct }),
                     meanRamGib=mean(stats.map { it.ramUsedGib }),
                     meanDischargeW=power,
-                    projectedHours=power?.let { NOMINAL_BATTERY_WH / it }
+                    projectedHours=null  // Device-agnostic; no assumed battery size
                 )
             }
         }.mapIndexed { idx, s -> s.copy(index=idx) }
