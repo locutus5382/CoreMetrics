@@ -151,6 +151,7 @@ internal class RecorderHud(private val context:Context) {
     private var lastHeadroom:Double?=null
     private var headroomAtElapsedMs:Long=-1L
     private var lastBadgeLevel:ThermalIndicatorPolicy.Level?=null
+    private var lastBatteryOverheat:Boolean=false
     private var lastDockRecording:Boolean?=null
     // No four-element list allocation on every 2s/5s telemetry update.
     private var appliedX=Int.MIN_VALUE
@@ -1000,6 +1001,7 @@ internal class RecorderHud(private val context:Context) {
             batteryTemperature.reset()
             batteryTemperatureState=BatteryTemperatureAdvisory.State.UNAVAILABLE
             lastHeadroom=null;headroomAtElapsedMs=-1L
+            lastBatteryOverheat=false
             metricLevels.clear()
         }
         applyAppearance()
@@ -1043,22 +1045,31 @@ internal class RecorderHud(private val context:Context) {
         // OS NONE cannot establish absence of real throttling. The Odin ROM
         // has reported NONE with no useful headroom; do not waste 60dp on an
         // always-on badge. Only actual policy pressure gets a colored bar.
-        val alert=recording && ThermalIndicatorPolicy.showHudAlert(level)
+        val batteryOverheat=recording && s?.batteryOverheatReported==true
+        val alert=recording &&
+            (ThermalIndicatorPolicy.showHudAlert(level) || batteryOverheat)
         thermalIndicator?.apply {
             visibility=if(alert)View.VISIBLE else View.GONE
-            if(lastBadgeLevel!=level) {
+            if(lastBadgeLevel!=level || lastBatteryOverheat!=batteryOverheat) {
                 background=GradientDrawable().apply {
                     cornerRadius=dp(2f).toFloat()
-                    setColor(if(level==ThermalIndicatorPolicy.Level.SEVERE)
+                    setColor(if(batteryOverheat ||
+                        level==ThermalIndicatorPolicy.Level.SEVERE)
                         Color.rgb(255,94,104) else Color.rgb(255,199,0))
                 }
-                contentDescription="Android OS-wide warning: "+
-                    ThermalIndicatorPolicy.description(level)
+                contentDescription=if(batteryOverheat)
+                    "Android battery-health OVERHEAT reported"
+                    else "Android OS-wide warning: "+
+                        ThermalIndicatorPolicy.description(level)
                 lastBadgeLevel=level
+                lastBatteryOverheat=batteryOverheat
             }
         }
-        // This is an OS alert, not a CPU-temperature-derived throttle gauge.
-        val description=if(alert)
+        // Battery-health overheat is a separate device-reported signal,
+        // not an app-defined 39/42C warmth advisory.
+        val description=if(batteryOverheat)
+            "Android battery overheat reported. CoreMetrics device telemetry"
+            else if(alert)
             "Android device thermal alert. "+ThermalIndicatorPolicy.description(level)
             else "CoreMetrics device telemetry"
         mainText?.let { if(it.contentDescription!=description) {
@@ -1222,7 +1233,8 @@ internal class RecorderHud(private val context:Context) {
             opacityLabel=null;drawerRecControl=null
             latest=null;thermal.reset();thermalValue=null
             recording=false;locked=false;collapsed=false
-            invalidateLayoutCache();lastBadgeLevel=null;lastDockRecording=null
+            invalidateLayoutCache();lastBadgeLevel=null
+            lastBatteryOverheat=false;lastDockRecording=null
         }
         if(rootRemoved && chipRemoved){
             unbindCallbacks()
