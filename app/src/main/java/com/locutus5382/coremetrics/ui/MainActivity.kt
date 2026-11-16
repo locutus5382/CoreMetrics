@@ -1460,7 +1460,8 @@ class MainActivity : ComponentActivity() {
                                                                 startForegroundService(svc.setAction(RecordingService.START)
                                                                     .putExtra(RecordingService.LABEL,label.trim())
                                                                     .putExtra(RecordingService.CONFIG,configuration)
-                                                                    .putExtra(RecordingService.INTERVAL,interval))
+                                                                    .putExtra(RecordingService.INTERVAL,interval)
+                                                                    .putExtra(RecordingService.AUTO_HUD,hudEnabled))
                                                                 lastObservedMonitorActive=true
                                                                 message = "Start requested"
                                                             }
