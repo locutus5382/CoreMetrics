@@ -174,6 +174,98 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         },"id=? AND status!='RECORDING'",arrayOf(sessionId.toString()))==1
     }
 
+    /** Named reusable presets; historical sessions copy values, not IDs. */
+    @Synchronized fun quickProfiles():List<QuickProfile> =
+        readableDatabase.rawQuery("""SELECT id,name,game_note,graphics_driver,
+            resolution_scale,performance_mode,fan_mode,cluster_tune_mode
+            FROM test_profiles ORDER BY name COLLATE NOCASE""",null).use {c->
+            buildList {while(c.moveToNext())add(decodeProfile(c))}
+        }
+    private fun decodeProfile(c:Cursor)=QuickProfile(
+        c.getLong(0),c.getString(1),
+        if(c.isNull(2))null else c.getString(2),
+        if(c.isNull(3))null else c.getString(3),
+        if(c.isNull(4))null else c.getString(4),
+        if(c.isNull(5))null else c.getString(5),
+        if(c.isNull(6))null else c.getString(6),
+        if(c.isNull(7))null else c.getString(7))
+    private fun profileById(db:SQLiteDatabase,id:Long):QuickProfile? {
+        if(id<=0L)return null
+        return db.rawQuery("""SELECT id,name,game_note,graphics_driver,
+            resolution_scale,performance_mode,fan_mode,cluster_tune_mode
+            FROM test_profiles WHERE id=? LIMIT 1""",arrayOf(id.toString())).use {c->
+            if(c.moveToFirst())decodeProfile(c)else null
+        }
+    }
+    private fun activeProfileIn(db:SQLiteDatabase):QuickProfile? {
+        val id=leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
+            .getLong("active_test_profile_id",0L)
+        return profileById(db,id)
+    }
+    @Synchronized fun activeProfileId():Long =
+        leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
+            .getLong("active_test_profile_id",0L)
+    @Synchronized fun selectActiveProfile(id:Long):Boolean {
+        if(id>0L && profileById(readableDatabase,id)==null)return false
+        return leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
+            .edit().putLong("active_test_profile_id",id.coerceAtLeast(0L)).commit()
+    }
+    @Synchronized fun saveQuickProfile(
+        id:Long=0L,name:String,gameNote:String?,graphicsDriver:String?,
+        resolutionScale:String?,performanceMode:String?,fanMode:String?,
+        clusterTuneMode:String?
+    ):Long {
+        val clean=cleanLabel(name,48) ?:error("Profile name is required (up to 48 characters)")
+        require((performanceMode==null || performanceMode in performanceModes) &&
+            (fanMode==null || fanMode in fanModes) &&
+            (clusterTuneMode==null || clusterTuneMode in clusterModes)) {
+            "Unknown manually entered test condition"
+        }
+        val driver=SessionMetadata.driver(graphicsDriver)
+        val scale=SessionMetadata.resolution(resolutionScale)
+        require((graphicsDriver==null || driver!=null) &&
+            (resolutionScale==null || scale!=null)){"Invalid driver or resolution"}
+        val values=ContentValues().apply {
+            put("name",clean)
+            put("game_note",SessionMetadata.note(gameNote))
+            put("graphics_driver",driver);put("resolution_scale",scale)
+            put("performance_mode",performanceMode);put("fan_mode",fanMode)
+            put("cluster_tune_mode",clusterTuneMode)
+        }
+        val db=writableDatabase
+        if(id>0L) {
+            check(db.update("test_profiles",values,"id=?",
+                arrayOf(id.toString()))==1){"Profile no longer exists"}
+            return id
+        }
+        return db.insertOrThrow("test_profiles",null,values)
+    }
+    @Synchronized fun deleteQuickProfile(id:Long):Boolean {
+        if(id<=0L)return false
+        val removed=writableDatabase.delete("test_profiles","id=?",
+            arrayOf(id.toString()))==1
+        if(removed && activeProfileId()==id)selectActiveProfile(0L)
+        return removed
+    }
+    /** Atomic, manual metadata application to completed sessions only.
+     * Presets may be renamed/deleted without rewriting previously saved tags.
+     */
+    @Synchronized fun applyQuickProfile(sessionId:Long,profileId:Long):Boolean {
+        if(sessionId<=0L)return false
+        val profile=profileById(readableDatabase,profileId) ?:return false
+        val values=ContentValues().apply {
+            put("profile_name",profile.name)
+            put("graphics_driver",profile.graphicsDriver)
+            put("resolution_scale",profile.resolutionScale)
+            put("performance_mode",profile.performanceMode)
+            put("fan_mode",profile.fanMode)
+            put("cluster_tune_mode",profile.clusterTuneMode)
+            if(profile.gameNote!=null)put("game_note",profile.gameNote)
+        }
+        return writableDatabase.update("sessions",values,
+            "id=? AND status!='RECORDING'",arrayOf(sessionId.toString()))==1
+    }
+
     /** User-controlled associations are non-destructive; never merge raw data. */
     @Synchronized fun links():List<Link> =
         readableDatabase.rawQuery("""
