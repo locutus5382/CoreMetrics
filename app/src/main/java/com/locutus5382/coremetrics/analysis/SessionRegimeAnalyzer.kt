@@ -1,6 +1,7 @@
 package com.locutus5382.coremetrics.analysis
 
 import kotlin.math.abs
+import com.locutus5382.coremetrics.telemetry.CpuPolicyTelemetry
 
 /**
  * Read-only analysis of *observed* cpufreq ceilings. A limit is not proof that
@@ -59,6 +60,9 @@ object SessionRegimeAnalyzer {
      * Missing limits are explicitly 'unknown', never assumed stock.
      */
     fun key(raw: String?): String {
+        // New recordings explicitly mark discovered policies; do not
+        // silently reinterpret policy3/policy7 as named hardware clusters.
+        CpuPolicyTelemetry.signature(raw)?.let{return it}
         val caps = capPattern.findAll(raw.orEmpty()).associate {
             it.groupValues[1] to it.groupValues[2].toDouble()
         }
@@ -91,6 +95,8 @@ object SessionRegimeAnalyzer {
     }
 
     fun label(key: String): String {
+        if(key.startsWith("POLICIES:"))
+            return CpuPolicyTelemetry.label(key)
         val parts = key.split('|')
         val p3 = parts.firstOrNull()?.substringAfter(':') ?: "?"
         val p7 = parts.getOrNull(1)?.substringAfter(':') ?: "?"
