@@ -44,7 +44,7 @@ class SessionStoreOperationsTest {
         val store=SessionStore(sandbox)
         try {
             val db=store.readableDatabase
-            assertEquals(7,db.version)
+            assertEquals(8,db.version)
             val names=mutableSetOf<String>()
             db.rawQuery("PRAGMA index_list(samples)",null).use { cursor->
                 while(cursor.moveToNext()) names.add(cursor.getString(1))
@@ -91,7 +91,7 @@ class SessionStoreOperationsTest {
         val store=SessionStore(sandbox)
         try {
             val db=store.readableDatabase
-            assertEquals(7,db.version)
+            assertEquals(8,db.version)
             val columns=mutableSetOf<String>()
             db.rawQuery("PRAGMA table_info(samples)",null).use { cursor ->
                 while(cursor.moveToNext())columns.add(cursor.getString(1))
@@ -143,7 +143,7 @@ class SessionStoreOperationsTest {
         }
         val store=SessionStore(sandbox)
         try {
-            assertEquals(7,store.readableDatabase.version)
+            assertEquals(8,store.readableDatabase.version)
             assertEquals(1L,store.storedSampleCount(9))
             assertEquals("Custom: T30",store.sessionById(9)?.graphicsDriver)
             assertNull(store.sessionById(9)?.fanMode)
@@ -154,6 +154,99 @@ class SessionStoreOperationsTest {
             assertEquals("Smart",store.sessionById(9)?.fanMode)
             assertTrue(store.deleteQuickProfile(preset))
             assertEquals("R2 Warm",store.sessionById(9)?.profileName)
+        }finally{store.close();app.deleteDatabase(name)}
+    }
+
+    @Test fun crossProcessSqliteSettingsAndProfileSnapshotSurvivePresetRename() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val name="coremetrics_v0982_shared_settings_test.db"
+        app.deleteDatabase(name)
+        val wrapper=object:ContextWrapper(app) {
+            override fun getDatabasePath(ignored:String):java.io.File =
+                app.getDatabasePath(name)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                errorHandler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory,errorHandler)
+        }
+        val ui=SessionStore(wrapper)
+        val monitor=SessionStore(wrapper) // separate helper/connections = separate processes
+        try {
+            val profile=ui.saveQuickProfile(
+                name="Mr.Purple T30",gameNote="NFS race",
+                graphicsDriver="Custom: Mr.Purple T30",
+                resolutionScale="Handheld 1x",
+                performanceMode="Performance",fanMode="Smart",
+                clusterTuneMode="Stock")
+            assertTrue(ui.selectActiveProfile(profile))
+            val defaults=SessionStore.RecordingDefaults(
+                "NFS trial","Underclocking",2000L,true)
+            assertTrue(ui.saveRecordingDefaults(defaults))
+            assertEquals(defaults,monitor.recordingDefaults())
+            assertEquals(profile,monitor.activeProfileId())
+            val id=monitor.begin(defaults.label,defaults.configuration,1000L)
+            assertEquals("Mr.Purple T30",monitor.sessionById(id)?.profileName)
+            assertEquals("Custom: Mr.Purple T30",
+                monitor.sessionById(id)?.graphicsDriver)
+            ui.saveQuickProfile(id=profile,name="T32",
+                gameNote="NFS race",graphicsDriver="Custom: T32",
+                resolutionScale="Handheld 1x",performanceMode="Performance",
+                fanMode="Sport",clusterTuneMode="Stock")
+            assertEquals("Mr.Purple T30",monitor.sessionById(id)?.profileName)
+            assertTrue(ui.deleteQuickProfile(profile))
+            assertEquals(0L,monitor.activeProfileId())
+            assertEquals("Mr.Purple T30",monitor.sessionById(id)?.profileName)
+            assertFalse(monitor.selectActiveProfile(profile))
+        }finally{
+            monitor.close();ui.close();app.deleteDatabase(name)
+        }
+    }
+
+    @Test fun migratingV7ToV8PreservesSessionsAndRecreatesSqlDefaults() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val name="coremetrics_v0982_v7_to_v8_test.db"
+        app.deleteDatabase(name)
+        app.openOrCreateDatabase(name,Context.MODE_PRIVATE,null).use {legacy->
+            legacy.execSQL("""CREATE TABLE sessions(
+                id INTEGER PRIMARY KEY,started_at INTEGER,ended_at INTEGER,
+                label TEXT NOT NULL,configuration TEXT NOT NULL,
+                status TEXT NOT NULL,game_note TEXT,
+                graphics_driver TEXT,resolution_scale TEXT,
+                performance_mode TEXT,fan_mode TEXT,
+                cluster_tune_mode TEXT,profile_name TEXT)""")
+            legacy.execSQL("""INSERT INTO sessions VALUES(
+                19,1000,2000,'NFS','Stock','COMPLETED',NULL,
+                'Custom: T30','Handheld 1x',NULL,NULL,NULL,NULL)""")
+            legacy.execSQL("""CREATE TABLE test_profiles(
+                id INTEGER PRIMARY KEY,name TEXT NOT NULL UNIQUE,
+                game_note TEXT,graphics_driver TEXT,resolution_scale TEXT,
+                performance_mode TEXT,fan_mode TEXT,cluster_tune_mode TEXT)""")
+            legacy.version=7
+        }
+        val sandbox=object:ContextWrapper(app) {
+            override fun getDatabasePath(ignored:String):java.io.File =
+                app.getDatabasePath(name)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                errorHandler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory,errorHandler)
+        }
+        val store=SessionStore(sandbox)
+        try {
+            assertEquals(8,store.readableDatabase.version)
+            assertTrue(store.saveRecordingDefaults(SessionStore.RecordingDefaults(
+                "Test", "Custom",5000L,false)))
+            val row=store.readableDatabase.rawQuery(
+                "SELECT graphics_driver FROM sessions WHERE id=19",null).use{c->
+                    if(c.moveToFirst())c.getString(0)else null
+                }
+            assertEquals("Custom: T30",row)
         }finally{store.close();app.deleteDatabase(name)}
     }
 
