@@ -990,6 +990,7 @@ internal class RecorderHud(private val context:Context) {
         syncBlink()
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun update(s:Snapshot,count:Long) {
         if(!recording || !attached())return
         latest=s
