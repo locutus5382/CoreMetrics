@@ -1040,9 +1040,12 @@ internal class RecorderHud(private val context:Context) {
             }
         }
         // This is an OS alert, not a CPU-temperature-derived throttle gauge.
-        mainText?.contentDescription=if(alert)
+        val description=if(alert)
             "Android device thermal alert. "+ThermalIndicatorPolicy.description(level)
             else "CoreMetrics device telemetry"
+        mainText?.let { if(it.contentDescription!=description) {
+            it.contentDescription=description
+        } }
     }
 
     private fun severityColor(level:HudSeverity.Level):Int=when(level){
@@ -1125,8 +1128,11 @@ internal class RecorderHud(private val context:Context) {
     private fun renderDockState() {
         if(!collapsed)return
         val badge=dockVisual as? TextView ?:return
-        val elapsed=((System.currentTimeMillis()-startedAtMs)/1000).coerceAtLeast(0)
-        val time=String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60)
+        val time=if(recording) {
+            val elapsed=((System.currentTimeMillis()-startedAtMs)/1000)
+                .coerceAtLeast(0)
+            String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60)
+        } else ""
         val top=dockEdge==DockEdge.TOP
         val label=when {
             !recording -> if(top)"CM · READY" else "CM\nREADY"
