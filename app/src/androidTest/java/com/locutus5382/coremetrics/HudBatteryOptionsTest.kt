@@ -1,6 +1,9 @@
 package com.locutus5382.coremetrics
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.database.DatabaseErrorHandler
+import android.database.sqlite.SQLiteDatabase
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -13,18 +16,31 @@ import org.junit.runner.RunWith
 class HudBatteryOptionsTest {
     @Test fun optionalBatteryTemperatureDefaultsOffAndPersists() {
         val app=ApplicationProvider.getApplicationContext<Context>()
+        val dbName="coremetrics_v0982_hud_settings_test.db"
+        app.deleteDatabase(dbName)
+        val sandbox=object:ContextWrapper(app){
+            override fun getDatabasePath(ignored:String):java.io.File =
+                app.getDatabasePath(dbName)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(dbName,mode,factory)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                handler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(dbName,mode,factory,handler)
+        }
         val prefs=app.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
         val old=prefs.all.toMap()
         try {
             prefs.edit().clear().commit()
-            val defaults=HudOptions.from(app)
+            val defaults=HudOptions.from(sandbox)
             assertFalse(defaults.showBatteryTemp)
             val chosen=defaults.copy(showBatteryTemp=true)
             assertEquals(defaults.selectedCount()+1,chosen.selectedCount())
-            chosen.save(app)
-            assertTrue(HudOptions.from(app).showBatteryTemp)
+            assertTrue(chosen.save(sandbox))
+            assertTrue(HudOptions.from(sandbox).showBatteryTemp)
             val override=HudOptions.addExtras(Intent(),chosen.copy(showBatteryTemp=false))
-            assertFalse(HudOptions.from(app,override).showBatteryTemp)
+            assertFalse(HudOptions.from(sandbox,override).showBatteryTemp)
         }finally {
             val editor=prefs.edit().clear()
             old.forEach{(key,value)->
@@ -37,6 +53,7 @@ class HudBatteryOptionsTest {
                 }
             }
             editor.commit()
+            app.deleteDatabase(dbName)
         }
     }
 }
