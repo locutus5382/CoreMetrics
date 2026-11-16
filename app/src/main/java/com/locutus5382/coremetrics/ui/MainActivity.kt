@@ -1792,6 +1792,18 @@ class MainActivity : ComponentActivity() {
                                                  color=muted,style=MaterialTheme.typography.bodySmall)
                                              Text("Compare the same game and track. GPU load alone does not prove game smoothness.",
                                                 style = MaterialTheme.typography.bodySmall, color = muted)
+                                             var repeatabilityOpen by rememberSaveable {
+                                                 mutableStateOf(false)
+                                             }
+                                             OutlinedButton(onClick={
+                                                 repeatabilityOpen=!repeatabilityOpen
+                                             }) {
+                                                 Text(if(repeatabilityOpen)
+                                                     "Hide A/A repeatability"
+                                                     else "Analyze repeated test runs (2–5)")
+                                             }
+                                             if(repeatabilityOpen)
+                                                 RepeatabilityPanel(database,sessionList,skipWarmUp)
                                             Row(verticalAlignment=Alignment.CenterVertically) {
                                                  Text("Default crop: skip first 30s (legacy details too)",
                                                      Modifier.weight(1f),color=coreText,
