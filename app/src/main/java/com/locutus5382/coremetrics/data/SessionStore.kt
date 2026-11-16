@@ -13,7 +13,7 @@ import java.io.Writer
  * :monitor owns writes, UI reads through WAL. Data never leaves this database
  * without a user-selected Android document URI.
  */
-class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 7) {
+class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 8) {
     private val leaseContext = context.applicationContext
 
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
@@ -33,6 +33,17 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val thermalStatus: Int? = null, val thermalHeadroom: Double? = null,
         val swapUsedGiB: Double? = null, val memoryPsiSomeAvg10: Double? = null,
         val sampleDurationMs: Double? = null, val sampleElapsedMs: Long? = null)
+
+    /**
+     * Single cross-process source for recording-critical QS settings.
+     * User input is metadata, NOT proof that a device setting is active.
+     */
+    data class RecordingDefaults(
+        val label:String="Gameplay",
+        val configuration:String="Stock",
+        val intervalMs:Long=5_000L,
+        val hudEnabled:Boolean=false
+    )
 
     data class Link(val id:Long,val firstId:Long,val secondId:Long,val createdAt:Long)
     data class QuickProfile(
@@ -54,6 +65,72 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             performance_mode TEXT, fan_mode TEXT, cluster_tune_mode TEXT)""")
     }
 
+
+    private fun createSettingsTable(db:SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS recording_settings(
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            label TEXT NOT NULL,
+            configuration TEXT NOT NULL,
+            interval_ms INTEGER NOT NULL CHECK(interval_ms IN (2000,5000)),
+            hud_enabled INTEGER NOT NULL CHECK(hud_enabled IN (0,1)),
+            active_profile_id INTEGER NOT NULL DEFAULT 0,
+            hud_options_json TEXT)""")
+        // One-time legacy migration. Thereafter the database, rather than
+        // per-process SharedPreferences caches, is authoritative for QS.
+        val p=leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
+        val values=ContentValues().apply {
+            put("id",1)
+            put("label",(p.getString("label","Gameplay")?:"Gameplay")
+                .trim().ifBlank{"Gameplay"}.take(64))
+            put("configuration",(p.getString("configuration","Stock")?:"Stock")
+                .take(40))
+            put("interval_ms",if(p.getLong("interval_ms",5000L)==2000L)2000L else 5000L)
+            put("hud_enabled",if(p.getBoolean("hud_enabled",false))1 else 0)
+            put("active_profile_id",p.getLong("active_test_profile_id",0L).coerceAtLeast(0L))
+        }
+        db.insertWithOnConflict("recording_settings",null,values,
+            SQLiteDatabase.CONFLICT_IGNORE)
+    }
+
+    @Synchronized fun recordingDefaults():RecordingDefaults =
+        readableDatabase.rawQuery("""SELECT label,configuration,interval_ms,hud_enabled
+            FROM recording_settings WHERE id=1""",null).use {c->
+            if(c.moveToFirst())RecordingDefaults(
+                c.getString(0),c.getString(1),c.getLong(2),c.getInt(3)!=0)
+            else RecordingDefaults()
+        }
+
+    /** Update exactly the desired defaults, not the selected profile ID.
+     * A single SQL update is visible to both UI and :monitor immediately.
+     */
+    @Synchronized fun saveRecordingDefaults(value:RecordingDefaults):Boolean {
+        val label=cleanLabel(value.label,64) ?: "Gameplay"
+        require(value.configuration.length<=40 && value.configuration.isNotBlank())
+        require(value.intervalMs in setOf(2000L,5000L))
+        return writableDatabase.update("recording_settings",ContentValues().apply {
+            put("label",label)
+            put("configuration",value.configuration)
+            put("interval_ms",value.intervalMs)
+            put("hud_enabled",if(value.hudEnabled)1 else 0)
+        },"id=1",null)==1
+    }
+    @Synchronized fun saveHudEnabled(enabled:Boolean):Boolean =
+        writableDatabase.update("recording_settings",ContentValues().apply {
+            put("hud_enabled",if(enabled)1 else 0)
+        },"id=1",null)==1
+
+    @Synchronized fun hudOptionsJson():String? =
+        readableDatabase.rawQuery(
+            "SELECT hud_options_json FROM recording_settings WHERE id=1",null
+        ).use {c->if(c.moveToFirst()&&!c.isNull(0))c.getString(0)else null}
+
+    /** Cosmetic settings are one small JSON snapshot, independent from REC. */
+    @Synchronized fun saveHudOptionsJson(json:String):Boolean {
+        require(json.length<=4096)
+        return writableDatabase.update("recording_settings",ContentValues().apply {
+            put("hud_options_json",json)
+        },"id=1",null)==1
+    }
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
@@ -86,6 +163,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         db.execSQL("CREATE INDEX samples_by_session_power ON samples(session_id,battery_status)")
         createLinkTable(db)
         createProfileTable(db)
+        createSettingsTable(db)
     }
     private fun createLinkTable(db:SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS session_links (
@@ -97,7 +175,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion in 1..6 && newVersion==7) {
+        require(oldVersion in 1..7 && newVersion==8) {
             "Unsupported database migration $oldVersion -> $newVersion"
         }
         if(oldVersion<2) {
@@ -134,6 +212,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 db.execSQL("ALTER TABLE sessions ADD COLUMN "+name+" TEXT")
             createProfileTable(db)
         }
+        if(oldVersion<8)createSettingsTable(db)
     }
 
     /** Optional, explicitly user-entered test settings; never inferred from load. */
@@ -198,17 +277,33 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         }
     }
     private fun activeProfileIn(db:SQLiteDatabase):QuickProfile? {
-        val id=leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
-            .getLong("active_test_profile_id",0L)
+        val id=db.rawQuery(
+            "SELECT active_profile_id FROM recording_settings WHERE id=1",null
+        ).use { c ->if(c.moveToFirst())c.getLong(0)else 0L }
         return profileById(db,id)
     }
     @Synchronized fun activeProfileId():Long =
-        leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
-            .getLong("active_test_profile_id",0L)
+        readableDatabase.rawQuery(
+            "SELECT active_profile_id FROM recording_settings WHERE id=1",null
+        ).use { c ->if(c.moveToFirst())c.getLong(0)else 0L }
+
+    /** Reject stale/deleted selection instead of silently choosing another.
+     * This database row is shared by UI, tiles and the monitor process.
+     */
     @Synchronized fun selectActiveProfile(id:Long):Boolean {
-        if(id>0L && profileById(readableDatabase,id)==null)return false
-        return leaseContext.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
-            .edit().putLong("active_test_profile_id",id.coerceAtLeast(0L)).commit()
+        if(id<0L)return false
+        val db=writableDatabase
+        db.beginTransaction()
+        return try {
+            if(id>0L && profileById(db,id)==null)false
+            else {
+                val saved=db.update("recording_settings",ContentValues().apply {
+                    put("active_profile_id",id)
+                },"id=1",null)==1
+                if(saved)db.setTransactionSuccessful()
+                saved
+            }
+        }finally { db.endTransaction() }
     }
     @Synchronized fun saveQuickProfile(
         id:Long=0L,name:String,gameNote:String?,graphicsDriver:String?,
@@ -242,10 +337,18 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
     @Synchronized fun deleteQuickProfile(id:Long):Boolean {
         if(id<=0L)return false
-        val removed=writableDatabase.delete("test_profiles","id=?",
-            arrayOf(id.toString()))==1
-        if(removed && activeProfileId()==id)selectActiveProfile(0L)
-        return removed
+        val db=writableDatabase
+        db.beginTransaction()
+        return try {
+            val removed=db.delete("test_profiles","id=?",
+                arrayOf(id.toString()))==1
+            if(removed) {
+                db.execSQL("""UPDATE recording_settings SET active_profile_id=0
+                    WHERE id=1 AND active_profile_id=?""",arrayOf(id))
+                db.setTransactionSuccessful()
+            }
+            removed
+        }finally{db.endTransaction()}
     }
     /** Atomic, manual metadata application to completed sessions only.
      * Presets may be renamed/deleted without rewriting previously saved tags.
