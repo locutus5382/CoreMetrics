@@ -910,7 +910,8 @@ class MainActivity : ComponentActivity() {
                             // Synchronize preferences across Android processes without
                             // a HUD_CONFIG echo and without overwriting drawer changes.
                             hudOptions=next.hudChanged
-                            hudOptions.save(this@MainActivity)
+                            if(!hudOptions.save(this@MainActivity))
+                                message="Could not persist updated HUD options"
                         }
                         status = next
                         lastObservedMonitorActive=
@@ -1047,7 +1048,8 @@ class MainActivity : ComponentActivity() {
 
             fun persistHud(updated: HudOptions) {
                 hudOptions=updated
-                updated.save(this@MainActivity)
+                if(!updated.save(this@MainActivity))
+                    message="HUD options could not be saved for future Quick Settings starts"
                 if(status.running || status.starting || status.standby) {
                     val i=HudOptions.addExtras(
                         Intent(this@MainActivity,RecordingService::class.java)
@@ -1098,7 +1100,10 @@ class MainActivity : ComponentActivity() {
                     prefs.edit().putString("label",request.label)
                         .putString("configuration",request.configuration)
                         .putLong("interval_ms",request.intervalMs).apply()
-                    selectedHud.save(this@MainActivity)
+                    if(!selectedHud.save(this@MainActivity)) {
+                        message="HUD options could not be saved; standby not started"
+                        return@launch
+                    }
                     val i=HudOptions.addExtras(
                         Intent(this@MainActivity,RecordingService::class.java)
                             .setAction(RecordingService.ARM)
