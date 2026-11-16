@@ -126,8 +126,8 @@ class SessionStoreOperationsTest {
             legacy.execSQL("""INSERT INTO sessions VALUES(
                 9,1000,5000,'Session 9','Stock','COMPLETED',
                 'NFS','Custom: T30','Handheld 1x')""")
-            legacy.execSQL("CREATE TABLE samples(session_id INTEGER,time_ms INTEGER)")
-            legacy.execSQL("INSERT INTO samples VALUES(9,2000)")
+            legacy.execSQL("CREATE TABLE samples(session_id INTEGER,time_ms INTEGER,battery_status TEXT)")
+            legacy.execSQL("INSERT INTO samples(session_id,time_ms) VALUES(9,2000)")
             legacy.version=6
         }
         val sandbox=object:ContextWrapper(app) {
