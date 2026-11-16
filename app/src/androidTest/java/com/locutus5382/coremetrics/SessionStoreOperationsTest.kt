@@ -285,6 +285,105 @@ class SessionStoreOperationsTest {
         }finally{store.close();app.deleteDatabase(dbName)}
     }
 
+    @Test fun migratingV8ToV9PreservesOldRowsAndRecordsDeviceIdentity() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val name="coremetrics_v0990_v8_to_v9_test.db"
+        app.deleteDatabase(name)
+        app.openOrCreateDatabase(name,Context.MODE_PRIVATE,null).use{legacy->
+            legacy.execSQL("""CREATE TABLE sessions(
+                id INTEGER PRIMARY KEY,started_at INTEGER NOT NULL,
+                ended_at INTEGER,label TEXT NOT NULL,configuration TEXT NOT NULL,
+                status TEXT NOT NULL,game_note TEXT,graphics_driver TEXT,
+                resolution_scale TEXT,performance_mode TEXT,fan_mode TEXT,
+                cluster_tune_mode TEXT,profile_name TEXT)""")
+            legacy.execSQL("""INSERT INTO sessions VALUES(
+                11,1000,9000,'NFS','Stock','COMPLETED','track',
+                'Custom: T30','Handheld 1x',NULL,NULL,NULL,'T30')""")
+            legacy.execSQL("""CREATE TABLE samples(
+                session_id INTEGER,time_ms INTEGER,battery_source TEXT)""")
+            legacy.execSQL("INSERT INTO samples VALUES(11,2000,'CURRENT=SYSFS_CURRENT_NOW')")
+            legacy.execSQL("""CREATE TABLE recording_settings(
+                id INTEGER PRIMARY KEY,label TEXT NOT NULL,
+                configuration TEXT NOT NULL,interval_ms INTEGER NOT NULL,
+                hud_enabled INTEGER NOT NULL,active_profile_id INTEGER NOT NULL,
+                hud_options_json TEXT)""")
+            legacy.execSQL("INSERT INTO recording_settings VALUES(1,'NFS','Stock',5000,0,0,NULL)")
+            legacy.version=8
+        }
+        val sandbox=object:ContextWrapper(app) {
+            override fun getDatabasePath(ignored:String):java.io.File =
+                app.getDatabasePath(name)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                handler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory,handler)
+        }
+        val store=SessionStore(sandbox)
+        try {
+            assertEquals(9,store.readableDatabase.version)
+            assertEquals(1L,store.storedSampleCount(11))
+            assertEquals("T30",store.sessionById(11)?.profileName)
+            assertNull(store.sessionById(11)?.deviceManufacturer)
+            assertNull(store.sessionById(11)?.androidApi)
+            val id=store.begin("NFS","Stock",20_000L)
+            assertEquals(android.os.Build.VERSION.SDK_INT,
+                store.sessionById(id)?.androidApi)
+            assertNotNull(store.sessionById(id)?.deviceModel)
+            val cols=store.readableDatabase.rawQuery(
+                "PRAGMA table_info(samples)",null).use {c->
+                buildList { while(c.moveToNext())add(c.getString(1)) }
+            }
+            assertTrue(cols.contains("gpu_source"))
+        }finally{store.close();app.deleteDatabase(name)}
+    }
+
+    @Test fun gpuSourceAndDeviceIdentityRoundTripThroughCsv() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val name="coremetrics_v0990_provenance_csv_test.db"
+        app.deleteDatabase(name)
+        val context=object:ContextWrapper(app) {
+            override fun getDatabasePath(ignored:String):java.io.File =
+                app.getDatabasePath(name)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory)
+            override fun openOrCreateDatabase(ignored:String,mode:Int,
+                factory:SQLiteDatabase.CursorFactory?,
+                handler:DatabaseErrorHandler?):SQLiteDatabase =
+                app.openOrCreateDatabase(name,mode,factory,handler)
+        }
+        val store=SessionStore(context)
+        try {
+            val csv=buildString {
+                append("game_label,configuration,status,sample_epoch_ms,cpu_temp_c,")
+                append("gpu_load_pct,gpu_telemetry_source,")
+                append("device_manufacturer,device_model,device_code,android_api\n")
+                for(i in 0..1) {
+                    append("NFS,Stock,COMPLETED,")
+                    append(1_700_000_000_000L+i*5000L)
+                    append(",55,42,LOAD:MALI_PERCENT; CLOCK:UNAVAILABLE; READABLE_NOT_VALIDATED,")
+                    append("Anbernic,RG406V,rg406v,33\n")
+                }
+            }
+            val first=store.importCsv(java.io.StringReader(csv))
+            assertEquals("Anbernic",store.sessionById(first)?.deviceManufacturer)
+            assertEquals("RG406V",store.sessionById(first)?.deviceModel)
+            assertEquals(33,store.sessionById(first)?.androidApi)
+            assertTrue(store.points(first).first().gpuTelemetrySource!!.contains(
+                "MALI_PERCENT"))
+            val writer=java.io.StringWriter()
+            store.exportCsv(first,writer)
+            val restored=store.importCsv(java.io.StringReader(writer.toString()))
+            assertEquals(2L,store.storedSampleCount(restored))
+            assertEquals("RG406V",store.sessionById(restored)?.deviceModel)
+            assertTrue(store.points(restored).last().gpuTelemetrySource!!
+                .contains("MALI_PERCENT"))
+        }finally{store.close();app.deleteDatabase(name)}
+    }
+
     @Test fun metadataAndDeletionAreAtomicAndActiveRecordingIsProtected() {
         val app=ApplicationProvider.getApplicationContext<Context>()
         val dbName="coremetrics_v096_instrumentation_test.db"
