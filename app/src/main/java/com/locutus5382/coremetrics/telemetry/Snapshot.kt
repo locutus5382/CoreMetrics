@@ -30,5 +30,8 @@ data class Snapshot(
     val swapUsedGiB: Double? = null,
     val memoryPsiSomeAvg10: Double? = null,
     val sampleDurationMs: Double? = null,
-    val sampleElapsedMs: Long? = null
+    val sampleElapsedMs: Long? = null,
+    // Live HUD-only battery-health evidence; not stored in SQLite v7.
+    // null = unavailable/unknown; true = explicit Android OVERHEAT report.
+    val batteryOverheatReported: Boolean? = null
 )

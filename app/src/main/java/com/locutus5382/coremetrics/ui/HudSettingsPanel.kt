@@ -136,6 +136,7 @@ internal fun HudSettingsPanel(
             if(options.showGpuLoad)add("GPU % 58%")
             if(options.showRam)add("RAM 5.9 GiB")
             if(options.showPower)add("BAT 4.2 W")
+            if(options.showBatteryTemp)add("BAT T 35.2°C")
         }
         val demoText=buildString {
             if(exampleReadings.isEmpty())append("REC · no metrics selected")
@@ -199,13 +200,38 @@ internal fun HudSettingsPanel(
             Triple("CPU %",options.showCpuLoad,options.copy(showCpuLoad=!options.showCpuLoad)),
             Triple("GPU %",options.showGpuLoad,options.copy(showGpuLoad=!options.showGpuLoad)),
             Triple("RAM",options.showRam,options.copy(showRam=!options.showRam)),
-            Triple("Battery W",options.showPower,options.copy(showPower=!options.showPower))
+            Triple("Battery W",options.showPower,options.copy(showPower=!options.showPower)),
+            Triple("Battery °C",options.showBatteryTemp,
+                options.copy(showBatteryTemp=!options.showBatteryTemp))
         )
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             visible.forEach{(name,checked,newOption)->
                 FilterChip(selected=checked,onClick={onChange(newOption)},
                     label={Text(name)})
+            }
+        }
+        if(options.showBatteryTemp) {
+            Text("BATTERY TEMPERATURE · OPTIONAL WARMTH ADVISORIES",
+                color=iceBlue,style=MaterialTheme.typography.labelLarge)
+            Text("Normal: plain text below 39°C. Warm: thin yellow outline from 39°C. "+
+                "Hot: thin orange outline after more than 42°C for 15 seconds. "+
+                "Releases below 38°C / 41°C with 10 seconds of hysteresis. "+
+                "App advisories, not device-certified critical limits.",
+                color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+            Row(Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement=Arrangement.spacedBy(9.dp),
+                verticalAlignment=Alignment.CenterVertically) {
+                Text("BAT T 35.2°C",color=coreText,
+                    style=MaterialTheme.typography.labelSmall)
+                Text("BAT T 40.3°C",color=Color(0xFFEAB308),
+                    style=MaterialTheme.typography.labelSmall,
+                    modifier=Modifier.border(1.dp,Color(0xFFEAB308),
+                        RoundedCornerShape(3.dp)).padding(horizontal=4.dp,vertical=2.dp))
+                Text("BAT T 43.2°C",color=Color(0xFFF97316),
+                    style=MaterialTheme.typography.labelSmall,
+                    modifier=Modifier.border(1.dp,Color(0xFFF97316),
+                        RoundedCornerShape(3.dp)).padding(horizontal=4.dp,vertical=2.dp))
             }
         }
         Row(verticalAlignment=Alignment.CenterVertically) {

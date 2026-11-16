@@ -1,8 +1,13 @@
 # CoreMetrics v0.9.8.1 — optional battery-temperature HUD and device-aware thermal warnings
 
-Status: **design proposal, not implementation**. Ship only after v0.9.8 JVM CI is
-green, SQLite v6→v7 instrumentation is run, and the combined Odin acceptance
-test establishes actual thermal-source availability.
+Status: **battery-temperature HUD and Android-reported battery-health overheat
+display are implemented in v0.9.8.1.** Read the authoritative, updated
+`docs/PORTAL_V0981_BATTERY_ACCEPTANCE.md` for exact **39°C / 42°C** thresholds,
+time-based hysteresis, true normal-without-outline appearance, validation and
+remaining device-testing requirements. The material below documents earlier
+design alternatives, some now superseded. Device-specific CPU/GPU critical
+trip-point mapping is **removed from the v0.9.8.1 scope** and should not be
+treated as implemented or a requirement for the BAT T feature.
 
 ## Why this is useful
 - Compare battery heating between driver, fan and underclock profiles without

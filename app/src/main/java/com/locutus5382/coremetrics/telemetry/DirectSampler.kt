@@ -191,10 +191,16 @@ class DirectSampler(private val app: Application) {
             app.registerReceiver(null,batteryFilter)
         } catch (_: Exception) { null }
         val battery = battery(batteryIntent)
+        val batteryHealth=batteryIntent?.getIntExtra(
+            BatteryManager.EXTRA_HEALTH,Int.MIN_VALUE)
+            ?.takeIf { it!=Int.MIN_VALUE &&
+                it!=BatteryManager.BATTERY_HEALTH_UNKNOWN }
+            ?.let { it==BatteryManager.BATTERY_HEALTH_OVERHEAT }
         val power = batteryPower.read(batteryIntent)
         val snapshot = Snapshot(
             timeMs = now, cpuTempC = thermal(true), gpuTempC = thermal(false),
             batteryTempC = battery.first, batteryPercent = battery.second,
+            batteryOverheatReported = batteryHealth,
             cpuPercent = cpuPercent, busiestPercent = peakLoad, busiestCore = uniqueWinner?.first,
             gpuPercent = gpuLoad(), gpuMHz = gpuClock(), ramGiB = memory?.usedRamGiB,
             cpuClockSummary = cpuClockSummary(), appPackage = appPackage,

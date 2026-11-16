@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.8 Analysis Intelligence alpha — reusable manual Quick Test Profiles captured at REC start, SQLite v7 migration, session event detection and activity-period suggestions, 120-second sustained utilization detection, OS thermal/memory-pressure observations and context-aware A/B cautions. All v0.9.7.5 compact HUD, foreground recorder, LMK recovery and 2s/5s sampler behavior are preserved.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.8.1 Battery HUD alpha — optional BAT T reading (off by default), no outline below 39°C, yellow WARM outline at 39°C, orange HOT outline after >42°C for 15 real seconds, time-based release hysteresis, and separate Android-reported battery-health OVERHEAT indicator. The v0.9.8 analysis engine, Quick Test Profiles, SQLite v7, recorder, Quick Settings and compact HUD remain unchanged.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.8)
+## One-app Quick Start (v0.9.8.1)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.8-analysis-intelligence-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.8-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.8.1-battery-hud-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.8.1-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,15 @@
 
 ---
 
+
+## v0.9.8.1 — Optional BAT T warmth advisories and battery-health alert
+
+- **HUD Studio → Battery °C** is optional and OFF by default. The label `BAT T 35.2°C` uses the already sampled battery temperature from the existing recording snapshot; battery-terminal `BAT 4.2 W` stays independently selectable.
+- **NORMAL (<39°C):** plain text, NO outline. **WARM (>=39°C):** thin yellow rounded outline around only BAT T. **HOT (>42°C for >=15 seconds):** thin orange outline. HOT releases to WARM only after <41°C for >=10 seconds; WARM releases to NORMAL only after <38°C for >=10 seconds.
+- Time-based hysteresis works at both 2s and 5s cadence. Missing/invalid temperature prints em dash and clears pending confirmation; it never becomes an invented safe value. The inline span reserves constant width to avoid warning-on HUD layout jumps.
+- The *separate* Android `BATTERY_HEALTH_OVERHEAT` status, when available in the already-read sticky battery broadcast, displays a static red OS/device alert accent even if BAT T is hidden. It is HUD-only in this version; the existing SQLite schema/CSV contains battery temperature but does not yet store this new health status.
+- CPU/GPU temperatures and existing OS thermal warnings remain unchanged. No device-specific CPU/GPU critical limits, no root, no extra battery polling, no alarm loop. Thresholds are **application-defined warmth advisories**, NOT manufacturer safety or throttle limits.
+- Verify the new on-device UI and permission persistence with `docs/PORTAL_V0981_BATTERY_ACCEPTANCE.md`. Android instrumented tests are assembled in CI but still require on-device execution.
 
 ## v0.9.8 — Analysis Intelligence and reusable test conditions
 
