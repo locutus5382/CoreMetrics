@@ -233,6 +233,16 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     else -> "Custom"
                 })
                 put("status","RECORDING")
+                val preset=activeProfileIn(db)
+                if(preset!=null) {
+                    put("profile_name",preset.name)
+                    put("graphics_driver",preset.graphicsDriver)
+                    put("resolution_scale",preset.resolutionScale)
+                    put("performance_mode",preset.performanceMode)
+                    put("fan_mode",preset.fanMode)
+                    put("cluster_tune_mode",preset.clusterTuneMode)
+                    if(preset.gameNote!=null)put("game_note",preset.gameNote)
+                }
             })
             check(id>0)
             db.update("sessions",ContentValues().apply {
@@ -462,6 +472,13 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                             columns.field(row,"graphics_driver")))
                         put("resolution_scale",SessionMetadata.resolution(
                             columns.field(row,"resolution_scale")))
+                        put("performance_mode",columns.field(row,"performance_mode")
+                            ?.takeIf{it in performanceModes})
+                        put("fan_mode",columns.field(row,"fan_mode")
+                            ?.takeIf{it in fanModes})
+                        put("cluster_tune_mode",columns.field(row,"cluster_tune_mode")
+                            ?.takeIf{it in clusterModes})
+                        put("profile_name",cleanLabel(columns.field(row,"profile_name")))
                         put("configuration",config)
                         put("status",ImportedSessionStatus.store(
                             columns.field(row,"status")))
@@ -575,7 +592,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             "sf_layer_fps","sf_frame_time_ms","sf_status","observed_cpu_limits",
             "graphics_driver","resolution_scale",
             "thermal_status","thermal_headroom","swap_used_gib","mem_psi_some10",
-            "sample_duration_ms","sample_elapsed_ms")
+            "sample_duration_ms","sample_elapsed_ms",
+            "performance_mode","fan_mode","cluster_tune_mode","profile_name")
         writer.append(headers.joinToString(",")).append('\n')
         readableDatabase.rawQuery(
             """SELECT time_ms,cpu_temp,gpu_temp,battery_temp,battery_pct,cpu_pct,
@@ -596,7 +614,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 val values = listOf(id.toString(),session.note?.takeIf{it.isNotBlank()} ?: session.label,session.configuration,session.status) +
                     (0 until 22).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
                     listOf(session.graphicsDriver.orEmpty(),session.resolutionScale.orEmpty()) +
-                    (22 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" }
+                    (22 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
+                    listOf(session.performanceMode.orEmpty(),session.fanMode.orEmpty(),
+                        session.clusterTuneMode.orEmpty(),session.profileName.orEmpty())
                 writer.append(values.joinToString(",") { Csv.escape(it) }).append('\n')
             }
         }
