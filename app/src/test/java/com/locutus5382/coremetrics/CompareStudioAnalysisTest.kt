@@ -29,6 +29,24 @@ class CompareStudioAnalysisTest {
         window:Window=Window(0L,200_000L)
     )=CompareStudioAnalysis.analyze(sa,pa,sb,pb,window)
 
+    @Test fun absoluteGpuDistributionsDoNotTrustRelativeActivityShare() {
+        val low=(0..40).map{i->p(i,gpuLoad=if(i<20)22.0 else 40.0)}
+        val high=(0..40).map{i->p(i,origin=2_000_000L,
+            gpuLoad=if(i<20)66.0 else 85.0)}
+        val result=analyze(pa=low,pb=high)
+        assertTrue(result.warnings.any{
+            it.contains("Middle 50% GPU-load ranges do not overlap")
+        })
+        assertFalse(result.warnings.any {
+            it.contains("Higher-GPU-activity time differs")
+        })
+        val equal=analyze(pa=low,pb=low.map {it.copy(
+            timeMs=it.timeMs+1_000_000L)})
+        assertFalse(equal.warnings.any {
+            it.contains("Middle 50% GPU-load ranges do not overlap")
+        })
+    }
+
     @Test fun intentionallyDifferentGraphicsDriverIsNotAConfounder() {
         val sa=session(1,driver="System").copy(
             performanceMode="Performance",fanMode="Smart",
