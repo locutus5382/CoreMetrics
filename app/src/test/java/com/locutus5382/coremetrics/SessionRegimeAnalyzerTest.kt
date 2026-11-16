@@ -22,9 +22,9 @@ class SessionRegimeAnalyzerTest {
         val r=A.analyze(stock + medium + blip + mediumAgain + large)
         assertEquals(3,r.size)
         assertTrue(r[0].baseline)
-        assertTrue(r[1].label.startsWith("Medium UC"))
+        assertTrue(r[1].label.startsWith("Observed cap"))
         assertEquals(9,r[1].sampleCount)
-        assertTrue(r[2].label.startsWith("Large UC"))
+        assertTrue(r[2].label.startsWith("Observed cap"))
         assertEquals(-2.0,r[2].deltaMeanDischargeW!!,0.001)
         assertEquals(-33.3333,r[2].deltaDischargePct!!,0.01)
         assertEquals(30.8/4.0,r[2].projectedHours!!,0.001)
@@ -36,7 +36,7 @@ class SessionRegimeAnalyzerTest {
             status="CHARGING_OR_EXTERNAL_POWER; BATTERY_NET_ONLY") }
         val r=A.analyze(stock+tuned,activeGameplayOnly=true)
         assertEquals(1,r.size)
-        assertTrue(r[0].label.startsWith("Medium UC"))
+        assertTrue(r[0].label.startsWith("Observed cap"))
         assertNull(r[0].projectedHours)
         assertNull(r[0].meanDischargeW)
     }
@@ -48,7 +48,7 @@ class SessionRegimeAnalyzerTest {
         val phases=A.analyze(a+b+c)
         assertEquals(3,phases.size)
         assertTrue(phases[0].baseline)
-        assertTrue(phases[2].label.startsWith("Stock ("))
+        assertTrue(phases[2].label.startsWith("Observed cap"))
         assertNull(phases[1].deltaMeanDischargeW)
         assertNull(phases[2].meanDischargeW)
     }
