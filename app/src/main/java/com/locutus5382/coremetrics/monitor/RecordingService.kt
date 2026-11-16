@@ -338,13 +338,15 @@ class RecordingService:Service() {
                 }
                 settings=HudOptions.from(this,command)
                 userWantsHud=true
-                val prefs=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
+                // A SQL snapshot is shared across UI/:monitor/tile processes.
+                // A command with explicit extras still takes precedence.
+                val defaults=db.recordingDefaults()
                 armedLabel=(command.getStringExtra(LABEL)
-                    ?:prefs.getString("label","Gameplay")?:"Gameplay").take(64)
+                    ?:defaults.label).take(64)
                 armedConfig=(command.getStringExtra(CONFIG)
-                    ?:prefs.getString("configuration","Stock")?:"Stock").take(40)
+                    ?:defaults.configuration).take(40)
                 armedInterval=if(command.getLongExtra(INTERVAL,
-                    prefs.getLong("interval_ms",5000L))==2000L)2000L else 5000L
+                    defaults.intervalMs)==2000L)2000L else 5000L
                 if(task?.isActive!=true && !foreground("CoreMetrics · HUD standby",
                         "No telemetry until REC",true)){
                     MonitorState.message="Foreground standby failed"
@@ -542,13 +544,13 @@ class RecordingService:Service() {
                     return START_NOT_STICKY
                 }
                 explicitUserStop=false
-                val p=getSharedPreferences("coremetrics_settings",MODE_PRIVATE)
-                val request=command.getLongExtra(INTERVAL,p.getLong("interval_ms",5000L))
+                val defaults=db.recordingDefaults()
+                val request=command.getLongExtra(INTERVAL,defaults.intervalMs)
                 val interval=if(request==2000L)2000L else 5000L
                 val label=(command.getStringExtra(LABEL)
-                    ?:p.getString("label","Gameplay")?:"Gameplay").take(64)
+                    ?:defaults.label).take(64)
                 val config=(command.getStringExtra(CONFIG)
-                    ?:p.getString("configuration","Stock")?:"Stock").take(40)
+                    ?:defaults.configuration).take(40)
                 armedLabel=label
                 armedConfig=config
                 armedInterval=interval
@@ -563,7 +565,7 @@ class RecordingService:Service() {
                 MonitorState.starting=true
                 MonitorState.standby=false
                 val wantsHud=if(restored)command.getBooleanExtra(RECOVERY_HUD,false)
-                    else armed || p.getBoolean("hud_enabled",false)
+                    else armed || defaults.hudEnabled
                 userWantsHud=wantsHud
                 if(wantsHud && hud.permissionGranted()){
                     settings=HudOptions.from(this,command)
