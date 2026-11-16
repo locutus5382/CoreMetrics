@@ -84,6 +84,10 @@ object SessionArchive {
                     .put("fan_mode",s.fanMode?:JSONObject.NULL)
                     .put("cluster_tune_mode",s.clusterTuneMode?:JSONObject.NULL)
                     .put("profile_name",s.profileName?:JSONObject.NULL)
+                    .put("device_manufacturer",s.deviceManufacturer?:JSONObject.NULL)
+                    .put("device_model",s.deviceModel?:JSONObject.NULL)
+                    .put("device_code",s.deviceCode?:JSONObject.NULL)
+                    .put("android_api",s.androidApi?:JSONObject.NULL)
                 )}
             }).put("profiles",JSONArray().also{arr->
                 profiles.forEach{p->arr.put(JSONObject()
@@ -233,6 +237,11 @@ object SessionArchive {
                         put("fan_mode",nullable(source,"fan_mode"))
                         put("cluster_tune_mode",nullable(source,"cluster_tune_mode"))
                         put("profile_name",nullable(source,"profile_name")?.take(48))
+                        put("device_manufacturer",nullable(source,"device_manufacturer")?.take(64))
+                        put("device_model",nullable(source,"device_model")?.take(64))
+                        put("device_code",nullable(source,"device_code")?.take(64))
+                        put("android_api",source.optInt("android_api",-1)
+                            .takeIf{it in 1..50})
                     }
                     require(db.update("sessions",metadata,"id=?",
                         arrayOf(newId.toString()))==1) {
