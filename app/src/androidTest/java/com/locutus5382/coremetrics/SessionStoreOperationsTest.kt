@@ -44,7 +44,7 @@ class SessionStoreOperationsTest {
         val store=SessionStore(sandbox)
         try {
             val db=store.readableDatabase
-            assertEquals(8,db.version)
+            assertEquals(9,db.version)
             val names=mutableSetOf<String>()
             db.rawQuery("PRAGMA index_list(samples)",null).use { cursor->
                 while(cursor.moveToNext()) names.add(cursor.getString(1))
@@ -91,7 +91,7 @@ class SessionStoreOperationsTest {
         val store=SessionStore(sandbox)
         try {
             val db=store.readableDatabase
-            assertEquals(8,db.version)
+            assertEquals(9,db.version)
             val columns=mutableSetOf<String>()
             db.rawQuery("PRAGMA table_info(samples)",null).use { cursor ->
                 while(cursor.moveToNext())columns.add(cursor.getString(1))
@@ -143,7 +143,7 @@ class SessionStoreOperationsTest {
         }
         val store=SessionStore(sandbox)
         try {
-            assertEquals(8,store.readableDatabase.version)
+            assertEquals(9,store.readableDatabase.version)
             assertEquals(1L,store.storedSampleCount(9))
             assertEquals("Custom: T30",store.sessionById(9)?.graphicsDriver)
             assertNull(store.sessionById(9)?.fanMode)
@@ -239,7 +239,7 @@ class SessionStoreOperationsTest {
         }
         val store=SessionStore(sandbox)
         try {
-            assertEquals(8,store.readableDatabase.version)
+            assertEquals(9,store.readableDatabase.version)
             assertTrue(store.saveRecordingDefaults(SessionStore.RecordingDefaults(
                 "Test", "Custom",5000L,false)))
             val row=store.readableDatabase.rawQuery(
