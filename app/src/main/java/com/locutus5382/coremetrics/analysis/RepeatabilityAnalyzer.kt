@@ -111,6 +111,15 @@ object RepeatabilityAnalyzer {
                 report.energy.coveragePct>=80.0 && report.energy.measuredSeconds>=60.0)
                 report.energy.weightedMeanW else null
         }
+        val powerSources=runs.map { run ->
+            run.points.mapNotNull{it.batteryPowerSource?.takeIf{src->
+                src.isNotBlank() && src!="UNAVAILABLE"
+            }}.toSet()
+        }
+        if(powerSources.any{it.size>1} ||
+            powerSources.filter{it.isNotEmpty()}.distinct().size>1)
+            cautions+="Battery current/voltage source provenance differs; "+
+                "power readings may not be directly comparable."
         val eligible=discharge.count{it!=null}
         if(eligible<runs.size)
             cautions+="Some runs lack >=60s and >=80% valid discharging "+
