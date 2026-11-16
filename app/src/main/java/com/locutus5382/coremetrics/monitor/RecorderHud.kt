@@ -562,7 +562,7 @@ internal class RecorderHud(private val context:Context) {
                 return "HUD_OWNERSHIP_UNRESOLVED_"+cleaned
         }
         opts=options
-        invalidateLayoutCache();lastBadgeLevel=null
+        invalidateLayoutCache();lastBadgeLevel=null;lastDockRecording=null
         onRecord=onRecordClick;onLock=onLockClick
         onUnlock=onUnlockClick;onClose=onDismissClick
         this.onOptionsChanged=onOptionsChanged
@@ -864,11 +864,10 @@ internal class RecorderHud(private val context:Context) {
             val tab=dockTab
             tab?.layoutParams=LinearLayout.LayoutParams(w,h)
             (dockVisual as? TextView)?.apply {
-                text=if(top) (if(recording)"CM  ● REC" else "CM  READY")
-                    else (if(recording)"CM\n● REC" else "CM\nREADY")
                 layoutParams=LinearLayout.LayoutParams(
                     dp(if(top)108f else 56f),dp(if(top)44f else 82f))
             }
+            renderDockState()
             p.width=w
             p.height=h
             val positioned=HudDockGeometry.place(dockEdge,
@@ -1002,8 +1001,11 @@ internal class RecorderHud(private val context:Context) {
         // Rendering consumes only the recorder's current sample; never polls
         // hardware at an independent cadence.
         if(visible()) {
-            renderTelemetry()
-            if(!collapsed)updateGeometry()
+            if(collapsed)renderDockState()
+            else {
+                renderTelemetry()
+                updateGeometry()
+            }
         }
     }
 
@@ -1014,34 +1016,28 @@ internal class RecorderHud(private val context:Context) {
             now-headroomAtElapsedMs in 0L..25_000L) lastHeadroom else null
         val level=if(recording)ThermalIndicatorPolicy.level(
             s?.thermalStatus,freshHeadroom) else ThermalIndicatorPolicy.Level.UNKNOWN
-        val color=when(level) {
-            ThermalIndicatorPolicy.Level.NORMAL -> Color.rgb(241,249,255)
-            ThermalIndicatorPolicy.Level.WARNING -> Color.rgb(255,199,0)
-            ThermalIndicatorPolicy.Level.SEVERE -> Color.rgb(255,94,104)
-            ThermalIndicatorPolicy.Level.UNKNOWN -> Color.rgb(137,151,165)
-        }
+        // OS NONE cannot establish absence of real throttling. The Odin ROM
+        // has reported NONE with no useful headroom; do not waste 60dp on an
+        // always-on badge. Only actual policy pressure gets a colored bar.
+        val alert=recording && (level==ThermalIndicatorPolicy.Level.WARNING ||
+            level==ThermalIndicatorPolicy.Level.SEVERE)
         thermalIndicator?.apply {
-            visibility=if(recording)View.VISIBLE else View.GONE
-            // Rebuild the badge only on a STATE transition, not each 2/5s sample.
+            visibility=if(alert)View.VISIBLE else View.GONE
             if(lastBadgeLevel!=level) {
-                text=when(level) {
-                    ThermalIndicatorPolicy.Level.NORMAL -> "▌ OS NONE"
-                    ThermalIndicatorPolicy.Level.WARNING -> "▌ OS !"
-                    ThermalIndicatorPolicy.Level.SEVERE -> "▌ OS !!"
-                    ThermalIndicatorPolicy.Level.UNKNOWN -> "▌ OS ?"
-                }
-                setTextColor(color)
                 background=GradientDrawable().apply {
-                    cornerRadius=dp(11f).toFloat()
-                    setColor(Color.argb(222,7,23,43))
-                    setStroke(dp(2f).coerceAtLeast(2),color)
+                    cornerRadius=dp(2f).toFloat()
+                    setColor(if(level==ThermalIndicatorPolicy.Level.SEVERE)
+                        Color.rgb(255,94,104) else Color.rgb(255,199,0))
                 }
-                contentDescription="Device-wide OS thermal status: "+
+                contentDescription="Android OS-wide warning: "+
                     ThermalIndicatorPolicy.description(level)
                 lastBadgeLevel=level
             }
         }
-        (dockVisual as? TextView)?.setTextColor(Color.rgb(135,231,255))
+        // This is an OS alert, not a CPU-temperature-derived throttle gauge.
+        mainText?.contentDescription=if(alert)
+            "Android device thermal alert. "+ThermalIndicatorPolicy.description(level)
+            else "CoreMetrics device telemetry"
     }
 
     private fun severityColor(level:HudSeverity.Level):Int=when(level){
@@ -1121,7 +1117,35 @@ internal class RecorderHud(private val context:Context) {
         view.text=builder
     }
 
+    private fun renderDockState() {
+        val badge=dockVisual as? TextView ?:return
+        val elapsed=((System.currentTimeMillis()-startedAtMs)/1000).coerceAtLeast(0)
+        val time=String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60)
+        val top=dockEdge==DockEdge.TOP
+        val label=when {
+            !recording -> if(top)"CM · READY" else "CM\nREADY"
+            top -> "● REC · $time"
+            else -> "● R\n$time"
+        }
+        if(badge.text.toString()!=label)badge.text=label
+        if(lastDockRecording!=recording) {
+            val stroke=if(recording)Color.rgb(255,104,112)
+                else Color.rgb(76,211,243)
+            badge.setTextColor(if(recording)Color.rgb(255,175,180)
+                else Color.rgb(135,231,255))
+            (badge.background as? GradientDrawable)?.setStroke(
+                dp(2f).coerceAtLeast(2),stroke)
+            badge.contentDescription=if(recording)
+                "CoreMetrics recording, elapsed "+time+", tap to expand HUD"
+                else "CoreMetrics standby, tap to expand HUD"
+            lastDockRecording=recording
+        }else if(recording) {
+            badge.contentDescription="CoreMetrics recording, elapsed "+
+                time+", tap to expand HUD"
+        }
+    }
     private fun renderAction() {
+        renderDockState()
         recDot?.text=if(recording && opts.blink && !blinkOn)"○ " else "● "
         recDot?.setTextColor(accent())
         val elapsed=((System.currentTimeMillis()-startedAtMs)/1000).coerceAtLeast(0)
@@ -1158,7 +1182,7 @@ internal class RecorderHud(private val context:Context) {
             opacityLabel=null;drawerRecControl=null
             latest=null;thermal.reset();thermalValue=null
             recording=false;locked=false;collapsed=false
-            invalidateLayoutCache();lastBadgeLevel=null
+            invalidateLayoutCache();lastBadgeLevel=null;lastDockRecording=null
         }
         if(rootRemoved && chipRemoved){
             unbindCallbacks()
