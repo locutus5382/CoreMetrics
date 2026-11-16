@@ -25,6 +25,20 @@ class RecorderContinuationTest {
         for(action in actions) assertTrue("Action $action must preserve recovery",
             RecorderContinuation.sticky(action,active=true,stopping=false))
     }
+    @Test fun restoredStandbyGetsAtMostOneAutomaticRestart() {
+        assertTrue(RecorderContinuation.standbyAutoRecoverable(
+            recovered=false,requested=true))
+        assertFalse(RecorderContinuation.standbyAutoRecoverable(
+            recovered=true,requested=true))
+        assertFalse(RecorderContinuation.standbyAutoRecoverable(
+            recovered=false,requested=false))
+        assertFalse(RecorderContinuation.sticky(
+            RecordingService.HUD_LOCK,active=true,stopping=false,
+            nonRecoverableStandby=true))
+        assertTrue("Active REC must remain sticky",RecorderContinuation.sticky(
+            RecordingService.HUD_LOCK,active=true,stopping=false,
+            nonRecoverableStandby=false))
+    }
     @Test fun androidTeardownIsNotUserCompletion() {
         assertEquals("INTERRUPTED",RecorderContinuation.cancellationOutcome(false))
         assertEquals("COMPLETED",RecorderContinuation.cancellationOutcome(true))
