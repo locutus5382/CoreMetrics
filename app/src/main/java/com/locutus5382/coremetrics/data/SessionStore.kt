@@ -26,18 +26,77 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val clusterTuneMode:String?=null,val profileName:String?=null,
         val deviceManufacturer:String?=null,val deviceModel:String?=null,
         val deviceCode:String?=null,val androidApi:Int?=null)
-    data class Point(val timeMs: Long, val cpu: Double?, val gpu: Double?,
-        val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
-        val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
-        val observedCpuLimits: String? = null, val busiestCorePct: Double? = null,
-        val batteryPowerStatus: String? = null, val busiestCore: String? = null,
-        val batteryTemp: Double? = null, val batteryPct: Int? = null,
-        val cpuClocks: String? = null, val gpuMHz: Double? = null,
-        val thermalStatus: Int? = null, val thermalHeadroom: Double? = null,
-        val swapUsedGiB: Double? = null, val memoryPsiSomeAvg10: Double? = null,
+    /**
+     * Fields genuinely used by full-recording DUKO analytics. Keeping this
+     * interface separate from Point avoids allocating Point's 25 fields and
+     * loading unused strings from SQLite for every report sample.
+     */
+    interface ReportRow {
+        val timeMs:Long
+        val cpu:Double?
+        val gpu:Double?
+        val cpuLoad:Double?
+        val gpuLoad:Double?
+        val batteryWatts:Double?
+        val observedCpuLimits:String?
+        val busiestCorePct:Double?
+        val batteryPowerStatus:String?
+        val batteryTemp:Double?
+        val gpuMHz:Double?
+        val thermalStatus:Int?
+        val memoryPsiSomeAvg10:Double?
+        val batteryPowerSource:String?
+        val gpuTelemetrySource:String?
+    }
+
+    /**
+     * ONE instance is reused across the entire report cursor. Callback
+     * consumers must not retain this mutable object. The DUKO accumulator
+     * snapshots its prior interval into a separate reusable instance.
+     */
+    class ReportScratch:ReportRow {
+        override var timeMs:Long=0L
+        override var cpu:Double?=null
+        override var gpu:Double?=null
+        override var cpuLoad:Double?=null
+        override var gpuLoad:Double?=null
+        override var batteryWatts:Double?=null
+        override var observedCpuLimits:String?=null
+        override var busiestCorePct:Double?=null
+        override var batteryPowerStatus:String?=null
+        override var batteryTemp:Double?=null
+        override var gpuMHz:Double?=null
+        override var thermalStatus:Int?=null
+        override var memoryPsiSomeAvg10:Double?=null
+        override var batteryPowerSource:String?=null
+        override var gpuTelemetrySource:String?=null
+        fun copyFrom(src:ReportRow) {
+            timeMs=src.timeMs;cpu=src.cpu;gpu=src.gpu
+            cpuLoad=src.cpuLoad;gpuLoad=src.gpuLoad
+            batteryWatts=src.batteryWatts
+            observedCpuLimits=src.observedCpuLimits
+            busiestCorePct=src.busiestCorePct
+            batteryPowerStatus=src.batteryPowerStatus
+            batteryTemp=src.batteryTemp;gpuMHz=src.gpuMHz
+            thermalStatus=src.thermalStatus
+            memoryPsiSomeAvg10=src.memoryPsiSomeAvg10
+            batteryPowerSource=src.batteryPowerSource
+            gpuTelemetrySource=src.gpuTelemetrySource
+        }
+    }
+
+    data class Point(override val timeMs: Long, override val cpu: Double?, override val gpu: Double?,
+        override val cpuLoad: Double?, override val gpuLoad: Double?, val ram: Double?,
+        override val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
+        override val observedCpuLimits: String? = null, override val busiestCorePct: Double? = null,
+        override val batteryPowerStatus: String? = null, val busiestCore: String? = null,
+        override val batteryTemp: Double? = null, val batteryPct: Int? = null,
+        val cpuClocks: String? = null, override val gpuMHz: Double? = null,
+        override val thermalStatus: Int? = null, val thermalHeadroom: Double? = null,
+        val swapUsedGiB: Double? = null, override val memoryPsiSomeAvg10: Double? = null,
         val sampleDurationMs: Double? = null, val sampleElapsedMs: Long? = null,
-        val batteryPowerSource:String?=null,
-        val gpuTelemetrySource:String?=null)
+        override val batteryPowerSource:String?=null,
+        override val gpuTelemetrySource:String?=null):ReportRow
 
     /**
      * Single cross-process source for recording-critical QS settings.
@@ -589,6 +648,52 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         }
         require(read==bounds.count) {
             "Recording changed while its report was generated; export cancelled"
+        }
+        return read
+    }
+
+    /**
+     * Full-session report optimized cursor. The callback sees the same ONE
+     * mutable ReportScratch every time; never retain it beyond the callback.
+     * It selects only 15 report-relevant SQLite fields, and never constructs
+     * a large immutable Point per sample. Other APIs retain Point semantics.
+     */
+    @Synchronized fun forEachReportSample(
+        id:Long,bounds:ReportBounds,onSample:(ReportScratch)->Unit
+    ):Long {
+        require(bounds.count in 6L..250_000L) {
+            "DUKO Report expects 6–250,000 saved samples"
+        }
+        val columns="""SELECT time_ms,cpu_temp,gpu_temp,cpu_pct,gpu_pct,
+            battery_net_w,observed_cpu_limits,busiest_pct,battery_status,
+            battery_temp,gpu_mhz,thermal_status,mem_psi_some10,
+            battery_source,gpu_source
+            FROM samples WHERE session_id=? ORDER BY time_ms ASC"""
+        val scratch=ReportScratch()
+        var read=0L
+        readableDatabase.rawQuery(columns,arrayOf(id.toString())).use {c->
+            fun dbl(i:Int):Double?=if(c.isNull(i))null else c.getDouble(i)
+            fun str(i:Int):String?=if(c.isNull(i))null else c.getString(i)
+            while(c.moveToNext()) {
+                scratch.timeMs=c.getLong(0)
+                scratch.cpu=dbl(1);scratch.gpu=dbl(2)
+                scratch.cpuLoad=dbl(3);scratch.gpuLoad=dbl(4)
+                scratch.batteryWatts=dbl(5)
+                scratch.observedCpuLimits=str(6)
+                scratch.busiestCorePct=dbl(7)
+                scratch.batteryPowerStatus=str(8)
+                scratch.batteryTemp=dbl(9)
+                scratch.gpuMHz=dbl(10)
+                scratch.thermalStatus=if(c.isNull(11))null else c.getInt(11)
+                scratch.memoryPsiSomeAvg10=dbl(12)
+                scratch.batteryPowerSource=str(13)
+                scratch.gpuTelemetrySource=str(14)
+                onSample(scratch)
+                read++
+            }
+        }
+        check(read==bounds.count) {
+            "Report dataset changed during export; refusing truncated output"
         }
         return read
     }
