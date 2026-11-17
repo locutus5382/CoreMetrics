@@ -9,7 +9,8 @@ import com.locutus5382.coremetrics.data.SessionStore
 internal object DukoReportLoader {
     fun build(
         db:SessionStore,id:Long,
-        checkpoint:()->Unit={}
+        checkpoint:()->Unit={},
+        onProgress:(Long,Long)->Unit={_,_->}
     ):DukoSessionInsight.Report {
         require(id>0L){"Select a saved session"}
         val session=db.sessionById(id)?:error("Recording does not exist")
@@ -27,16 +28,21 @@ internal object DukoReportLoader {
         }
         val report=DukoSessionInsight.Accumulator(
             session,bounds,db.reportCadenceMs(id))
+        onProgress(0L,bounds.count)
         var visitedSinceCheck=0
+        var accepted=0L
         checkpoint()
         val visited=db.forEachReportPoint(id,bounds){ point ->
+            report.accept(point)
+            accepted++
             if(++visitedSinceCheck>=512) {
                 checkpoint()
+                onProgress(accepted,bounds.count)
                 visitedSinceCheck=0
             }
-            report.accept(point)
         }
         checkpoint()
+        onProgress(accepted,bounds.count)
         check(visited==bounds.count){"Report dataset changed during export"}
         return report.finish()
     }
