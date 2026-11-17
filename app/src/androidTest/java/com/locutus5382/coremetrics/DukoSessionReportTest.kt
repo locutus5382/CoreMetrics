@@ -4,7 +4,10 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.locutus5382.coremetrics.analysis.DukoReportLoader
@@ -15,6 +18,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.StringReader
 
 @RunWith(AndroidJUnit4::class)
@@ -74,6 +78,38 @@ class DukoSessionReportTest {
             assertTrue(pdf.toByteArray().copyOfRange(0,4)
                 .toString(Charsets.US_ASCII)=="%PDF")
             assertTrue(pdf.size()>5000)
+            // Decode real PDF pages, not just the %PDF signature. This catches
+            // corrupt cross-page streams which would otherwise pass compilation.
+            val file=File.createTempFile("duko_instrumented_", ".pdf", app.cacheDir)
+            try {
+                file.writeBytes(pdf.toByteArray())
+                ParcelFileDescriptor.open(file,
+                    ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                    PdfRenderer(fd).use { renderer ->
+                        assertTrue("Expected summary and evidence pages",
+                            renderer.pageCount>=2)
+                        renderer.openPage(0).use { page ->
+                            val preview=Bitmap.createBitmap(595,842,
+                                Bitmap.Config.ARGB_8888)
+                            try {
+                                page.render(preview,null,null,
+                                    PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                assertEquals(595,preview.width)
+                                assertEquals(842,preview.height)
+                                // Rendered report must contain visible ink.
+                                var nonWhite=0
+                                for(y in 0 until preview.height step 24) {
+                                    for(x in 0 until preview.width step 24) {
+                                        if(preview.getPixel(x,y)!=-1)nonWhite++
+                                    }
+                                }
+                                assertTrue("Rendered PDF page appears blank",
+                                    nonWhite>15)
+                            }finally { preview.recycle() }
+                        }
+                    }
+                }
+            }finally {file.delete()}
             assertEquals(12006L,db.storedSampleCount(session))
         }finally {
             db.close()
