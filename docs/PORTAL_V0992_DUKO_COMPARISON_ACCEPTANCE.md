@@ -24,8 +24,8 @@ Shizuku, HUD controls, process or continuous telemetry loops.
 
 - PNG: one **1600×2200** white/print-style matrix/summary.
 - PDF: native Android vector A4 pages for the same metric matrix,
-  original-device/manual-test metadata, all methodology notes, and every
-  quality/provenance notice in paginated sections. No external rendering
+  original-device/manual-test metadata, every evidence-qualified observation,
+  all methodology notes, and every quality/provenance notice in paginated sections. No external rendering
   dependency, screenshot HTML, network or unbounded bitmap pages.
 - Uses the **same DukoComparisonInsight.Result** for both formats.
 - Nine sensor metrics: CPU/GPU/BAT T, system CPU/GPU/busiest-core
@@ -41,7 +41,8 @@ Shizuku, HUD controls, process or continuous telemetry loops.
 - Reuse DukoReportLoader + DukoSessionInsight, full chronological stored data,
   capped at **250,000 per session**. No partial 12k preview and no accepted
   incomplete dataset. For five chosen recordings, analyze each saved report
-  sequentially off-main.
+  sequentially off-main. Recheck stored source counts before the final
+  report is rendered so deletion during a multi-run scan is not ignored.
 - All source recordings require six or more points spanning 20 seconds.
   Count, source bounds, timestamps and PDF data remain immutable.
 - Display raw sensor percentiles even when coverage is poor, but suppress
