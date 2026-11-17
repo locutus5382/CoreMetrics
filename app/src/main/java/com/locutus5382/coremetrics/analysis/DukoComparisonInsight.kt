@@ -153,7 +153,8 @@ object DukoComparisonInsight {
                     (variable==CompareStudioAnalysis.TestedVariable.UNDECLARED ||
                         variable!=testedVariable))
                     warnings+=name+" differs outside the declared tested variable."
-                else if(left==right && variable==testedVariable &&
+                else if(s.id!=baselineId && left==right &&
+                    variable==testedVariable &&
                     testedVariable!=CompareStudioAnalysis.TestedVariable.UNDECLARED)
                     warnings+=name+" is identical despite being the declared tested variable."
             }
