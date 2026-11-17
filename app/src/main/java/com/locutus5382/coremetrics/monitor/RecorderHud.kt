@@ -17,6 +17,8 @@ import android.text.Layout
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -1024,15 +1026,15 @@ internal class RecorderHud(private val context:Context) {
             }
             val viewport=(windowWidth()-dp(12f)).coerceAtLeast(dp(220f))
             val controlWidth=if(locked)dp(48f) else when(theme) {
-                HudLayoutPolicy.STRIKER->dp(120f)
-                HudLayoutPolicy.TACTICAL->dp(84f)
+                HudLayoutPolicy.STRIKER->dp(112f)
+                HudLayoutPolicy.TACTICAL->dp(64f)
                 HudLayoutPolicy.DUKO->0
                 else->dp(95f)
             }
             val desired=when(theme) {
-                HudLayoutPolicy.STRIKER->dp(470f*scale)
-                HudLayoutPolicy.TACTICAL->dp(355f*scale)
-                HudLayoutPolicy.DUKO->dp(232f*scale)
+                HudLayoutPolicy.STRIKER->dp(400f*scale)
+                HudLayoutPolicy.TACTICAL->dp(310f*scale)
+                HudLayoutPolicy.DUKO->dp(213f*scale)
                 HudLayoutPolicy.GHOST->(measure+controlWidth+dp(18f))
                     .coerceAtLeast(dp(200f))
                 HudLayoutPolicy.STRIP->(measure+controlWidth+dp(22f))
@@ -1040,9 +1042,9 @@ internal class RecorderHud(private val context:Context) {
                 else->dp(320f)
             }
             val maxWidth=when(theme) {
-                HudLayoutPolicy.STRIKER->minOf(viewport,dp(520f))
-                HudLayoutPolicy.TACTICAL->minOf(viewport,dp(420f))
-                HudLayoutPolicy.DUKO->minOf(viewport,dp(295f))
+                HudLayoutPolicy.STRIKER->minOf(viewport,dp(445f))
+                HudLayoutPolicy.TACTICAL->minOf(viewport,dp(360f))
+                HudLayoutPolicy.DUKO->minOf(viewport,dp(255f))
                 HudLayoutPolicy.GHOST->minOf(viewport,dp(800f))
                 else->minOf(viewport,(windowWidth()*.95f).roundToInt())
             }
@@ -1209,14 +1211,14 @@ internal class RecorderHud(private val context:Context) {
                 else->Typeface.create("sans-serif-medium",Typeface.NORMAL)
             }
             setTextColor(Color.rgb(239,247,255))
-            setShadowLayer(if(ghost)dp(2f).toFloat() else 0f,
+            setShadowLayer(if(ghost)dp(3f).toFloat() else 0f,
                 0f,if(ghost)dp(1f).toFloat() else 0f,Color.BLACK)
-            setPadding(dp(if(ghost)1f else if(lens)3f else 6f),
-                dp(if(ghost)2f else 5f),
-                dp(if(ghost)1f else if(lens)3f else 6f),
-                dp(if(ghost)2f else 5f))
+            setPadding(dp(if(ghost)1f else if(lens)3f else 4f),
+                dp(if(ghost)1f else 3f),
+                dp(if(ghost)1f else if(lens)3f else 4f),
+                dp(if(ghost)1f else 3f))
             setSingleLine(false)
-            maxLines=if(lens)9 else if(tactical)4 else if(strip)5 else 6
+            maxLines=if(lens)9 else if(tactical)4 else if(strip)4 else 6
             ellipsize=null
         }
         // Tactical has three substantive, independent labelled data blocks.
