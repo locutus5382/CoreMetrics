@@ -61,6 +61,9 @@ internal object DukoComparisonRenderer {
             }
             page{summary(it,result)}
             page{evidence(it,result)}
+            result.observations.chunked(8).forEachIndexed{index,items->
+                page{observationPage(it,result,index,items)}
+            }
             page{methods(it,result)}
             result.warnings.chunked(10).forEachIndexed{index,warnings ->
                 page{warningPage(it,result,index,warnings)}
@@ -245,11 +248,35 @@ internal object DukoComparisonRenderer {
             85f,2147f,22f,ORANGE,true)
     }
 
+    private fun observationPage(
+        canvas:Canvas,r:DukoComparisonInsight.Result,
+        index:Int,items:List<String>
+    ) {
+        val a=Art(canvas)
+        header(a,"Observed comparisons",
+            "Evidence-qualified facts; not gameplay, FPS or driver rankings",
+            "OBS "+(index+1))
+        a.text("OBSERVATIONS "+(index*8+1)+"–"+(index*8+items.size)+
+            " OF "+r.observations.size,81f,324f,28f,BLUE,true)
+        var y=409f
+        items.forEachIndexed{itemIndex,item->
+            a.rect(79f,y-30f,1446f,166f,Color.WHITE,12f)
+            a.rect(84f,y-19f,8f,128f,TEAL)
+            a.text((index*8+itemIndex+1).toString().padStart(2,'0'),
+                111f,y+7f,23f,BLUE,true)
+            a.wrap(item,162f,y+4f,1327f,23f,INK,3,33f)
+            y+=202f
+        }
+        a.rule(2112f)
+        a.text("Observed changes do not establish the tested variable as a cause.",
+            85f,2162f,21f,MUTED)
+    }
+
     private fun methods(canvas:Canvas,r:DukoComparisonInsight.Result) {
         val a=Art(canvas)
         header(a,"How comparisons work",
             "Eligibility rules, reporting boundaries and confidence labels",
-            "03 / DUKO")
+            "METHODS")
         a.text("COMPARABILITY: "+r.overall.label,
             81f,329f,30f,ORANGE,true)
         a.wrap("A sensor difference is an observation, not evidence "+
