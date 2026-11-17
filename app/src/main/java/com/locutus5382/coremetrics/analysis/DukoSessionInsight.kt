@@ -211,6 +211,9 @@ object DukoSessionInsight {
                     (dt/1000.0)+" s, missing behavior unknown.",Evidence.OBSERVED)
                 recentGpu.clear();recentCore.clear()
                 candidateCap=null;candidateCount=0
+                currentCap=null // never claim a transition across missing time
+                priorPsiHigh=false
+                previousThermal=null
                 warmth.reset()
             }
 
@@ -271,7 +274,10 @@ object DukoSessionInsight {
 
             val key=SessionRegimeAnalyzer.key(p.observedCpuLimits)
                 .takeUnless{it.contains("?")}
-            if(key==null){candidateCap=null;candidateCount=0}
+            if(key==null){
+                candidateCap=null;candidateCount=0
+                currentCap=null // unknown is not a trusted frequency baseline
+            }
             else if(key==candidateCap){
                 candidateCount++
                 if(candidateCount==3){
