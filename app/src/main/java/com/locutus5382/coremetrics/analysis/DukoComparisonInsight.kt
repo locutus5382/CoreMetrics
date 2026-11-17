@@ -149,7 +149,9 @@ object DukoComparisonInsight {
                 val right=known(selector(s))
                 if(left==null || right==null)
                     warnings+=name+" metadata is missing in at least one recording."
-                else if(left!=right && variable!=testedVariable)
+                else if(left!=right &&
+                    (variable==CompareStudioAnalysis.TestedVariable.UNDECLARED ||
+                        variable!=testedVariable))
                     warnings+=name+" differs outside the declared tested variable."
                 else if(left==right && variable==testedVariable &&
                     testedVariable!=CompareStudioAnalysis.TestedVariable.UNDECLARED)
