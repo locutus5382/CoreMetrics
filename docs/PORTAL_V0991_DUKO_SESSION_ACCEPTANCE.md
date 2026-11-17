@@ -28,6 +28,8 @@ CoreMetrics attempts to delete only the incomplete selected document.
 - Complete chronological cursor scan independent of **12,000-row UI
   preview**. Maximum 250,000 rows is explicit; larger recordings fail with
   an explanation rather than exporting incomplete results.
+- A report requires **at least 6 recorded samples spanning 20 seconds**; shorter
+  or incomplete sessions fail before any output stream is opened.
 - Exact sample P50/P95/peak for CPU/GPU/battery temperature, system CPU/GPU
   utilization, busiest core, eligible battery-terminal W, GPU frequency,
   and memory PSI. No FPS or inferred game frame timing.
@@ -88,6 +90,27 @@ CoreMetrics attempts to delete only the incomplete selected document.
 - Genuine Mali sensor semantics, vendor-specific throttling thresholds,
   confirmed per-game FPS and portable battery usable capacity require
   independent device validation; none are invented in this version.
-- GitHub CI compiles Android instrumentation but does **not** execute
-  those Android UI/integration tests. Confirm actual device acceptance
-  before merging this alpha to the main branch.
+- The v0.9.9.1 CI has a separate **Android API 33 emulator instrumentation**
+  job, in addition to JVM/Debug/R8 builds. Execution status must be checked
+  for the final commit. Emulator acceptance is **not** Odin 2 Portal acceptance.
+  Confirm actual device acceptance before merging this alpha to the main branch.
+
+## v0.9.9.1 finalization review notes (2026-11-17)
+
+- Full-screen report rendering is performed from saved samples **after** recording;
+  no extra telemetry reads or services have been added.
+- The PNG/PDF shared renderer now preserves each visible wrapped line and
+  ellipsizes overflow only on the final allowed line; visually inspect reports
+  with long notes, manufacturer strings and provenance labels on Android.
+- Android PDF instrumentation now opens and renders the first native page,
+  rather than checking only the `%PDF` signature; it remains a functional,
+  not a typographic, acceptance test.
+- Additional JVM tests exercise 95% system GPU/core saturation over ~120 seconds
+  and ensure unavailable GPU readings cannot generate a saturation alert.
+- The app remains **development alpha / test candidate** until the emulator
+  run is green and Odin device testing verifies REC/STOP, HUD, QS, old exports,
+  sensor-source semantics, and long-session heap/export performance.
+- v0.9.9.2 may reuse `DukoSessionInsight.Report` as an input model, but must
+  explicitly check source provenance, field coverage, user-declared settings,
+  consistent test conditions, and comparable time spans. Never infer FPS,
+  gaming performance winners, battery usable capacity or throttling causes.
