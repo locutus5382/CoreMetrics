@@ -210,6 +210,32 @@ object DukoComparisonInsight {
         }
 
         val observations=buildList {
+            // Each selected run gets at most one concise *observed* fact.
+            // The display thresholds below are editorial noise filters only;
+            // they are not significance tests or proof of matched gameplay.
+            for((index,r) in reports.withIndex()) {
+                if(r.session.id==baselineId)continue
+                val watched=listOf(Metric.GPU_TEMP,Metric.CPU_TEMP,
+                    Metric.POWER,Metric.GPU_LOAD)
+                for(metric in watched) {
+                    val cell=rows.first{it.metric==metric}.cells[index]
+                    val delta=cell.deltaP50?:continue
+                    val minimum=if(metric==Metric.GPU_LOAD)1.0 else 0.2
+                    if(!cell.comparable || abs(delta)<minimum)continue
+                    val unit=if(metric==Metric.GPU_LOAD)" percentage points"
+                        else " "+metric.unit
+                    add("Session #"+r.session.id+" recorded "+
+                        String.format(Locale.US,"%.1f",abs(delta))+unit+
+                        (if(delta>0)" higher" else " lower")+
+                        " median "+metric.label.lowercase(Locale.ROOT)+
+                        " than baseline #"+baselineId+
+                        "; different gameplay phases may explain the observation.")
+                    break
+                }
+            }
+            if(isEmpty())add("No eligible baseline-relative sensor difference "+
+                "exceeded the report's display thresholds; this is not proof "+
+                "that the sessions performed equally.")
             add("P50 and P95 are sampled sensor distributions, never game FPS or frame-time percentiles.")
             val eligible=rows.count { row -> row.cells.all{it.comparable} }
             add(eligible.toString()+" of "+rows.size+
@@ -224,10 +250,10 @@ object DukoComparisonInsight {
                     val spread=means.maxOrNull()!!-means.minOrNull()!!
                     add("Observed time-weighted whole-device battery discharge spans "+
                         String.format(Locale.US,"%.2f",spread)+
-                        " W across runs. No per-frame energy or efficiency ranking is implied.")
+                        " W across runs; no energy-efficiency ranking is implied.")
                 }
             }
-        }
+        }.take(12)
         val overall=when {
             runs.any{it.confidence==Confidence.INSUFFICIENT} -> Confidence.INSUFFICIENT
             runs.any{it.confidence==Confidence.LIMITED} -> Confidence.LIMITED
