@@ -231,6 +231,7 @@ internal class RecorderHud(private val context:Context) {
     private var drawerRecControl:TextView?=null
     private var closeControl:TextView?=null
     private var minimizeControl:TextView?=null
+    private var dragControl:TextView?=null
     private val metricLevels=mutableMapOf<String,HudSeverity.Level>()
     private var params:WindowManager.LayoutParams?=null
     private var opts=HudOptions()
@@ -737,6 +738,15 @@ internal class RecorderHud(private val context:Context) {
             minHeight=dp(34f)
         }
         bottomActions.addView(minimizeControl)
+        // Striker has a dedicated clearly labelled drag zone. The action
+        // becomes a touch surface below, never an inert button or REC hitbox.
+        dragControl=action("↔ DRAG"){}.apply {
+            contentDescription="Drag the Striker HUD or swipe to screen edge"
+            minWidth=dp(58f)
+            minHeight=dp(34f)
+            textSize=10f
+        }
+        bottomActions.addView(dragControl)
         lockControl=action(""){onLock?.invoke()}.apply {
             background=FlatLockChipDrawable(locked=false)
             setPadding(0,0,0,0)
@@ -892,6 +902,7 @@ internal class RecorderHud(private val context:Context) {
         // Swiping can start on ANY data zone, but never on REC/STOP or lock.
         for(v in arrayOf(label,secondary,tertiary,heading))
             v.setOnTouchListener(dragListener)
+        dragControl?.setOnTouchListener(dragListener)
         return try {
             lastAddRequestedAt=SystemClock.elapsedRealtime()
             wm.addView(frame,p)
@@ -1259,7 +1270,8 @@ internal class RecorderHud(private val context:Context) {
         lockedSpace?.visibility=if(locked)View.VISIBLE else View.GONE
         lockControl?.visibility=if(locked)View.GONE else View.VISIBLE
         closeControl?.visibility=if(recording)View.GONE else View.VISIBLE
-        minimizeControl?.visibility=if(striker||tactical)View.VISIBLE else View.GONE
+        minimizeControl?.visibility=if(tactical)View.VISIBLE else View.GONE
+        dragControl?.visibility=if(striker)View.VISIBLE else View.GONE
         refreshThermalIndicator()
         renderTelemetry()
         renderAction()
@@ -1506,7 +1518,7 @@ internal class RecorderHud(private val context:Context) {
             dockVisual=null;mainText=null;secondaryText=null;tertiaryText=null
             metricsColumn=null;thermalIndicator=null;recText=null;recDot=null
             recControl=null;lockControl=null;drawerControl=null
-            closeControl=null;minimizeControl=null
+            closeControl=null;minimizeControl=null;dragControl=null
             drawerSwitches.clear()
             opacityLabel=null;drawerRecControl=null
             latest=null;thermal.reset();thermalValue=null
