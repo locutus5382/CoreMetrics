@@ -41,7 +41,8 @@ internal fun DukoComparisonPanel(
     var variableName by rememberSaveable {
         mutableStateOf(CompareStudioAnalysis.TestedVariable.UNDECLARED.name)
     }
-    val valid=sessions.filter{it.status!="RECORDING"}.take(50)
+    val completed=sessions.filter{it.status!="RECORDING"}
+    val valid=completed.take(50)
     val available=valid.map{it.id}.toSet()
     val selected=selectedCsv.split(',').mapNotNull{it.toLongOrNull()}
         .filter{it in available}.distinct().take(5)
@@ -121,7 +122,7 @@ internal fun DukoComparisonPanel(
         }
         if(busy)Text("Generating offline report from complete recordings…",
             color=noteColor,style=MaterialTheme.typography.labelSmall)
-        if(valid.size>50)Text("Showing the 50 most recent saved sessions.",
+        if(completed.size>50)Text("Showing the 50 most recent saved sessions.",
             color=noteColor,style=MaterialTheme.typography.labelSmall)
         Spacer(Modifier.height(4.dp))
     }
