@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.9.5 HUD Layout Studio alpha** — Classic pill (unchanged default), Compact Glass Card, and Horizontal Telemetry Ribbon are selectable in the existing HUD Studio, with a fixed-value visual preview. The same one-window recorder/HUD/Quick Settings architecture, no-root permissions and user-requested FIFO DUKO reporting are retained. Reliability, memory benchmarks and hardware validation are ongoing; this is not a public release.
+**Current development status: v0.9.9.6 Five HUD Overhaul alpha** — Five user-selectable styles replace the rejected three: Striker, Ghost, Horizontal Strip, Compact Tactical Card and DUKO Lens. The metric values still come exclusively from existing recorder samples; the recorder, foreground service, no-root permissions, database and user-requested FIFO reports are unchanged. All styles share one overlay owner. DUKO Lens uses translucent frosted fallback instead of risky global game-background blur. Full Android and Odin validation is required before release.
 
-## One-app Quick Start (v0.9.9.5)
+## One-app Quick Start (v0.9.9.6)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.9.5-hud-layouts-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.5-hud-layouts-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.9.6-five-hud-overhaul-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.6-five-hud-overhaul-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,15 @@
 
 ---
 
+
+## v0.9.9.6 — Five-theme HUD overhaul (draft alpha)
+
+- **Five fully selectable visual modes** in HUD Studio: Striker (new default), Ghost, Horizontal Strip, Compact Card and DUKO Lens. Old pill/card/ribbon choices automatically normalize to their nearest supported replacement. Each style groups the same real telemetry differently and uses existing REC/STOP, dock, lock/unlock and service callbacks.
+- **True swipe-to-edge auto-collapse** from metric zones; no accidental collapse on a short or vertical movement. The collapsed overlay window is 44dp square; Lens paints only a thin 2dp bezel line and status dot inside the accessible target. Tap to expand.
+- **Distinctive DUKO Lens** with monospaced key/value entries, sharp bracket framing, explicit red elapsed-time STOP beacon, text [ LOCK ] and white-only readings except display-only orange/red thermal advisories. No real-time expensive screenshot capture or global backdrop blur.
+- **No guessing** of game title or FPS; system RAM remains labelled as system memory. Never imply sensor reading is certified thermal throttling or per-game performance.
+- **Safeguards:** One WindowManager HUD owner, one independent unlock handle when locked, unchanged 2s/5s REC sampling, no new permissions, SQLite schema or automatic reports. Builds are drafts until tests and Odin gameplay acceptance pass.
+- Acceptance criteria: docs/PORTAL_V0996_FIVE_HUD_ACCEPTANCE.md.
 
 ## v0.9.9.5 — HUD Layout Studio, with parallel stability work
 
