@@ -43,7 +43,10 @@ internal object DukoSessionRenderer {
     fun png(report:DukoSessionInsight.Report,out:OutputStream,
             checkpoint:()->Unit={}) {
         checkpoint()
-        val bitmap=Bitmap.createBitmap(WIDTH,HEIGHT,Bitmap.Config.ARGB_8888)
+        // The report canvas is fully opaque and always fills its backdrop.
+        // RGB_565 uses ~7.0 MB instead of ARGB_8888's ~14.1 MB per
+        // 1600x2200 PNG export bitmap. PDF stays full-color vector.
+        val bitmap=Bitmap.createBitmap(WIDTH,HEIGHT,Bitmap.Config.RGB_565)
         try {
             drawSummary(Canvas(bitmap),report)
             checkpoint()
