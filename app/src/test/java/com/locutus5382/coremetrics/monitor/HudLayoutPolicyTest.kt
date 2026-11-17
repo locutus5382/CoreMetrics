@@ -4,61 +4,65 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HudLayoutPolicyTest {
-    @Test fun originalPillRemainsTheDefaultAndUnknownValuesAreSafe() {
-        assertEquals(HudLayoutPolicy.PILL,HudLayoutPolicy.normalize(null))
-        assertEquals(HudLayoutPolicy.PILL,HudLayoutPolicy.normalize(""))
-        assertEquals(HudLayoutPolicy.PILL,HudLayoutPolicy.normalize("unknown"))
-        assertEquals(HudLayoutPolicy.PILL,HudLayoutPolicy.normalize("pill"))
-    }
-
-    @Test fun historicalRoundedProLayoutMigratesToTheGlassCard() {
-        assertEquals(HudLayoutPolicy.GLASS_CARD,HudLayoutPolicy.normalize("pro"))
-        assertEquals(HudLayoutPolicy.GLASS_CARD,
-            HudLayoutPolicy.normalize("glass_card"))
-        assertTrue(HudLayoutPolicy.card("pro"))
-        assertFalse(HudLayoutPolicy.ribbon("pro"))
-        assertTrue(HudLayoutPolicy.ribbon("ribbon"))
-    }
-
-    @Test fun layoutSeparatorsKeepEverySelectedMetricInOrder() {
-        val readings=(1..7).map{"M$it"}
-        for(layout in listOf("pill","glass_card","ribbon")) {
-            val text=buildString {
-                readings.forEachIndexed { index,value ->
-                    append(HudLayoutPolicy.divider(layout,index,readings.size))
-                    append(value)
-                }
-            }
-            readings.forEach { assertTrue(text.contains(it)) }
-            assertEquals(7,Regex("M[1-7]").findAll(text).count())
-            assertTrue(text.indexOf("M1")<text.indexOf("M7"))
+    @Test fun allFiveThemesAreDistinctAndDefaultMigratesToStriker() {
+        assertEquals(5,HudLayoutPolicy.themes.distinct().size)
+        assertEquals(HudLayoutPolicy.STRIKER,HudLayoutPolicy.normalize(null))
+        assertEquals(HudLayoutPolicy.STRIKER,HudLayoutPolicy.normalize("unknown"))
+        assertEquals(HudLayoutPolicy.STRIKER,HudLayoutPolicy.normalize("pill"))
+        HudLayoutPolicy.themes.forEach {
+            assertEquals(it,HudLayoutPolicy.normalize(it))
+            assertTrue(HudLayoutPolicy.label(it).isNotBlank())
+            assertTrue(HudLayoutPolicy.description(it).isNotBlank())
         }
-        assertTrue(HudLayoutPolicy.divider("glass_card",2,7).contains('\n'))
-        assertTrue(HudLayoutPolicy.divider("pill",2,7).contains('\n'))
-        assertTrue(HudLayoutPolicy.divider("ribbon",2,7).contains('│'))
     }
 
-    @Test fun ribbonWrapsInsteadOfHidingMetricsOnNarrowDisplays() {
-        assertTrue(HudLayoutPolicy.ribbonTwoRows(7,450))
-        assertFalse(HudLayoutPolicy.ribbonTwoRows(4,450))
-        assertFalse(HudLayoutPolicy.ribbonTwoRows(7,850))
-        val fallback=buildString {
-            repeat(7) { i ->
-                append(HudLayoutPolicy.divider("ribbon",i,7,true))
+    @Test fun previousCardAndRibbonIdsMigrateWithoutDroppingSettings() {
+        assertEquals(HudLayoutPolicy.TACTICAL,HudLayoutPolicy.normalize("pro"))
+        assertEquals(HudLayoutPolicy.TACTICAL,
+            HudLayoutPolicy.normalize("glass_card"))
+        assertEquals(HudLayoutPolicy.STRIP,HudLayoutPolicy.normalize("ribbon"))
+        assertTrue(HudLayoutPolicy.card("glass_card"))
+        assertTrue(HudLayoutPolicy.ribbon("ribbon"))
+        assertTrue(HudLayoutPolicy.lens("duko_lens"))
+    }
+
+    @Test fun compactFormattingAndReadabilityArePredictable() {
+        val formats=HudLayoutPolicy.themes
+        for(theme in formats){
+            assertTrue(HudLayoutPolicy.nominalTextSp(theme,"small")<
+                HudLayoutPolicy.nominalTextSp(theme,"regular"))
+            assertTrue(HudLayoutPolicy.nominalTextSp(theme,"regular")<
+                HudLayoutPolicy.nominalTextSp(theme,"large"))
+        }
+        val l=buildString {
+            repeat(7){i->
+                append(HudLayoutPolicy.divider(HudLayoutPolicy.STRIP,i,7,true))
                 append("M").append(i)
             }
         }
-        assertTrue(fallback.count{it=='\n'}>=3)
-        assertTrue(fallback.contains("M6"))
+        assertEquals(7,Regex("M[0-6]").findAll(l).count())
+        assertTrue(l.contains('\n'))
+        assertTrue(HudLayoutPolicy.ribbonTwoRows(7,450))
+        assertFalse(HudLayoutPolicy.ribbonTwoRows(4,450))
     }
 
-    @Test fun textScalePreservesFamiliarSizeOrdering() {
-        for(layout in listOf("pill","glass_card","ribbon")) {
-            assertTrue(HudLayoutPolicy.nominalTextSp(layout,"small")<
-                HudLayoutPolicy.nominalTextSp(layout,"regular"))
-            assertTrue(HudLayoutPolicy.nominalTextSp(layout,"regular")<
-                HudLayoutPolicy.nominalTextSp(layout,"large"))
-        }
-        assertEquals(12f,HudLayoutPolicy.nominalTextSp("pill","regular"),0.001f)
+    @Test fun swipeToEdgeNeedsBothDirectionAndDeliberateTravel() {
+        val fn:(Int,Int,Int,Int,Float,Float,Int,Int)->Boolean =
+            HudLayoutPolicy::shouldCollapseOnRelease
+        assertTrue(fn(0,100,250,1200,-150f,5f,65,26))
+        assertTrue(fn(950,100,250,1200,160f,1f,65,26))
+        assertFalse(fn(0,100,250,1200,-30f,1f,65,26))
+        assertFalse(fn(300,100,250,1200,-200f,2f,65,26))
+        assertFalse(fn(950,100,250,1200,25f,200f,65,26))
+        assertFalse(fn(0,100,250,1200,100f,1f,65,26))
+    }
+
+    @Test fun cpuAdvisoryOnlyNotCertification() {
+        assertEquals(0,HudLayoutPolicy.advisoryBand(null))
+        assertEquals(0,HudLayoutPolicy.advisoryBand(Double.NaN))
+        assertEquals(0,HudLayoutPolicy.advisoryBand(41.99))
+        assertEquals(1,HudLayoutPolicy.advisoryBand(42.0))
+        assertEquals(1,HudLayoutPolicy.advisoryBand(80.0))
+        assertEquals(2,HudLayoutPolicy.advisoryBand(80.1))
     }
 }
