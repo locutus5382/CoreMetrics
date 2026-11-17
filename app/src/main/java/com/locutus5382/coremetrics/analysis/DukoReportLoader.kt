@@ -7,7 +7,10 @@ import com.locutus5382.coremetrics.data.SessionStore
  * Cursor iteration examines every saved sample, not the 12k-point UI preview.
  */
 internal object DukoReportLoader {
-    fun build(db:SessionStore,id:Long):DukoSessionInsight.Report {
+    fun build(
+        db:SessionStore,id:Long,
+        checkpoint:()->Unit={}
+    ):DukoSessionInsight.Report {
         require(id>0L){"Select a saved session"}
         val session=db.sessionById(id)?:error("Recording does not exist")
         require(session.status!="RECORDING") {
@@ -24,7 +27,16 @@ internal object DukoReportLoader {
         }
         val report=DukoSessionInsight.Accumulator(
             session,bounds,db.reportCadenceMs(id))
-        val visited=db.forEachReportPoint(id){report.accept(it)}
+        var visitedSinceCheck=0
+        checkpoint()
+        val visited=db.forEachReportPoint(id){ point ->
+            if(++visitedSinceCheck>=512) {
+                checkpoint()
+                visitedSinceCheck=0
+            }
+            report.accept(point)
+        }
+        checkpoint()
         check(visited==bounds.count){"Report dataset changed during export"}
         return report.finish()
     }
