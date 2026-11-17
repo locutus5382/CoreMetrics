@@ -543,8 +543,19 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
      * A hard safety cap makes unusually large exports explicit rather
      * than silently truncating a recording.
      */
-    @Synchronized fun forEachReportPoint(id:Long,onPoint:(Point)->Unit):Long {
-        val bounds=reportBounds(id) ?:error("Recording contains no samples")
+    @Synchronized fun forEachReportPoint(id:Long,onPoint:(Point)->Unit):Long =
+        forEachReportPoint(id,null,onPoint)
+
+    /** Reuse already validated COUNT/MIN/MAX from a report loader. Avoid
+     * a second full index count when scanning five 250k-row recordings.
+     * The callback's exact visited-row count is still verified against
+     * that earlier snapshot, so mutation cannot silently truncate output.
+     */
+    @Synchronized fun forEachReportPoint(
+        id:Long,expectedBounds:ReportBounds?,onPoint:(Point)->Unit
+    ):Long {
+        val bounds=expectedBounds ?: reportBounds(id)
+            ?:error("Recording contains no samples")
         require(bounds.count in 2..250_000) {
             "DUKO Report supports 2–250,000 samples. Recording has "+
                 bounds.count+"; no partial report generated"
