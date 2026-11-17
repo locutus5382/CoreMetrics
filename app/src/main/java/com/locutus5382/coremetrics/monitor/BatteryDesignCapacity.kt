@@ -25,6 +25,6 @@ object BatteryDesignCapacity {
             voltage !in 2_500_000L..25_000_000L)return null
         val wh=charge.toDouble()*voltage/1_000_000_000_000.0
         return wh.takeIf{it.isFinite() && it in 3.0..200.0}
-            ?.let{Candidate(it,"SYSFS_CHARGE_FULL_DESIGN_AND_VOLTAGE_MIN_DESIGN_UNVERIFIED")}
+            ?.let{Candidate(it,"SYSFS_CHARGE_FULL_DESIGN_AND_VOLTAGE_NOMINAL_UNVERIFIED")}
     }
 }
