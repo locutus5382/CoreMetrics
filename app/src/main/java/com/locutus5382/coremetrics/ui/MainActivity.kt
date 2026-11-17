@@ -76,6 +76,7 @@ import com.locutus5382.coremetrics.analysis.CompareStudioAnalysis
 import com.locutus5382.coremetrics.analysis.ScorecardModel
 import com.locutus5382.coremetrics.analysis.ScorecardExportRequest
 import com.locutus5382.coremetrics.analysis.DocumentWindowRequest
+import com.locutus5382.coremetrics.analysis.DukoReportLoader
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -627,6 +628,8 @@ class MainActivity : ComponentActivity() {
             var abWindowExport by rememberSaveable { mutableStateOf(null as String?) }
             // Persist pending SAF intent across configuration/Activity recreation.
             var pngRequest by rememberSaveable { mutableStateOf(null as String?) }
+            var dukoRequest by rememberSaveable { mutableStateOf(null as String?) }
+            var dukoBusy by remember { mutableStateOf(false) }
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -860,6 +863,58 @@ class MainActivity : ComponentActivity() {
                     })
                 }
             }
+            // v0.9.9.1 DUKO Session Insight: full stored source, not the
+            // truncated 12k UI preview. Keep original recording immutable.
+            val saveDuko:(Uri?,String)->Unit={ uri,format ->
+                val pending=dukoRequest
+                dukoRequest=null
+                val request=pending?.split('|')
+                val id=request?.getOrNull(1)?.toLongOrNull()
+                if(uri!=null && id!=null && id>0L &&
+                    request.getOrNull(0)==format && !dukoBusy) {
+                    dukoBusy=true
+                    scope.launch {
+                        val outcome=try {
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val report=DukoReportLoader.build(database,id)
+                                    contentResolver.openOutputStream(uri,"w")?.use { out->
+                                        if(format=="pdf")DukoSessionRenderer.pdf(report,out)
+                                        else DukoSessionRenderer.png(report,out)
+                                    }?:error("Cannot write DUKO document")
+                                    report
+                                }
+                            }
+                        }catch(e:kotlin.coroutines.cancellation.CancellationException) {
+                            withContext(kotlinx.coroutines.NonCancellable+Dispatchers.IO){
+                                runCatching{contentResolver.delete(uri,null,null)}
+                            }
+                            dukoBusy=false
+                            throw e
+                        }
+                        val removed=if(outcome.isFailure)withContext(Dispatchers.IO){
+                            runCatching{contentResolver.delete(uri,null,null)>0}
+                                .getOrDefault(false)
+                        }else true
+                        dukoBusy=false
+                        message=outcome.fold(onSuccess={r->
+                            "DUKO Session Insight "+format.uppercase()+
+                                " saved · "+r.sampleCount+" of "+
+                                r.sourceSampleCount+" samples included"
+                        },onFailure={error->
+                            "DUKO export failed: "+(error.message?:
+                                error.javaClass.simpleName)+
+                                (if(removed)"" else " · Remove incomplete document")
+                        })
+                    }
+                }
+            }
+            val dukoPngDocument=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("image/png")
+            ){uri->saveDuko(uri,"png")}
+            val dukoPdfDocument=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/pdf")
+            ){uri->saveDuko(uri,"pdf")}
             val backupFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/zip")
             ) { uri ->
@@ -1643,6 +1698,55 @@ class MainActivity : ComponentActivity() {
                                                             label="CLASSIC SIGNAL EXPLORER · SELECTED RANGE",
                                                             referenceStartMs=detailPoints.firstOrNull()?.timeMs)
                                                     }
+                                                }
+                                                Column(
+                                                    Modifier.fillMaxWidth()
+                                                        .pureGlass(12)
+                                                        .padding(12.dp),
+                                                    verticalArrangement=Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Text("DUKO SESSION INSIGHT",
+                                                        color=iceBlue,
+                                                        fontWeight=FontWeight.Bold)
+                                                    Text("Full-recording analytics, "+
+                                                        "bounded timelines, source qualifications "+
+                                                        "and an offline glossary. PNG = shareable "+
+                                                        "summary; PDF = vector text, extra evidence "+
+                                                        "pages and event timeline. Both use the "+
+                                                        "same computations.",
+                                                        color=coreSecondary,
+                                                        style=MaterialTheme.typography.bodySmall)
+                                                    Row(horizontalArrangement=
+                                                        Arrangement.spacedBy(8.dp)) {
+                                                        OutlinedButton(
+                                                            enabled=!dukoBusy &&
+                                                                r.session.status!="RECORDING",
+                                                            onClick={
+                                                                dukoRequest="png|"+r.session.id
+                                                                dukoPngDocument.launch(
+                                                                    "DUKO_Session_"+r.session.id+
+                                                                    ".png")
+                                                            }
+                                                        ){Text("DUKO PNG")}
+                                                        OutlinedButton(
+                                                            enabled=!dukoBusy &&
+                                                                r.session.status!="RECORDING",
+                                                            onClick={
+                                                                dukoRequest="pdf|"+r.session.id
+                                                                dukoPdfDocument.launch(
+                                                                    "DUKO_Session_"+r.session.id+
+                                                                    ".pdf")
+                                                            }
+                                                        ){Text("DUKO PDF")}
+                                                    }
+                                                    Text("Reports are calculated on demand "+
+                                                        "from every stored sample (up to 250,000). "+
+                                                        "The normal analysis preview remains "+
+                                                        "limited to 12,000 samples. No FPS, "+
+                                                        "driver winner or throttling cause is "+
+                                                        "inferred.",
+                                                        color=coreSecondary,
+                                                        style=MaterialTheme.typography.labelSmall)
                                                 }
                                                 OutlinedButton(onClick={
                                                     detailedId=0L
