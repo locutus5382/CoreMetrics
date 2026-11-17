@@ -228,4 +228,30 @@ class DukoSessionInsightTest {
         assertTrue(runCatching{acc.finish()}.isFailure)
         assertTrue(runCatching{acc.accept(p(20_000L))}.isFailure)
     }
+    @Test fun sequentialComparisonQuantileScratchNeverCarriesPriorRunValues() {
+        val scratch=DukoSessionInsight.QuantileScratch()
+        val bounds=SessionStore.ReportBounds(13L,1_000_000L,1_060_000L)
+        fun build(cpu:Double,gpu:Double?):DukoSessionInsight.Report {
+            val acc=DukoSessionInsight.Accumulator(
+                session(13),bounds,5_000L,scratch)
+            repeat(13) { i ->
+                acc.accept(p(1_000_000L+i*5000L,cpu=cpu,gpu=gpu))
+            }
+            return acc.finish()
+        }
+        val first=build(55.0,75.0)
+        val second=build(88.0,null)
+        val third=build(33.0,42.0)
+        val m=DukoSessionInsight.Metric
+        assertEquals(55.0,first.stat(m.CPU_TEMP).p50!!,.001)
+        assertEquals(75.0,first.stat(m.GPU_TEMP).p95!!,.001)
+        assertEquals(88.0,second.stat(m.CPU_TEMP).p95!!,.001)
+        assertNull(second.stat(m.GPU_TEMP).p50)
+        assertEquals(0,second.stat(m.GPU_TEMP).count)
+        assertEquals(33.0,third.stat(m.CPU_TEMP).p50!!,.001)
+        assertEquals(42.0,third.stat(m.GPU_TEMP).p95!!,.001)
+        // Immutable summary values must remain valid after buffer reuse.
+        assertEquals(55.0,first.stat(m.CPU_TEMP).p50!!,.001)
+    }
+
 }
