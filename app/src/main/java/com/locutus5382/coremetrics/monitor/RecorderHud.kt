@@ -828,7 +828,8 @@ internal class RecorderHud(private val context:Context) {
                 wm.updateViewLayout(frame,p)
             }.onSuccess { markLayoutApplied(p) }
         }
-        label.setOnTouchListener { _,e ->
+        val dragListener=View.OnTouchListener { _,e ->
+            if(locked || collapsed)return@OnTouchListener false
             when(e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX=e.rawX;downY=e.rawY
@@ -841,9 +842,9 @@ internal class RecorderHud(private val context:Context) {
                     val deltaY=e.rawY-downY
                     if(kotlin.math.abs(deltaX)>dp(5f) ||
                         kotlin.math.abs(deltaY)>dp(5f))moved=true
+                    if(moved)anchoredRight=false
                     p.x=(baseX+deltaX.roundToInt())
                         .coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
-                    if(moved) anchoredRight=false
                     p.y=(baseY+deltaY.roundToInt())
                         .coerceIn(0,(windowHeight()-frame.height).coerceAtLeast(0))
                     if(!dragLayoutPending) {
@@ -858,15 +859,23 @@ internal class RecorderHud(private val context:Context) {
                         dragLayout.run()
                     }
                     if(moved) {
-                        // Approaching a screen border PARKS the expanded HUD,
-                        // it does not collapse it. Explicit ⇥ remains available.
-                        val parked=HudDockGeometry.park(
-                            windowWidth(),windowHeight(),p.width,frame.height,
-                            p.x,p.y,margin=dp(4f),snapDistance=dp(16f))
-                        p.x=parked.x;p.y=parked.y
-                        anchoredRight=parked.anchoredRight
-                        expandedX=p.x;expandedY=p.y
-                        dragLayout.run()
+                        val deltaX=e.rawX-downX
+                        val deltaY=e.rawY-downY
+                        val edgeSwipe=HudLayoutPolicy.shouldCollapseOnRelease(
+                            p.x,p.y,p.width,windowWidth(),deltaX,deltaY,
+                            dp(64f),dp(26f))
+                        if(edgeSwipe) {
+                            dock(if(deltaX<0f)DockEdge.LEFT else DockEdge.RIGHT)
+                        }else{
+                            val parked=HudDockGeometry.park(
+                                windowWidth(),windowHeight(),p.width,
+                                frame.height,p.x,p.y,margin=dp(4f),
+                                snapDistance=dp(16f))
+                            p.x=parked.x;p.y=parked.y
+                            anchoredRight=parked.anchoredRight
+                            expandedX=p.x;expandedY=p.y
+                            dragLayout.run()
+                        }
                     }
                     true
                 }
@@ -880,6 +889,9 @@ internal class RecorderHud(private val context:Context) {
                 else -> false
             }
         }
+        // Swiping can start on ANY data zone, but never on REC/STOP or lock.
+        for(v in arrayOf(label,secondary,tertiary,heading))
+            v.setOnTouchListener(dragListener)
         return try {
             lastAddRequestedAt=SystemClock.elapsedRealtime()
             wm.addView(frame,p)
