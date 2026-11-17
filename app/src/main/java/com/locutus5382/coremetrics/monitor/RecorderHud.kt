@@ -981,10 +981,12 @@ internal class RecorderHud(private val context:Context) {
         frame.pivotX=if(dockEdge==DockEdge.LEFT)0f else frame.width.toFloat()
         frame.pivotY=0f
         frame.alpha=.84f
-        frame.scaleX=.975f;frame.scaleY=.975f
+        // Spring-like overshoot only on explicit expand/collapse. There is
+        // no continuous UI animation during recording samples.
+        frame.scaleX=.935f;frame.scaleY=.95f
         frame.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(150L)
-            .setInterpolator(DecelerateInterpolator()).start()
+            .setDuration(235L)
+            .setInterpolator(OvershootInterpolator(.66f)).start()
     }
 
     /** Keep one overlay window. Docking MUST change WindowManager dimensions
@@ -1239,14 +1241,38 @@ internal class RecorderHud(private val context:Context) {
             mainText?.setPadding(dp(8f),dp(6f),dp(7f),dp(6f))
             secondaryText?.setPadding(dp(10f),dp(6f),dp(3f),dp(6f))
         }
-        recControl?.background=when {
-            ghost||lens->null
-            else->GradientDrawable().apply {
-                cornerRadius=dp(if(striker)5f else 8f).toFloat()
-                setColor(Color.argb(125,9,22,41))
-                setStroke(dp(1f).coerceAtLeast(1),
-                    Color.argb(210,255,91,109))
-            }
+        // Native bounded ripple is a one-shot press response, not a
+        // continuous gaming-overlay animation. The dark control capsule
+        // and narrow scarlet hairline are part of the visual hierarchy.
+        val recPlate=GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,intArrayOf(
+                Color.argb(if(lens)70 else 204,17,29,48),
+                Color.argb(if(lens)58 else 180,5,13,27))
+        ).apply {
+            cornerRadius=dp(if(lens)2f else if(striker)5f else 6f).toFloat()
+            if(!ghost && !lens)setStroke(dp(1f).coerceAtLeast(1),
+                Color.argb(194,250,82,102))
+        }
+        recControl?.background=RippleDrawable(
+            ColorStateList.valueOf(Color.argb(115,246,86,108)),
+            recPlate,null)
+        val actionEdge=GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.argb(180,9,24,44),
+                Color.argb(205,5,15,31))
+        ).apply {
+            cornerRadius=dp(5f).toFloat()
+            setStroke(dp(1f).coerceAtLeast(1),
+                Color.argb(115,108,207,236))
+        }
+        dragControl?.background=RippleDrawable(
+            ColorStateList.valueOf(Color.argb(84,83,220,247)),
+            actionEdge,null)
+        minimizeControl?.background=GradientDrawable().apply {
+            cornerRadius=dp(5f).toFloat()
+            setColor(Color.argb(165,8,26,44))
+            setStroke(dp(1f).coerceAtLeast(1),
+                Color.argb(118,102,206,231))
         }
         recControl?.setPadding(dp(if(lens)2f else 8f),dp(3f),
             dp(if(lens)5f else 8f),dp(3f))
