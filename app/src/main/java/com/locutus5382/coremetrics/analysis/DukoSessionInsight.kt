@@ -254,6 +254,11 @@ object DukoSessionInsight {
         private val recentCore=UtilWindow()
         private val highEmitted=mutableSetOf<String>()
         private var previousThermal:Int?=null
+        // Many recordings persist the identical cpufreq policy description
+        // thousands of times. Reparse only when the raw text changes;
+        // do not cache the candidate/cap transition state across gaps.
+        private var cachedCapRaw:String?=null
+        private var cachedCapKey:String?=null
 
         private fun emit(p:SessionStore.ReportRow,title:String,detail:String,
             evidence:Evidence) {
@@ -363,8 +368,13 @@ object DukoSessionInsight {
                     "rather than device safety limit.",Evidence.OBSERVED)
             lastWarmth=state
 
-            val key=SessionRegimeAnalyzer.key(p.observedCpuLimits)
-                .takeUnless{it.contains("?")}
+            val rawCap=p.observedCpuLimits
+            val capKey=if(rawCap==cachedCapRaw && cachedCapKey!=null)
+                cachedCapKey!! else SessionRegimeAnalyzer.key(rawCap).also {
+                    cachedCapRaw=rawCap
+                    cachedCapKey=it
+                }
+            val key=capKey.takeUnless{it.contains("?")}
             if(key==null){
                 candidateCap=null;candidateCount=0
                 currentCap=null // unknown is not a trusted frequency baseline
