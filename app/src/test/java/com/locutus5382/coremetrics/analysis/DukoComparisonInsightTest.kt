@@ -65,6 +65,7 @@ class DukoComparisonInsightTest {
         assertEquals(20.0,gpu.cells[0].deltaP50!!,.001)
         val power=r.rows.first{it.metric==Metric.POWER}
         assertEquals(-0.5,power.cells[0].deltaP50!!,.001)
+        assertTrue(r.observations.any{it.contains("Session #12 recorded")})
         assertFalse(r.observations.any{it.contains("winner",ignoreCase=true)})
         assertEquals(DukoComparisonInsight.Confidence.OBSERVATIONAL,r.overall)
     }
