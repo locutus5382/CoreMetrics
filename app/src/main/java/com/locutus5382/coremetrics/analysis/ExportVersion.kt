@@ -6,7 +6,7 @@ package com.locutus5382.coremetrics.analysis
 internal object ExportVersion {
     /** Report format compatibility stays stable across app updates. */
     const val VERSION="0.9.9"
-    const val APP_VERSION="0.9.9.2"
+    const val APP_VERSION="0.9.9.3"
     fun sourceLabel()="CoreMetrics app v"+APP_VERSION+
         " · report format v"+VERSION
 }
