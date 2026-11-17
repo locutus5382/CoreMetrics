@@ -112,20 +112,33 @@ internal object DukoSessionRenderer {
         fun wrap(value:String,x:Float,y:Float,width:Float,
             size:Float=24f,color:Int=MUTED,bold:Boolean=false,
             line:Float=size*1.30f,maxLines:Int=3):Float {
-            val words=value.replace('\n',' ').split(Regex("""\s+"""))
-            var row="";var cursor=y;var used=0
-            for(word in words) {
-                val possible=if(row.isEmpty())word else row+" "+word
-                p.textSize=size;p.typeface=if(bold)Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-                if(row.isNotEmpty() && p.measureText(possible)>width) {
-                    text(row,x,cursor,size,color,bold,width)
-                    cursor+=line;used++
-                    row=word
-                    if(used>=maxLines-1)break
-                }else row=possible
+            if(maxLines<=0 || value.isBlank())return y
+            // Build complete lines first. The previous early break replaced
+            // the last visible line with the next word and silently lost text.
+            val lines=ArrayList<String>()
+            val words=value.replace('\\n',' ').trim()
+                .split(Regex("""\\s+"""))
+            val measure=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                textSize=size
+                typeface=if(bold)Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             }
-            if(used<maxLines){
-                text(row,x,cursor,size,color,bold,width)
+            var current=""
+            for(word in words) {
+                val candidate=if(current.isEmpty())word else current+" "+word
+                if(current.isEmpty() || measure.measureText(candidate)<=width) {
+                    current=candidate
+                } else {
+                    lines+=current
+                    current=word
+                }
+            }
+            if(current.isNotEmpty())lines+=current
+            var cursor=y
+            val visibleCount=min(maxLines,lines.size)
+            for(i in 0 until visibleCount) {
+                val truncated=i==maxLines-1 && lines.size>maxLines
+                val display=if(truncated)lines[i]+"..." else lines[i]
+                text(display,x,cursor,size,color,bold,width)
                 cursor+=line
             }
             return cursor
