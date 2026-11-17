@@ -16,6 +16,18 @@ import android.graphics.drawable.Icon
 
 /** Distinct QS function: user-started REC, STOP or validated recovery. */
 class SessionTile:TileService(){
+    // One deferred status refresh per tile instance; never retain a stale
+    // TileService after Android stops listening or destroys it.
+    private val refreshHandler=Handler(Looper.getMainLooper())
+    private val refreshOnce=Runnable {refresh()}
+    override fun onStopListening() {
+        refreshHandler.removeCallbacks(refreshOnce)
+        super.onStopListening()
+    }
+    override fun onDestroy() {
+        refreshHandler.removeCallbacks(refreshOnce)
+        super.onDestroy()
+    }
     private fun status():QuickTileStatePolicy.Mode=try {
         QuickTileSnapshot.read(this).mode
     } catch(_:Exception) { QuickTileStatePolicy.Mode.UNKNOWN }
@@ -68,7 +80,8 @@ class SessionTile:TileService(){
                 Toast.LENGTH_LONG).show()
         }
         refresh()
-        Handler(Looper.getMainLooper()).postDelayed({refresh()},450L)
+        refreshHandler.removeCallbacks(refreshOnce)
+        refreshHandler.postDelayed(refreshOnce,450L)
     }
     private fun refresh(){
         val mode=status()
