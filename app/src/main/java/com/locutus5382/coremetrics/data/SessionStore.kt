@@ -836,20 +836,32 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         arrayOf(id.toString(), max.coerceIn(1,12000).toString())
     ).use { c ->
         fun value(i: Int): Double? = if (c.isNull(i)) null else c.getDouble(i)
+        // Most sample rows repeat the same game package, GPU/battery
+        // provenance, cpufreq policy, and battery status. Reuse those String
+        // instances in the up-to-12k-point UI preview instead of retaining
+        // thousands of duplicate strings. The cache is local to this one
+        // query and bounded so unique vendor values cannot accumulate.
+        val strings=HashMap<String,String>(128)
+        fun text(i:Int):String? {
+            if(c.isNull(i))return null
+            val value=c.getString(i)?:return null
+            if(value.length>256)return value
+            val previous=strings[value]
+            if(previous!=null)return previous
+            if(strings.size<256)strings[value]=value
+            return value
+        }
         buildList {
             while (c.moveToNext()) add(Point(c.getLong(0),value(1),value(2),
                 value(3),value(4),value(5),value(6),value(7),
-                if (c.isNull(8)) null else c.getString(8),
-                if (c.isNull(9)) null else c.getString(9),
-                value(10), if (c.isNull(11)) null else c.getString(11),
-                if(c.isNull(12))null else c.getString(12),value(13),
+                text(8),text(9),
+                value(10),text(11),text(12),value(13),
                 if(c.isNull(14))null else c.getInt(14),
-                if(c.isNull(15))null else c.getString(15),value(16),
+                text(15),value(16),
                 if(c.isNull(17)) null else c.getInt(17),
                 value(18),value(19),value(20),value(21),
                 if(c.isNull(22)) null else c.getLong(22),
-                if(c.isNull(23)) null else c.getString(23),
-                if(c.isNull(24)) null else c.getString(24)))
+                text(23),text(24)))
         }
     }
 
