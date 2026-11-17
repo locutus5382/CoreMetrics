@@ -46,11 +46,11 @@ class DukoSessionReportTest {
         val (db,name)=store()
         try {
             val csv=buildString {
-                append("game_label,configuration,status,sample_epoch_ms,cpu_temp_c\\n")
+                append("game_label,configuration,status,sample_epoch_ms,cpu_temp_c\n")
                 for(i in 0..1024) {
                     append("NFS,Stock,COMPLETED,")
                     append(1_700_000_100_000L+i*2_000L)
-                    append(",50.0\\n")
+                    append(",50.0\n")
                 }
             }
             val id=db.importCsv(StringReader(csv))
