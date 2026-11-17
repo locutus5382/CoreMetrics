@@ -249,7 +249,7 @@ internal object DukoSessionRenderer {
         val series=r.charts.filter{it.metric in metrics}
         val vals=series.flatMap{it.points.map(DukoSessionInsight.Trace::value)}
         val lo=if(autoScale) {
-            vals.minOrNull()?.let{min(-0.0,it-2.0)} ?:20.0
+            vals.minOrNull()?.let{max(-20.0,it-3.0)} ?:20.0
         }else 0.0
         val hi=if(autoScale) {
             vals.maxOrNull()?.let{max(lo+5.0,it+2.0)}?:80.0
