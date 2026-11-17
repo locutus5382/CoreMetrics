@@ -28,7 +28,7 @@
 
 - Restored realistic Android v7/v8 migration test fixtures, corrected archive-restoration and SAF assertions, and retained production transaction and deletion safeguards.
 - In-place primitive quantile sorting avoids up to ~18 MB of temporary source-array copies in a maximally populated 250k-sample, nine-metric report (engineering estimate, not measured Odin PSS savings).
-- Offline DUKO single- and multi-session exports check Android coroutine cancellation during long sample scans, avoiding continued analysis of abandoned export jobs.
+- Offline DUKO single- and multi-session exports check Android coroutine cancellation during long sample scans, avoiding continued analysis of abandoned export jobs. Only one DUKO export can run at a time; blocked SAF requests clean up their newly-created documents.
 - CI runs API 33 instrumentation and retains emulator test reports even on failure. Both debug and R8 optimized APK builds remain independent gates.
 - No new Android permissions, recorder services, HUD redesign, performance tuning controls or database migration.
 - See `docs/PORTAL_V0993_RELIABILITY_ACCEPTANCE.md`. This version remains a draft alpha until emulator and Odin acceptance.
