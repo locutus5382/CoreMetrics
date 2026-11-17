@@ -1,4 +1,4 @@
-name: CoreMetrics v0.9.9.8 Lifecycle and Memory CI
+name: CoreMetrics v0.9.9.9 UI IO and Debug StrictMode CI
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -32,18 +32,18 @@ jobs:
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.8-lifecycle-memory-debug
+          name: CoreMetrics-v0.9.9.9-ui-io-debug
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Upload R8-optimized installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.8-lifecycle-memory-optimized-test
+          name: CoreMetrics-v0.9.9.9-ui-io-optimized-test
           path: app/build/outputs/apk/optimizedTest/app-optimizedTest.apk
       - name: Preserve JVM unit test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0998-jvm-test-failures
+          name: CoreMetrics-v0999-jvm-test-failures
           if-no-files-found: ignore
           retention-days: 14
           path: |
@@ -117,7 +117,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0998-android-emulator-${{ matrix.group }}-results
+          name: CoreMetrics-v0999-android-emulator-${{ matrix.group }}-results
           if-no-files-found: ignore
           retention-days: 14
           path: |
