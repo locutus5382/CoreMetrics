@@ -91,6 +91,9 @@ internal object DukoComparisonRenderer {
                     "MATRIX "+(index+1)+"/"+matrices.size)}
             }
             page{evidence(it,result)}
+            result.runs.chunked(2).forEachIndexed{index,items ->
+                page{readinessPage(it,result,index,items)}
+            }
             result.observations.chunked(8).forEachIndexed{index,items->
                 page{observationPage(it,result,index,items)}
             }
@@ -281,6 +284,56 @@ internal object DukoComparisonRenderer {
             86f,y+100f,1400f,26f,INK,3,35f)
         a.text("All source warnings are printed on subsequent notice pages.",
             85f,2147f,22f,ORANGE,true)
+    }
+
+    /**
+     * Explain missing comparison deltas, rather than displaying bare
+     * "unavailable" values. Bounded to two sessions per A4 page.
+     */
+    private fun readinessPage(
+        canvas:Canvas,r:DukoComparisonInsight.Result,
+        pageIndex:Int,runs:List<DukoComparisonInsight.Run>
+    ) {
+        val a=Art(canvas)
+        header(a,"Measurement readiness",
+            "Why a saved sensor is or is not eligible for a baseline delta",
+            "READY "+(pageIndex+1))
+        var y=345f
+        for(run in runs) {
+            val sessionId=run.report.session.id
+            val rejected=r.rows.mapNotNull { row ->
+                val cell=row.cells.firstOrNull{it.sessionId==sessionId}
+                if(cell==null || cell.comparable)null else
+                    row.metric.label+": "+(cell.reason?:"Unavailable")+
+                    " ("+pct(cell.coveragePct)+" coverage)"
+            }
+            val eligible=r.rows.size-rejected.size
+            a.rect(77f,y-39f,1448f,766f,Color.WHITE,13f)
+            a.text("SESSION #"+sessionId+
+                if(sessionId==r.baselineId)" · BASELINE" else "",
+                97f,y+7f,29f,BLUE,true)
+            a.text(eligible.toString()+"/"+r.rows.size+
+                " measurement metrics eligible",
+                99f,y+51f,23f,INK)
+            var lineY=y+110f
+            if(rejected.isEmpty()) {
+                a.wrap("Every metric has sufficient source-level coverage "+
+                    "for a numeric delta. This does NOT prove matched "+
+                    "gameplay or causal performance differences.",
+                    100f,lineY,1390f,23f,INK,3,33f)
+            }else {
+                rejected.take(9).forEach {reason->
+                    a.wrap("• "+reason,100f,lineY,1380f,
+                        21f,INK,2,28f)
+                    lineY+=62f
+                }
+            }
+            y+=798f
+        }
+        a.rule(2105f)
+        a.text("Eligible means comparable sensor provenance and data coverage,"+
+            " not verified game performance.",
+            86f,2152f,20f,MUTED,false,1430f)
     }
 
     private fun observationPage(
