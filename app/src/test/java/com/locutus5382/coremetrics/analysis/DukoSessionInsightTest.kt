@@ -100,6 +100,23 @@ class DukoSessionInsightTest {
         assertFalse(r.findings.any{it.text.contains("proven throttling")})
     }
 
+    @Test fun capSignatureAndMemoryStatusCannotBridgeUnobservedGap() {
+        val early=(0..4).map { i ->
+            p(1_000_000L+i*5000L).copy(
+                observedCpuLimits="CPU_POLICIES: policy0 max 2.0 GHz",
+                memoryPsiSomeAvg10=11.0)
+        }
+        val later=(0..4).map {i->
+            p(1_150_000L+i*5000L).copy(
+                observedCpuLimits="CPU_POLICIES: policy0 max 1.4 GHz",
+                memoryPsiSomeAvg10=11.0)
+        }
+        val r=report(early+later)
+        assertEquals(1,r.gapCount)
+        assertFalse(r.events.any{it.title=="CPU frequency ceiling changed"})
+        assertTrue(r.events.any{it.title=="Recording gap"})
+    }
+
     @Test fun changingSourceCountOrOrderRejectsMisleadingReport() {
         val acc=DukoSessionInsight.Accumulator(session(8),
             SessionStore.ReportBounds(8,1000,36_000),5000)
