@@ -1425,16 +1425,41 @@ internal class RecorderHud(private val context:Context) {
         // source-specific, display-only CPU advisory (not a device limit).
         val cpuBand=HudLayoutPolicy.advisoryBand(cpuValue)
         fun decorate(text:String):CharSequence {
-            if(!recording || cpuBand==0 || readings.cpuTemp==null)return text
-            val start=text.indexOf(readings.cpuTemp)
-            if(start<0)return text
-            val color=if(cpuBand==2)Color.rgb(244,67,79)
-                else Color.rgb(255,146,49)
-            return SpannableStringBuilder(text).apply {
-                setSpan(ForegroundColorSpan(color),start,
-                    start+readings.cpuTemp.length,
+            if(text.isEmpty())return text
+            val styled=SpannableStringBuilder(text)
+            // Hierarchy instead of a uniformly bold blob. Only short section
+            // headings are accent-coloured; metric values remain high contrast.
+            if(!lens)for(heading in listOf(
+                "CM / LIVE","THERMALS","UTILIZATION","RESOURCES")) {
+                val i=text.indexOf(heading)
+                if(i>=0) {
+                    styled.setSpan(ForegroundColorSpan(Color.rgb(109,223,249)),
+                        i,i+heading.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    styled.setSpan(RelativeSizeSpan(.85f),
+                        i,i+heading.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    styled.setSpan(StyleSpan(Typeface.BOLD),
+                        i,i+heading.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+            }
+            // Teal instrument trace on GPU values. DUKO remains monochrome.
+            if(!lens && readings.gpuTemp!=null) {
+                val start=text.indexOf(readings.gpuTemp)
+                if(start>=0)styled.setSpan(
+                    ForegroundColorSpan(Color.rgb(133,220,241)),
+                    start,start+readings.gpuTemp.length,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
+            // Temperature accent is a *display advisory*, not a calibrated
+            // hardware-critical threshold or throttling diagnosis.
+            if(recording && cpuBand>0 && readings.cpuTemp!=null) {
+                val start=text.indexOf(readings.cpuTemp)
+                if(start>=0)styled.setSpan(ForegroundColorSpan(
+                    if(cpuBand==2)Color.rgb(244,67,79)
+                    else Color.rgb(255,146,49)),
+                    start,start+readings.cpuTemp.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            return styled
         }
         view.text=decorate(formatted.primary)
         secondaryText?.let {
