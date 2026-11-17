@@ -14,6 +14,11 @@ internal object DukoComparisonLoader {
             "Select 2–5 different completed sessions"
         }
         require(baselineId in ids) { "Baseline must belong to the selected sessions" }
+        // One bounded set of primitive percentile buffers is reused
+        // sequentially for each selected run. This avoids allocating nine
+        // growing DoubleArrays anew for every comparison recording.
+        // The returned reports contain immutable Stats, never the scratch.
+        val percentileBuffers=DukoSessionInsight.QuantileScratch()
         // Fail before any PDF/PNG destination stream is opened.
         val reports=ids.mapIndexed { index,id ->
             checkpoint()
@@ -25,7 +30,8 @@ internal object DukoComparisonLoader {
                 onProgress={read,total->
                     onProgress(index,ids.size,
                         (read*100L/total.coerceAtLeast(1L)).toInt().coerceIn(0,100))
-                })
+                },
+                quantileScratch=percentileBuffers)
             report
         }
         // A user may delete a previously loaded run while the next run is
