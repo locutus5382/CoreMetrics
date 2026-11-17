@@ -51,6 +51,60 @@ network, root or Shizuku dependency.
 - Report visual refinements and bigger optional changes are subordinate to
   P0 CI acceptance. Source code build success does NOT certify A4 layout.
 
+## User-initiated FIFO report export (final hardening pass)
+
+- Reports are NEVER generated on app start, REC, standby HUD, Quick Settings,
+  a timer or an unsolicited background monitor. Only an explicit tap on a
+  DUKO PNG/PDF button enqueues an immutable request.
+- A ViewModel-scoped FIFO processes ONE request at a time, including the
+  Android document picker. A request cannot analyze data until its own
+  user-chosen SAF destination exists. Later requests stay in click order,
+  maximum 12 waiting after the current one.
+- Queue status is visible in Sessions and Compare. Users can Cancel the active
+  report, Remove a waiting request or back out of the document picker.
+  Cancellation removes partially created SAF documents where supported,
+  then proceeds to the next request.
+- Scan progress updates every 512 samples, including across 2–5 recordings.
+  Rotation retains the queue through the Activity ViewModel. The coordinator
+  is NOT an Android background service and cannot survive process death.
+- The coordinator samples this app process's PSS and Java heap at ~10%
+  progress increments and reports elapsed time. Values are approximate
+  sampled high-water, not measured true peak RAM or device-wide savings.
+  No memory polling occurs outside a user-requested export.
+- JVM scheduler tests verify FIFO, one active request, immutable selections,
+  cancellation of waiting items and maximum queue depth. SAF callbacks
+  validate BOTH report kind and format to reject stale picker results.
+
+## Large-session memory and read optimizations
+
+- One reusable SessionStore.ReportScratch (15 sensor fields) replaces a fresh
+  25-field Point object on every DUKO report sample. The accumulator keeps
+  one separate reusable previous-row snapshot for energy/temperature
+  integration. The old Point-based API remains for legacy analyzers.
+- Android regression compares optimized DUKO output with the immutable-Point
+  path, verifies scratch-object identity over 1,025 rows, and checks that
+  cancellation cannot mutate recorded source samples.
+- The 120-second high-utilization detector keeps incremental valid/high
+  counters, avoiding repeated per-sample mapNotNull list creation.
+- PDF/PNG renderers test cancellation between report pages and before/after
+  output writes. Some native PDF/bitmap sections are not preemptible.
+- The five-run comparison PDF splits its metric matrices into baseline-plus-two
+  pages, adds per-session measurement-readiness explanations for ineligible
+  deltas, and limits warning pages to eight items. The compact PNG retains
+  its full five-session summary.
+
+## Recorder and Quick Settings
+
+- CM HUD and CM REC delayed tile refresh callbacks are removed on
+  TileService stop-listening/destroy, avoiding stale work. No sensor loop,
+  timer or service is added.
+- Same-session LMK/lease recovery, HUD ownership checks, 2s/5s recording
+  and independent REC/HUD tile policies remain untouched.
+- Hardware gameplay validation is still required on the Odin 2 Portal to
+  confirm HUD persistence, STOP/REC, Quick Settings state, and process
+  recovery across Eden/Hades launch and exit. Emulator policy tests do
+  NOT establish device-overlay reliability.
+
 ## Automated acceptance
 
 1. JVM: all existing analytics, full-session quantile, exact Wh and report
