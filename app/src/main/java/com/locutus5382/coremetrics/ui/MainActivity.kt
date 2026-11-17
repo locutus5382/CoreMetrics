@@ -882,8 +882,13 @@ class MainActivity : ComponentActivity() {
                     scope.launch {
                         val outcome=try {
                             withContext(Dispatchers.IO) {
+                                val exportJob=coroutineContext[kotlinx.coroutines.Job]
                                 runCatching {
-                                    val report=DukoReportLoader.build(database,id)
+                                    val report=DukoReportLoader.build(database,id) {
+                                        if(exportJob?.isActive==false)
+                                            throw kotlin.coroutines.cancellation.CancellationException(
+                                                "DUKO export was cancelled")
+                                    }
                                     contentResolver.openOutputStream(uri,"w")?.use { out->
                                         if(format=="pdf")DukoSessionRenderer.pdf(report,out)
                                         else DukoSessionRenderer.png(report,out)
@@ -932,10 +937,15 @@ class MainActivity : ComponentActivity() {
                     scope.launch {
                         val outcome=try {
                             withContext(Dispatchers.IO) {
+                                val exportJob=coroutineContext[kotlinx.coroutines.Job]
                                 runCatching {
                                     val report=DukoComparisonLoader.build(database,
                                         requested.ids,requested.baselineId,
-                                        requested.testedVariable)
+                                        requested.testedVariable) {
+                                        if(exportJob?.isActive==false)
+                                            throw kotlin.coroutines.cancellation.CancellationException(
+                                                "DUKO comparison was cancelled")
+                                    }
                                     contentResolver.openOutputStream(uri,"w")?.use{out->
                                         if(format=="pdf")
                                             DukoComparisonRenderer.pdf(report,out)
