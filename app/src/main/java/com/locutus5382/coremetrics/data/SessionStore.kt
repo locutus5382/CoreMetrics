@@ -515,6 +515,28 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         }
     }
 
+    /** Median of early valid sample intervals; no hardcoded 2s/5s
+     * assumption. Only 160 timestamp scalars are loaded.
+     */
+    @Synchronized fun reportCadenceMs(id:Long):Long {
+        val intervals=ArrayList<Long>(159)
+        var previous:Long?=null
+        readableDatabase.rawQuery(
+            "SELECT time_ms FROM samples WHERE session_id=? "+
+                "ORDER BY time_ms ASC LIMIT 160",
+            arrayOf(id.toString())).use{c->
+            while(c.moveToNext()) {
+                val now=c.getLong(0)
+                val step=previous?.let{now-it}
+                if(step!=null && step in 500L..30_000L)intervals+=step
+                previous=now
+            }
+        }
+        if(intervals.isEmpty())return 5_000L
+        intervals.sort()
+        return intervals[intervals.size/2]
+    }
+
     /** Full chronological streaming read for DUKO reports. The standard
      * 12k-point UI preview remains unchanged. Only one cursor row and
      * temporary Point are retained per callback. Caller runs on IO.
