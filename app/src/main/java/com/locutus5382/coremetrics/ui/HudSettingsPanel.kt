@@ -136,124 +136,49 @@ internal fun HudSettingsPanel(
         Text(HudLayoutPolicy.description(theme),
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
 
-        // Fixed, illustrative values; NEVER initiates device sampling or
-        // report preparation. The overlay uses the exact same text model.
-        val demo=HudReadoutFormatter.render(theme,
-            HudReadoutFormatter.Values(
-                cpuTemp=if(options.showCpuTemp)"43.0 "+if(HudLayoutPolicy.lens(theme))
-                    "C" else "°C" else null,
-                gpuTemp=if(options.showGpuTemp)"39.8 "+if(HudLayoutPolicy.lens(theme))
-                    "C" else "°C" else null,
-                cpuUse=if(options.showCpuLoad)"30 %" else null,
-                gpuUse=if(options.showGpuLoad)"38 %" else null,
-                ram=if(options.showRam)"6.2 G" else null,
-                power=if(options.showPower)"3.8 W" else null,
-                batteryTemp=if(options.showBatteryTemp)"25.0 C" else null
-            ),recording=true)
-        val shape=RoundedCornerShape(
-            if(HudLayoutPolicy.lens(theme))0.dp
-            else if(theme==HudLayoutPolicy.STRIP)5.dp else 10.dp)
-        val ghost=theme==HudLayoutPolicy.GHOST
-        val lens=HudLayoutPolicy.lens(theme)
-        val tactical=theme==HudLayoutPolicy.TACTICAL
-        val striker=theme==HudLayoutPolicy.STRIKER
+        // The preview now uses the SAME native HUD frame/metric types as
+        // the on-game overlay. Unlike a separately drawn Compose mockup, this
+        // exposes geometry, typography and contrast changes immediately.
+        val demoValues=HudReadoutFormatter.Values(
+            cpuTemp=if(options.showCpuTemp)
+                "43.0 "+if(HudLayoutPolicy.lens(theme))"C" else "°C"
+                else null,
+            gpuTemp=if(options.showGpuTemp)
+                "39.8 "+if(HudLayoutPolicy.lens(theme))"C" else "°C"
+                else null,
+            cpuUse=if(options.showCpuLoad)"30 %" else null,
+            gpuUse=if(options.showGpuLoad)"38 %" else null,
+            ram=if(options.showRam)"6.2 GiB" else null,
+            power=if(options.showPower)"3.8 W" else null,
+            batteryTemp=if(options.showBatteryTemp)"25.0 C" else null
+        )
         Column(Modifier.fillMaxWidth().pureGlass(25).padding(12.dp),
-            verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Text("IN-GAME PREVIEW · FIXED DEMONSTRATION VALUES",
+            verticalArrangement=Arrangement.spacedBy(9.dp)) {
+            Text("PRECISION HUD PREVIEW  /  EXAMPLE VALUES",
                 color=iceBlue,style=MaterialTheme.typography.labelSmall)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            Row(Modifier.fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
                 horizontalArrangement=Arrangement.End) {
-                val bg=if(lens)listOf(Color(0xED182535),Color(0xB01E3548))
-                    else if(striker)listOf(Color(0xE2071328),Color(0xC9104967))
-                    else listOf(Color(0xE208192B),Color(0xBA174365))
-                val borderColor=when {
-                    ghost->Color.Transparent
-                    lens->Color(0xB9DEEDF5)
-                    else->Color(0xFF55CBED)
-                }
-                val panel=Modifier
-                    .widthIn(min=if(theme==HudLayoutPolicy.STRIP)390.dp
-                        else if(striker)340.dp else 200.dp,
-                        max=if(theme==HudLayoutPolicy.STRIP)750.dp
-                        else if(striker)480.dp else 390.dp)
-                    .then(if(ghost)Modifier else
-                        Modifier.background(Brush.linearGradient(bg),shape)
-                            .border(1.dp,borderColor,shape))
-                    .padding(horizontal=if(ghost)3.dp else 12.dp,
-                        vertical=if(ghost)2.dp else 9.dp)
-                Column(panel,
-                    verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                    if(tactical)
-                        Text("COREMETRICS / LIVE TELEMETRY  ● REC",
-                            color=Color(0xFF63D6EC),fontSize=10.sp)
-                    if(striker){
-                        Row(horizontalArrangement=Arrangement.spacedBy(14.dp)) {
-                            Text(demo.primary,
-                                color=Color(0xFFF3F9FF),fontSize=12.sp,
-                                lineHeight=17.sp,
-                                fontWeight=FontWeight.SemiBold)
-                            Text(demo.secondary,
-                                color=Color(0xFFB9E6F2),fontSize=12.sp,
-                                lineHeight=17.sp)
-                            Text("● STOP 25:00\n↔ DRAG  [LOCK]",
-                                color=Color(0xFFFF8994),fontSize=10.sp,
-                                lineHeight=17.sp)
-                        }
-                    }else if(tactical){
-                        listOf(demo.primary,demo.secondary,demo.tertiary)
-                            .filter{it.isNotBlank()}.forEach {value->
-                                Box(Modifier.fillMaxWidth()
-                                    .background(Color(0x44142840),shape)
-                                    .padding(6.dp)) {
-                                    Text(value,color=Color.White,fontSize=12.sp,
-                                        lineHeight=16.sp)
-                                }
-                            }
-                        Text("● STOP 25:00     [LOCK]    [ANCHOR]",
-                            color=Color(0xFFFF8C99),fontSize=11.sp)
-                    }else if(lens){
-                        Text(demo.primary,color=Color.White,
-                            fontFamily=FontFamily.Monospace,
-                            fontSize=12.sp,lineHeight=18.sp)
-                        HorizontalDivider(color=Color.White.copy(alpha=.30f))
-                        Row(Modifier.fillMaxWidth(),
-                            horizontalArrangement=Arrangement.SpaceBetween) {
-                            Text("● 25:00",color=Color(0xFFFF667C),
-                                fontFamily=FontFamily.Monospace,
-                                fontSize=12.sp)
-                            Text("[ LOCK ]",color=Color.White,
-                                fontFamily=FontFamily.Monospace,
-                                fontSize=11.sp)
-                        }
-                    }else{
-                        Text(demo.primary.ifBlank{"CM · REC"},
-                            color=Color.White,
-                            fontFamily=if(ghost)FontFamily.Default
-                                else FontFamily.Monospace,
-                            fontSize=if(ghost)12.sp else 11.sp,
-                            lineHeight=17.sp)
-                        Text("● STOP 25:00  [LOCK]",
-                            color=Color(0xFFFF8C99),fontSize=10.sp)
-                    }
-                }
+                HudNativePreview(options,demoValues)
             }
             Row(Modifier.fillMaxWidth(),
                 verticalAlignment=Alignment.CenterVertically,
                 horizontalArrangement=Arrangement.SpaceBetween) {
-                Text("SWIPE TO EDGE →  COLLAPSED",
+                Text("FLICK TO DISPLAY EDGE → COLLAPSE",
                     color=coreSecondary,
                     style=MaterialTheme.typography.labelSmall)
-                Box(Modifier.width(44.dp).height(44.dp)
-                    .background(Color(0xBA11263A),RoundedCornerShape(7.dp))
-                    .border(1.dp,Color(0xA855D9EC),RoundedCornerShape(7.dp)),
-                    contentAlignment=Alignment.Center) {
-                    Text(if(lens)"│●" else "●",
-                        color=Color(0xFFFF6C79),fontSize=12.sp)
+                Box(Modifier.background(Color(0xD0091A2F),
+                    RoundedCornerShape(6.dp))
+                    .border(1.dp,Color(0xBB66CEED),
+                        RoundedCornerShape(6.dp))
+                    .size(44.dp),contentAlignment=Alignment.Center) {
+                    Text(if(theme==HudLayoutPolicy.DUKO)"│●" else "●",
+                        color=Color(0xFFFF637D),fontSize=12.sp)
                 }
             }
-            Text("Preview does not run sensors. The real collapsed HUD " +
-                "retains a 44dp accessible touch target, with a 2dp line " +
-                "and recording dot in DUKO Lens.",
+            Text("Native rendering preview. No sensors are read here; in-game " +
+                "telemetry comes only from the active recorder. " +
+                "The edge badge preserves an accessible 44dp touch target.",
                 color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         }
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
