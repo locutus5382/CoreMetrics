@@ -95,7 +95,7 @@ internal data class HudOptions(
             return HudOptions(
                 opacity=f(OPACITY,.57f).coerceIn(.30f,.90f),
                 size=s(SIZE,"regular").takeIf { it in setOf("small","regular","large") } ?: "regular",
-                layout=s(LAYOUT,"pill").takeIf { it in setOf("pill","pro") } ?: "pill",
+                layout=HudLayoutPolicy.normalize(s(LAYOUT,"pill")),
                 indicatorColor=s(INDICATOR,"red").takeIf {
                     it in setOf("red","orange","cyan","violet") } ?: "red",
                 blink=b(BLINK,true),
@@ -114,7 +114,7 @@ internal data class HudOptions(
         fun addExtras(i: Intent, options: HudOptions): Intent = i.apply {
             putExtra(OPACITY,options.opacity)
             putExtra(SIZE,options.size)
-            putExtra(LAYOUT,options.layout)
+            putExtra(LAYOUT,HudLayoutPolicy.normalize(options.layout))
             putExtra(INDICATOR,options.indicatorColor)
             putExtra(BLINK,options.blink)
             putExtra(ADAPTIVE,options.adaptiveColors)
@@ -134,7 +134,7 @@ internal data class HudOptions(
     fun save(context:Context):Boolean {
         val p=context.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
         p.edit().putFloat(OPACITY,opacity)
-            .putString(SIZE,size).putString(LAYOUT,layout)
+            .putString(SIZE,size).putString(LAYOUT,HudLayoutPolicy.normalize(layout))
             .putString(INDICATOR,indicatorColor).putBoolean(BLINK,blink)
             .putBoolean("hud_cpuTemp",showCpuTemp)
             .putBoolean("hud_gpuTemp",showGpuTemp)
@@ -148,7 +148,7 @@ internal data class HudOptions(
             .putBoolean(ADAPTIVE,adaptiveColors).apply()
         val json=JSONObject()
             .put(OPACITY,opacity.toDouble())
-            .put(SIZE,size).put(LAYOUT,layout)
+            .put(SIZE,size).put(LAYOUT,HudLayoutPolicy.normalize(layout))
             .put(INDICATOR,indicatorColor).put(BLINK,blink)
             .put("hud_cpuTemp",showCpuTemp)
             .put("hud_gpuTemp",showGpuTemp)
@@ -181,7 +181,12 @@ internal class RecorderHud(private val context:Context) {
     // detached tracked view can be cleaned only after this grace period.
     private var lastAddRequestedAt=0L
     private var pill:LinearLayout?=null
+    private var readingsRow:LinearLayout?=null
     private var controlsRow:LinearLayout?=null
+    private var topActionsRow:LinearLayout?=null
+    private var bottomActionsRow:LinearLayout?=null
+    private var cardHeading:TextView?=null
+    private var structuralLayout:String?=null
     private var drawer:LinearLayout?=null
     private var dockTab:LinearLayout?=null
     private var dockVisual:View?=null
@@ -277,13 +282,32 @@ internal class RecorderHud(private val context:Context) {
         "violet" -> Color.rgb(190,139,250)
         else -> Color.rgb(255,68,76)
     }
-    private fun rounded(alpha:Float=opts.opacity):GradientDrawable =
-        GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(
-            Color.argb((255*alpha).roundToInt(),7,17,40),
-            Color.argb((220*alpha).roundToInt(),26,56,107))).apply {
-            cornerRadius=dp(if(opts.layout=="pro")13f else 23f).toFloat()
-            setStroke(dp(1f).coerceAtLeast(1),Color.argb(150,210,234,255))
+    private fun rounded(alpha:Float=opts.opacity):GradientDrawable {
+        val layout=HudLayoutPolicy.normalize(opts.layout)
+        val glass=layout==HudLayoutPolicy.GLASS_CARD
+        val ribbon=layout==HudLayoutPolicy.RIBBON
+        return GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            if(glass)intArrayOf(
+                Color.argb((255*alpha).roundToInt(),6,19,44),
+                Color.argb((242*alpha).roundToInt(),20,55,91),
+                Color.argb((226*alpha).roundToInt(),11,35,68))
+            else if(ribbon)intArrayOf(
+                Color.argb((255*alpha).roundToInt(),5,19,38),
+                Color.argb((240*alpha).roundToInt(),18,51,80))
+            else intArrayOf(
+                Color.argb((255*alpha).roundToInt(),7,17,40),
+                Color.argb((220*alpha).roundToInt(),26,56,107))
+        ).apply {
+            cornerRadius=dp(when(layout) {
+                HudLayoutPolicy.GLASS_CARD -> 16f
+                HudLayoutPolicy.RIBBON -> 12f
+                else -> 23f
+            }).toFloat()
+            setStroke(dp(1f).coerceAtLeast(1),
+                Color.argb(if(glass)192 else if(ribbon)165 else 150,
+                    210,234,255))
         }
+    }
 
     fun permissionGranted()=Settings.canDrawOverlays(context)
     /** Record only identity/ownership, never game labels or sample data. */
@@ -634,6 +658,7 @@ internal class RecorderHud(private val context:Context) {
         }
         line.addView(readings,LinearLayout.LayoutParams(
             0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
+        readingsRow=readings
         val actions=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
             gravity=Gravity.CENTER
@@ -683,6 +708,7 @@ internal class RecorderHud(private val context:Context) {
         topActions.addView(rec)
         actions.addView(topActions,LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,dp(33f)))
+        topActionsRow=topActions
         val bottomActions=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.END or Gravity.CENTER_VERTICAL
@@ -708,6 +734,7 @@ internal class RecorderHud(private val context:Context) {
         }
         bottomActions.addView(closeControl)
         actions.addView(bottomActions)
+        bottomActionsRow=bottomActions
         // HUD metric customization is in the app's HUD Studio. Do not
         // allocate or expose the former in-game settings tray.
         drawerControl=null
@@ -737,8 +764,19 @@ internal class RecorderHud(private val context:Context) {
         dockVisual=badge
         dockTab=tab
 
+        // The compact glass card gets one static branded heading.
+        // All layouts retain exactly the same telemetry TextView and controls.
+        val heading=styledLabel("COREMETRICS  /  TELEMETRY",10f).apply {
+            setTextColor(Color.rgb(135,231,255))
+            letterSpacing=.11f
+            typeface=Typeface.DEFAULT_BOLD
+            setPadding(dp(10f),dp(7f),dp(8f),dp(1f))
+            visibility=View.GONE
+        }
+        cardHeading=heading
         val frame=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
+            addView(heading)
             addView(line)
             addView(tab)
         }
@@ -1265,7 +1303,9 @@ internal class RecorderHud(private val context:Context) {
         val rootRemoved=frame==null || removeTracked(frame)
         if(rootRemoved){
             root=null;lastAddRequestedAt=0L
-            params=null;pill=null;controlsRow=null;drawer=null;dockTab=null
+            params=null;pill=null;readingsRow=null;controlsRow=null
+            topActionsRow=null;bottomActionsRow=null;cardHeading=null
+            structuralLayout=null;drawer=null;dockTab=null
             dockVisual=null;mainText=null;thermalIndicator=null;recText=null;recDot=null
             recControl=null;lockControl=null;drawerControl=null
             closeControl=null;minimizeControl=null
