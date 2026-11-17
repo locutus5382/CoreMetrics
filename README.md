@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.9.4 Pre-Odin Hardening alpha** — user-requested diagnostics now summarize the basic integrity of recent saved sessions and instantaneous UI-process memory without loading telemetry arrays. Android emulator instrumentation has a bounded execution time. DUKO FIFO reports, full-session analytics, 2s/5s recording, HUD and Quick Settings remain from v0.9.9.3. Real Odin 2 Portal acceptance has not yet happened; do not treat this as a final/public release.
+**Current development status: v0.9.9.5 HUD Layout Studio alpha** — Classic pill (unchanged default), Compact Glass Card, and Horizontal Telemetry Ribbon are selectable in the existing HUD Studio, with a fixed-value visual preview. The same one-window recorder/HUD/Quick Settings architecture, no-root permissions and user-requested FIFO DUKO reporting are retained. Reliability, memory benchmarks and hardware validation are ongoing; this is not a public release.
 
-## One-app Quick Start (v0.9.9.4)
+## One-app Quick Start (v0.9.9.5)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.9.4-pre-odin-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.4-pre-odin-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.9.5-hud-layouts-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.5-hud-layouts-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,16 @@
 
 ---
 
+
+## v0.9.9.5 — HUD Layout Studio, with parallel stability work
+
+- HUD Studio now offers **Classic pill (default)**, **Compact Glass Card** and **Horizontal Telemetry Ribbon**, with CoreMetrics' familiar navy/cyan styling and illustrative previews. Historical rounded-card option ("pro") maps to Glass Card.
+- Switching layouts reconfigures the **same** WindowManager root and existing REC/STOP/dock/lock controls in place. No new overlay, permissions, recorder services, background sampling or SQLite migration.
+- Glass Card: slim header, two-column sensor presentation, controls beneath telemetry. Ribbon: compact horizontal sensor presentation, one-line when space permits and wrapping on narrow screens rather than silently omitting metrics.
+- Existing size, transparency, manual metric selection, conditional OS thermal warning, optional BAT T outlines, REC indicator and Quick Settings behavior continue for each layout. No invented game FPS and no real-time GPU-heavy blur.
+- Unit tests cover defaults, legacy settings, metric order, narrow ribbon behavior and sizing. Android instrumentation checks persistence and intent handoff.
+- **Parallel priorities:** stabilize GitHub API 33 emulator infrastructure, then verify process/overlay ownership, recording recovery, DUKO queue cancellation, peak memory and report presentation on Odin. See `docs/PORTAL_V0995_HUD_LAYOUTS_ACCEPTANCE.md`.
+- VersionCode **48**; SQLite **v9** unchanged. Keep this feature as draft until debug/R8 builds and device acceptance pass.
 
 ## v0.9.9.4 — Pre-Odin hardening and test diagnostics
 
