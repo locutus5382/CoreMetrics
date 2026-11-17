@@ -10,7 +10,8 @@ internal object DukoReportLoader {
     fun build(
         db:SessionStore,id:Long,
         checkpoint:()->Unit={},
-        onProgress:(Long,Long)->Unit={_,_->}
+        onProgress:(Long,Long)->Unit={_,_->},
+        quantileScratch:DukoSessionInsight.QuantileScratch?=null
     ):DukoSessionInsight.Report {
         require(id>0L){"Select a saved session"}
         val session=db.sessionById(id)?:error("Recording does not exist")
@@ -27,7 +28,7 @@ internal object DukoReportLoader {
             "DUKO Report requires at least 20 seconds of recorded samples"
         }
         val report=DukoSessionInsight.Accumulator(
-            session,bounds,db.reportCadenceMs(id))
+            session,bounds,db.reportCadenceMs(id),quantileScratch)
         onProgress(0L,bounds.count)
         var visitedSinceCheck=0
         var accepted=0L
