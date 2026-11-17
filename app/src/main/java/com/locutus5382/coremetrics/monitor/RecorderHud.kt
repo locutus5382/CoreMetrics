@@ -974,13 +974,23 @@ internal class RecorderHud(private val context:Context) {
             // Compact side-by-side layout; reserve measured telemetry width
             // plus only the actual right-side controls or unlock target.
             val viewport=(windowWidth()-dp(8f)).coerceAtLeast(dp(220f))
+            val layout=HudLayoutPolicy.normalize(opts.layout)
+            val card=layout==HudLayoutPolicy.GLASS_CARD
+            val ribbon=layout==HudLayoutPolicy.RIBBON
             val controlWidth=if(locked)dp(58f) else dp(126f)
-            val minimum=dp(if(locked)200f else 300f).coerceAtMost(viewport)
-            // One compact horizontal row. When locked, the only space on the
-            // right is the separate touchable 48dp unlock handle.
-            val natural=longest.roundToInt()+controlWidth
-            p.width=natural.coerceIn(minimum,viewport)
-            text?.maxWidth=(p.width-controlWidth).coerceAtLeast(dp(85f))
+            val maxWidth=if(card)minOf(viewport,dp(425f)) else viewport
+            val minimum=dp(
+                if(card) {if(locked)230f else 275f}
+                else if(ribbon) {if(locked)205f else 300f}
+                else {if(locked)200f else 300f}
+            ).coerceAtMost(maxWidth)
+            // A stacked glass card reserves bottom-row room for the REC,
+            // dock and lock controls. Pill/ribbon remain side-by-side.
+            val natural=longest.roundToInt()+
+                if(card)dp(26f) else controlWidth
+            p.width=natural.coerceIn(minimum,maxWidth)
+            text?.maxWidth=(p.width-if(card)dp(26f) else controlWidth)
+                .coerceAtLeast(dp(85f))
             p.x=if(anchoredRight)
                 (windowWidth()-p.width-dp(4f)).coerceAtLeast(0)
                 else p.x.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
@@ -1024,8 +1034,64 @@ internal class RecorderHud(private val context:Context) {
         runCatching {wm.updateViewLayout(chip,cp)}
     }
 
+    /**
+     * Reconfigure existing views IN PLACE when the user switches layouts.
+     * Do not remove/re-add the WindowManager overlay or duplicate REC controls.
+     * Called only on user configuration, service rebind or mode change.
+     */
+    private fun applyLayoutStructure() {
+        val layout=HudLayoutPolicy.normalize(opts.layout)
+        if(structuralLayout==layout)return
+        val line=pill ?:return
+        val readings=readingsRow ?:return
+        val actions=controlsRow ?:return
+        val top=topActionsRow ?:return
+        val bottom=bottomActionsRow ?:return
+        val card=layout==HudLayoutPolicy.GLASS_CARD
+        line.orientation=if(card)LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        line.gravity=if(card)Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
+        readings.layoutParams=if(card)
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            else LinearLayout.LayoutParams(
+                0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+        actions.orientation=if(card)LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        actions.gravity=if(card)
+            Gravity.END or Gravity.CENTER_VERTICAL else Gravity.CENTER
+        actions.layoutParams=if(card)
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin=dp(2f)
+            }
+            else LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+        top.gravity=if(card)Gravity.START or Gravity.CENTER_VERTICAL else Gravity.CENTER
+        top.layoutParams=if(card)
+            LinearLayout.LayoutParams(0,dp(39f),1f)
+            else LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,dp(33f))
+        bottom.gravity=Gravity.END or Gravity.CENTER_VERTICAL
+        bottom.layoutParams=LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            if(card)dp(39f) else LinearLayout.LayoutParams.WRAP_CONTENT)
+        structuralLayout=layout
+        invalidateLayoutCache()
+    }
+
     private fun applyAppearance() {
         val frame=root ?:return
+        applyLayoutStructure()
+        val layout=HudLayoutPolicy.normalize(opts.layout)
+        val card=layout==HudLayoutPolicy.GLASS_CARD
+        val ribbon=layout==HudLayoutPolicy.RIBBON
+        cardHeading?.apply {
+            visibility=if(card && !collapsed)View.VISIBLE else View.GONE
+            text=if(recording)"COREMETRICS  /  LIVE TELEMETRY"
+                else "COREMETRICS  /  STANDBY"
+        }
         frame.background=if(collapsed) null else rounded(
             opts.opacity*(if(locked) .90f else 1f))
         frame.setPadding(if(collapsed)0 else dp(5f),
@@ -1037,12 +1103,18 @@ internal class RecorderHud(private val context:Context) {
         drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
         if(drawer!=null)refreshDrawerControls()
         val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
-        mainText?.textSize=12f*scale
+        mainText?.textSize=HudLayoutPolicy.nominalTextSp(layout,opts.size)
+        mainText?.typeface=if(ribbon)Typeface.MONOSPACE else Typeface.DEFAULT
+        mainText?.setPadding(
+            dp(if(card)10f else if(ribbon)5f else 6f),
+            dp(if(card)8f else if(ribbon)4f else 5f),
+            dp(if(card)9f else 4f),
+            dp(if(card)8f else if(ribbon)4f else 5f))
         // All enabled metrics stay visible in short lines, with REC, gear,
         // dock and unlock controls remaining fixed-size touch targets.
-        mainText?.maxWidth=dp(460f*scale)
+        mainText?.maxWidth=dp((if(card)390f else if(ribbon)700f else 460f)*scale)
         mainText?.setSingleLine(false)
-        mainText?.maxLines=5
+        mainText?.maxLines=if(ribbon)3 else 5
         mainText?.ellipsize=null
         recText?.textSize=11f*scale
         // The unlocked main control and separate locked recovery chip share the
@@ -1186,7 +1258,11 @@ internal class RecorderHud(private val context:Context) {
     private fun renderTelemetry() {
         val view=mainText ?:return
         if(!recording) {
-            view.text="COREMETRICS · READY\nNo sensor sampling until REC"
+            view.text=when(HudLayoutPolicy.normalize(opts.layout)) {
+                HudLayoutPolicy.GLASS_CARD -> "Ready to record\nTelemetry starts after REC"
+                HudLayoutPolicy.RIBBON -> "CM · READY  │  TAP REC TO START"
+                else -> "COREMETRICS · READY\nNo sensor sampling until REC"
+            }
             return
         }
         val s=latest
@@ -1208,7 +1284,7 @@ internal class RecorderHud(private val context:Context) {
                 else -> ""
             }
             add("CPU T",fmt(thermalValue?.smoothedC,"°C")+direction)
-            if(opts.layout=="pro" && thermalValue?.rawPeakC!=null)
+            if(HudLayoutPolicy.card(opts.layout) && thermalValue?.rawPeakC!=null)
                 items+=("Peak "+fmt(thermalValue?.rawPeakC,"°C")) to
                     HudSeverity.Level.NORMAL
         }
@@ -1224,9 +1300,12 @@ internal class RecorderHud(private val context:Context) {
         // Game FPS is not collected by the ordinary-app recorder.
         val builder=SpannableStringBuilder()
         if(items.isEmpty())builder.append("REC · telemetry")
-        else items.forEachIndexed{index,pair->
-            if(index>0)builder.append(
-                if(items.size>2 && index%2==0)"\n" else " · ")
+        val widthDp=(windowWidth()/context.resources.displayMetrics.density)
+            .roundToInt()
+        val twoRows=HudLayoutPolicy.ribbonTwoRows(items.size,widthDp)
+        items.forEachIndexed{index,pair->
+            if(index>0)builder.append(HudLayoutPolicy.divider(
+                opts.layout,index,items.size,twoRows))
             val begin=builder.length
             builder.append(pair.first)
             if(pair.first.startsWith("BAT T ")) {
