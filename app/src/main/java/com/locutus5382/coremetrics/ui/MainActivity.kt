@@ -871,7 +871,7 @@ class MainActivity : ComponentActivity() {
                 val request=pending?.split('|')
                 val id=request?.getOrNull(1)?.toLongOrNull()
                 if(uri!=null && id!=null && id>0L &&
-                    request.getOrNull(0)==format && !dukoBusy) {
+                    request?.getOrNull(0)==format && !dukoBusy) {
                     dukoBusy=true
                     scope.launch {
                         val outcome=try {
