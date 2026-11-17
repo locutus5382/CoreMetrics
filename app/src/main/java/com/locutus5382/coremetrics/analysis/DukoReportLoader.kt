@@ -14,10 +14,13 @@ internal object DukoReportLoader {
             "Stop the active recording before generating its DUKO Report"
         }
         val bounds=db.reportBounds(id)?:error("No stored samples")
-        require(bounds.count<=DukoSessionInsight.MAX_SAMPLES) {
-            "DUKO Report cannot analyze more than "+
+        require(bounds.count in 6..DukoSessionInsight.MAX_SAMPLES) {
+            "DUKO Report requires 6–"+
                 DukoSessionInsight.MAX_SAMPLES+
-                " samples safely in this version; export full CSV instead"
+                " stored samples; export full CSV if above the limit"
+        }
+        require(bounds.lastMs-bounds.firstMs>=20_000L) {
+            "DUKO Report requires at least 20 seconds of recorded samples"
         }
         val report=DukoSessionInsight.Accumulator(
             session,bounds,db.reportCadenceMs(id))
