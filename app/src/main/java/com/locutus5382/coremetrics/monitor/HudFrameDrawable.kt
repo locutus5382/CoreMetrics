@@ -36,6 +36,14 @@ internal class HudFrameDrawable(
     }
     private val shape=Path()
     private var activeAlpha=255
+    private val halo=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style=Paint.Style.STROKE; strokeWidth=3.5f*density
+        color=Color.argb(64,63,206,252)
+    }
+    private val micro=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style=Paint.Style.STROKE; strokeWidth=.75f*density
+        color=Color.argb(135,141,198,229)
+    }
 
     override fun onBoundsChange(bounds:Rect) {
         super.onBoundsChange(bounds)
@@ -50,7 +58,7 @@ internal class HudFrameDrawable(
         }
         shape.moveTo(chamfer,0f)
         shape.lineTo(w-chamfer,0f)
-        shape.lineTo(w,h.coerceAtLeast(chamfer)-h+chamfer)
+        shape.lineTo(w,chamfer)
         shape.lineTo(w,h-chamfer)
         shape.lineTo(w-chamfer,h)
         shape.lineTo(chamfer,h)
@@ -89,15 +97,30 @@ internal class HudFrameDrawable(
             HudLayoutPolicy.STRIKER->{
                 line.color=Color.rgb(71,221,252);line.alpha=activeAlpha
                 canvas.drawPath(shape,line)
-                val x=w*.67f
+                halo.alpha=(activeAlpha*.25f).toInt()
+                canvas.drawPath(shape,halo)
+                val x=w*.72f
                 accents.alpha=activeAlpha
                 canvas.drawLine(x+10*density,2*density,
                     x-10*density,h-2*density,accents)
                 canvas.drawLine(9*density,3*density,33*density,3*density,accents)
+                canvas.drawLine(w-33*density,h-3*density,
+                    w-9*density,h-3*density,accents)
+                micro.alpha=(activeAlpha*.55f).toInt()
+                for(i in 0..4) {
+                    val x=15*density+i*7*density
+                    canvas.drawLine(x,h-5*density,x+3*density,h-5*density,micro)
+                }
             }
             HudLayoutPolicy.TACTICAL->{
                 line.color=Color.rgb(120,171,200);line.alpha=activeAlpha
                 canvas.drawPath(shape,line)
+                micro.alpha=(activeAlpha*.45f).toInt()
+                for(i in 0..3) {
+                    val y=18*density+i*13*density
+                    if(y<h-15*density)
+                        canvas.drawLine(4*density,y,7*density,y,micro)
+                }
                 accents.alpha=activeAlpha
                 canvas.drawLine(6*density,3*density,32*density,3*density,accents)
                 canvas.drawLine(w-32*density,h-3*density,
