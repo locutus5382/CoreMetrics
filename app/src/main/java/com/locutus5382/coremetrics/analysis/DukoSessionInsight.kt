@@ -149,7 +149,9 @@ object DukoSessionInsight {
         private var lastWarmth=BatteryTemperatureAdvisory.State.UNAVAILABLE
         private var prior:SessionStore.Point?=null
         private var samples=0
-        private var segment=0
+        // Each plotted sensor has independent missing-reading boundaries.
+        // A missing GPU source must not fragment a valid CPU temperature trace.
+        private val traceSegments=plots.keys.associateWith{0}.toMutableMap()
         private var gaps=0
         private var eventCount=0
         private var powerWms=0.0
@@ -202,7 +204,9 @@ object DukoSessionInsight {
             }
             val dt=if(previous==null)0L else p.timeMs-previous.timeMs
             if(previous!=null && dt>gapLimit) {
-                gaps++;segment++
+                gaps++
+                for(m in plots.keys) traceSegments[m]=traceSegments.getValue(m)+1
+                lastWarmth=BatteryTemperatureAdvisory.State.UNAVAILABLE
                 emit(p,"Recording gap","Preceding interval "+
                     (dt/1000.0)+" s, missing behavior unknown.",Evidence.OBSERVED)
                 recentGpu.clear();recentCore.clear()
@@ -213,12 +217,11 @@ object DukoSessionInsight {
             for(m in Metric.entries) {
                 val value=reading(m,p)
                 quantiles.getValue(m).add(value)
-                plots[m]?.add(p.timeMs,value,segment)
+                if(m in plots) {
+                    plots.getValue(m).add(p.timeMs,value,traceSegments.getValue(m))
+                    if(value==null)traceSegments[m]=traceSegments.getValue(m)+1
+                }
             }
-            // Missing data splits all relevant traces. No interpolation.
-            if(reading(Metric.CPU_TEMP,p)==null ||
-                reading(Metric.GPU_TEMP,p)==null ||
-                reading(Metric.GPU_LOAD,p)==null)segment++
 
             p.gpuTelemetrySource?.takeIf{it.isNotBlank()}?.let{
                 if(gpuSources.size<16)gpuSources+=it
