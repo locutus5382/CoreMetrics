@@ -2,7 +2,6 @@ package com.locutus5382.coremetrics.analysis
 
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.BatteryTemperatureAdvisory
-import java.util.ArrayDeque
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -192,26 +191,63 @@ object DukoSessionInsight {
         private var priorPsiHigh=false
         // Sliding ~120s window: maintain two counters instead of creating
         // a new mapNotNull list on every 2s/5s sample (up to 250k rows).
+        /**
+         * Sliding 120s window backed by primitive rings. At 2s cadence this
+         * normally contains about 60 entries. Unusual high-frequency imported
+         * timestamps grow the arrays without silently dropping readings.
+         * Missing values use NaN; the reader already rejects non-finite data.
+         */
         private class UtilWindow {
-            val samples=ArrayDeque<Pair<Long,Double?>>()
+            private var times=LongArray(64)
+            private var values=DoubleArray(64)
+            private var head=0
+            var size=0
+                private set
             var valid=0
+                private set
             var high=0
-            fun add(t:Long,v:Double?) {
-                samples.addLast(t to v)
-                if(v!=null) {
-                    valid++
-                    if(v>=95.0)high++
+                private set
+            val durationMs:Long get()=if(size<2)0L else
+                times[(head+size-1)%times.size]-times[head]
+
+            private fun grow() {
+                val length=times.size
+                val newSize=length*2
+                val nextTimes=LongArray(newSize)
+                val nextValues=DoubleArray(newSize)
+                for(i in 0 until size) {
+                    val old=(head+i)%length
+                    nextTimes[i]=times[old]
+                    nextValues[i]=values[old]
                 }
-                while(samples.isNotEmpty() && samples.first.first<t-120_000L){
-                    val removed=samples.removeFirst().second
-                    if(removed!=null) {
+                times=nextTimes
+                values=nextValues
+                head=0
+            }
+            fun add(time:Long,value:Double?) {
+                if(size==times.size)grow()
+                val index=(head+size)%times.size
+                val number=value?:Double.NaN
+                times[index]=time
+                values[index]=number
+                size++
+                if(!number.isNaN()){
+                    valid++
+                    if(number>=95.0)high++
+                }
+                val cutoff=time-120_000L
+                while(size>0 && times[head]<cutoff) {
+                    val dropped=values[head]
+                    if(!dropped.isNaN()) {
                         valid--
-                        if(removed>=95.0)high--
+                        if(dropped>=95.0)high--
                     }
+                    head=(head+1)%times.size
+                    size--
                 }
             }
             fun clear() {
-                samples.clear();valid=0;high=0
+                head=0;size=0;valid=0;high=0
             }
         }
         private val recentGpu=UtilWindow()
@@ -229,9 +265,8 @@ object DukoSessionInsight {
         private fun sustained(window:UtilWindow,
             name:String,p:SessionStore.ReportRow,v:Double?) {
             window.add(p.timeMs,v)
-            val queue=window.samples
-            if(name in highEmitted || queue.size<3)return
-            if(queue.last.first-queue.first.first<120_000L-cadence)return
+            if(name in highEmitted || window.size<3)return
+            if(window.durationMs<120_000L-cadence)return
             val expected=max(2,(120_000L/cadence).toInt())
             // A mostly absent source cannot satisfy a 95%-of-time rule.
             // Sample coverage is an approximation, not continuous-frame proof.
