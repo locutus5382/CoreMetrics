@@ -16,12 +16,12 @@ import android.graphics.Typeface
  * Bitmap, Canvas or Compose state in the separate :monitor process.
  */
 internal object HudTextStyler {
-    private const val ice=0xFFEFF6FD.toInt()
-    private const val frost=0xFF9BBDCF.toInt()
-    private const val cyan=0xFF5FE2FA.toInt()
-    private const val paleBlue=0xFFB1D9ED.toInt()
-    private const val warm=0xFFFFA252.toInt()
-    private const val hot=0xFFFF4E60.toInt()
+    private val ice=0xFFEFF6FD.toInt()
+    private val frost=0xFF9BBDCF.toInt()
+    private val cyan=0xFF5FE2FA.toInt()
+    private val paleBlue=0xFFB1D9ED.toInt()
+    private val warm=0xFFFFA252.toInt()
+    private val hot=0xFFFF4E60.toInt()
 
     private fun SpannableStringBuilder.color(start:Int,end:Int,color:Int) {
         if(start in 0 until end && end<=length)
