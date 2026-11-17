@@ -87,8 +87,12 @@ class SessionArchiveTest {
             val sessions=store.list()
             assertEquals(3,sessions.size)
             assertEquals(16L,store.storedSampleCount(existing))
-            assertEquals(2,sessions.count{it.profileName=="T30"})
-            val imported=sessions.filter{it.profileName=="T30"}
+            // The existing pre-restore CSV already carried profile_name
+            // "T30". It must remain untouched; do not count it as restored.
+            val imported=sessions.filter{it.id!=existing}
+            assertEquals(2,imported.size)
+            assertTrue(imported.all{it.profileName=="T30"})
+            assertEquals("T30",store.sessionById(existing)?.profileName)
             assertTrue(imported.all{it.deviceManufacturer=="AYN"})
             assertTrue(imported.all{it.deviceModel=="Odin 2 Portal"})
             assertTrue(imported.all{it.androidApi==33})
