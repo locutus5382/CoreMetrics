@@ -137,6 +137,30 @@ Do not interpret reduced allocations as a measured application PSS reduction,
 a battery-life improvement or higher gameplay FPS. Actual export time, sampled
 PSS, user-visible colour fidelity and process stability need Odin tests.
 
+## Third-pass memory and CPU audit
+
+- Nine DUKO quantile accumulators and three chart/segment state machines now
+  use stable array indices rather than per-sample enum-keyed map lookups.
+  Metric ordering, evidence, extrema and exact p50/p95 semantics are retained.
+- Exact quantile growth is capped at 250,000 values. During a single
+  user-requested comparison, one set of nine primitive arrays is reused for
+  ALL 2–5 recordings in sequence; after each immutable Stats summary is
+  finished, only logical lengths reset. This reduces repeated allocation
+  and GC churn; it is NOT a measured reduction in the Android process peak PSS.
+  Do not share a scratch between concurrent accumulators.
+- The on-screen, 12k-point legacy analysis/compare preview uses an at-most
+  256-entry, per-query String value pool for repeated CPU policy, battery,
+  app package and GPU source metadata. It avoids retaining duplicate Strings
+  across up to 12,000 immutable Points without changing any saved rows.
+  Unique long strings (>256 characters) are never pooled.
+- Android instrumentation verifies source-label identity sharing in preview,
+  and that separately valued recordings in one comparison return their own
+  correct P50/P95 after percentile scratch reuse.
+- No fake RAM cleaner, artificial Java heap cap, manual System.gc(), forced
+  process kill, extra background poll or higher telemetry sample frequency.
+- The recorder and multi-process HUD/Quick Settings architecture were
+  intentionally not altered without Odin playback evidence.
+
 ## Automated acceptance
 
 1. JVM: all existing analytics, full-session quantile, exact Wh and report
