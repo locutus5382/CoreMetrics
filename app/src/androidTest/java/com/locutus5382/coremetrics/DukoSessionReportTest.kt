@@ -93,11 +93,11 @@ class DukoSessionReportTest {
             }.isFailure)
             var checks=0
             assertTrue(runCatching {
-                DukoReportLoader.build(db,id) {
+                DukoReportLoader.build(db,id,checkpoint={
                     if(++checks>=2)
                         throw java.util.concurrent.CancellationException(
                             "Synthetic Activity cancellation")
-                }
+                })
             }.isFailure)
             assertTrue("Cancellation was observed during the cursor scan",
                 checks>=2)
