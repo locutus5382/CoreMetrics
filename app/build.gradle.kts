@@ -10,8 +10,8 @@ android {
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 43
-        versionName = "0.9.9.0-device-measurement-alpha"
+        versionCode = 44
+        versionName = "0.9.9.1-duko-session-alpha"
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CM REC"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM HUD"

@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.9.0 Device & Measurement Foundation alpha — Android device identity recorded with each session, dynamically discovered CPU policies, conservative KGSL/Mali GPU reader adapters with explicit provenance, a one-shot compatibility check and removal of unsafe fixed 30.8 Wh runtime predictions. SQLite v9 adds only nullable fields; existing telemetry and HUD remain untouched where not explicitly noted.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.9.1 DUKO Session Insight alpha — full-recording, offline DUKO single-session reports in PDF and PNG; exact bounded sensor quantiles, time-weighted battery discharge, gap-aware charts, evidence-qualified events, a printable glossary and original-device provenance. The v0.9.9.0 hardware abstraction, 2s/5s recorder, Quick Settings and HUD remain in place.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
 
-## One-app Quick Start (v0.9.9.0)
+## One-app Quick Start (v0.9.9.1)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.9.0-device-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.0-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.9.1-duko-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.1-duko-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,16 @@
 
 ---
 
+
+## v0.9.9.1 — DUKO Session Insight (single recording)
+
+- **How to use:** Sessions → Analyze a completed recording → **DUKO Session Insight** → **DUKO PNG** or **DUKO PDF**. Choose a destination via Android Storage Access Framework. Report computation and drawing run offline on IO, not on the REC/HUD thread.
+- **One engine, two formats:** an independently testable `DukoSessionInsight` analysis model powers both the 1600 × 2200 light PNG executive summary and native Android vector PDF (summary, evidence/glossary, chronological event pages). PDF is preferable for detailed review; PNG for small shareable overviews, not giant scroll images.
+- **All source samples:** full chronological SQLite cursor up to **250,000** samples. A separate bounded 160-interval cadence query and exact primitive sample quantiles avoid materializing whole Point objects. Chart traces preserve bounded min/max extrema and never intentionally join missing sensor readings or recording gaps. Ordinary UI analysis retains its 12k preview limit and warns as before.
+- **What it explains:** observed CPU/GPU/battery temperatures, system CPU/GPU load, valid whole-device discharge W and Wh, measured power coverage, BAT T warm/hot time, changed CPU ceilings, Android thermal policy, memory pressure, sustained high utilization and quality limitations. Each note is **observed or pattern evidence**, with no invented game FPS or causal throttling conclusion.
+- **No fabricated data:** unmeasured values remain unavailable; unknown GPU paths or original-device identities are disclosed. Battery capacity/runtime estimates remain disabled unless validated in a future build.
+- **Preserved:** existing TXT/CSV/PNG scorecards, A/B, A/A, profile tagging, HUD and firmware capability Diagnostics. No extra background sampling, permission, network requests or database migration. SQLite stays v9.
+- **Validation:** `docs/PORTAL_V0991_DUKO_SESSION_ACCEPTANCE.md`. CI tests cannot substitute for executing on-device PDF/PNG instrumented tests and inspecting printed A4 pages.
 
 ## v0.9.9.0 — Device & Measurement Foundation (portability)
 

@@ -1,4 +1,4 @@
-name: CoreMetrics v0.9.9.0 Device & Measurement foundation build
+name: CoreMetrics v0.9.9.1 DUKO Session Insight build
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -32,10 +32,41 @@ jobs:
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.0-device-debug
+          name: CoreMetrics-v0.9.9.1-duko-debug
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Upload R8-optimized installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.0-optimized-test
+          name: CoreMetrics-v0.9.9.1-duko-optimized-test
           path: app/build/outputs/apk/optimizedTest/app-optimizedTest.apk
+
+  android-instrumentation:
+    name: API 33 emulator integration and migration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Run Android instrumentation on API 33 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          target: google_apis
+          profile: pixel_4
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: gradle :app:connectedDebugAndroidTest --no-daemon
