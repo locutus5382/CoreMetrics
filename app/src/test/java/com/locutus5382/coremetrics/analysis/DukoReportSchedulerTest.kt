@@ -66,6 +66,23 @@ class DukoReportSchedulerTest {
         assertEquals(two,queue.active)
     }
 
+    @Test fun identicalReportRequestsRemainSeparateQueueTurns() {
+        val queue=DukoReportScheduler()
+        val first=DukoReportTask.session(9,"pdf")
+        val second=DukoReportTask.session(9,"pdf")
+        assertEquals(first,second) // same parameters, different click events
+        assertFalse(first===second)
+        assertTrue(queue.submit(first))
+        assertTrue(queue.submit(second))
+        queue.complete(first)
+        assertTrue(queue.active===second)
+        assertTrue("Stale first request must not finish its identical successor",
+            runCatching{queue.complete(first)}.isFailure)
+        assertTrue(queue.active===second)
+        queue.complete(second)
+        assertNull(queue.active)
+    }
+
     @Test fun jobSnapshotKeepsBaselineOrderAndSourceIds() {
         val original=mutableListOf(2L,8L,9L)
         val task=compare(original)
