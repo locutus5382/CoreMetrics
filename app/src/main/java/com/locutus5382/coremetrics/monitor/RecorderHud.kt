@@ -1368,69 +1368,59 @@ internal class RecorderHud(private val context:Context) {
         }
     }
     private fun renderTelemetry() {
-        val view=mainText ?:return
-        if(!recording) {
-            view.text=when(HudLayoutPolicy.normalize(opts.layout)) {
-                HudLayoutPolicy.GLASS_CARD -> "Ready to record\nTelemetry starts after REC"
-                HudLayoutPolicy.RIBBON -> "CM · READY  │  TAP REC TO START"
-                else -> "COREMETRICS · READY\nNo sensor sampling until REC"
-            }
-            return
-        }
-        val s=latest
-        fun fmt(n:Double?,unit:String,decimal:Int=1):String =
+        val view=mainText?:return
+        val sample=latest
+        val layout=HudLayoutPolicy.normalize(opts.layout)
+        val lens=HudLayoutPolicy.lens(layout)
+        val cpuValue=thermalValue?.smoothedC ?:sample?.cpuTempC
+        fun number(n:Double?,unit:String):String=
             n?.takeIf{it.isFinite()}?.let{
-                String.format(Locale.US,"%."+decimal+"f%s",it,unit)
+                String.format(Locale.US,"%.1f",it)+" "+unit
             } ?: "—"
-        val items=mutableListOf<Pair<String,HudSeverity.Level>>()
-        fun add(label:String,value:String) {
-            items+=(label+" "+value) to (if(opts.adaptiveColors)
-                metricLevels[label]?:HudSeverity.Level.NORMAL
-                else HudSeverity.Level.NORMAL)
-        }
-        if(opts.showCpuTemp) {
-            val direction=when(thermalValue?.direction) {
-                ThermalTrendFilter.Direction.RISING -> " ▲"
-                ThermalTrendFilter.Direction.FALLING -> " ▼"
-                ThermalTrendFilter.Direction.STABLE -> " —"
-                else -> ""
+        val readings=HudReadoutFormatter.Values(
+            cpuTemp=if(opts.showCpuTemp)number(cpuValue,if(lens)"C" else "°C")
+                else null,
+            gpuTemp=if(opts.showGpuTemp)number(sample?.gpuTempC,
+                if(lens)"C" else "°C") else null,
+            cpuUse=if(opts.showCpuLoad)
+                sample?.cpuPercent?.let{"$it %"}?:"—" else null,
+            gpuUse=if(opts.showGpuLoad)
+                sample?.gpuPercent?.let{"$it %"}?:"—" else null,
+            ram=if(opts.showRam)number(sample?.ramGiB,if(lens)"GiB" else "G")
+                else null,
+            power=if(opts.showPower)number(sample?.signedBatteryWatts,"W")
+                else null,
+            batteryTemp=if(opts.showBatteryTemp)number(
+                sample?.batteryTempC?.takeIf{it in -10.0..90.0},
+                if(lens)"C" else "°C") else null
+        )
+        val formatted=HudReadoutFormatter.render(layout,readings,recording)
+        // DUKO Lens has exactly one exception to monochrome values: a
+        // source-specific, display-only CPU advisory (not a device limit).
+        val cpuBand=HudLayoutPolicy.advisoryBand(cpuValue)
+        fun decorate(text:String):CharSequence {
+            if(!recording || cpuBand==0 || readings.cpuTemp==null)return text
+            val start=text.indexOf(readings.cpuTemp)
+            if(start<0)return text
+            val color=if(cpuBand==2)Color.rgb(244,67,79)
+                else Color.rgb(255,146,49)
+            return SpannableStringBuilder(text).apply {
+                setSpan(ForegroundColorSpan(color),start,
+                    start+readings.cpuTemp.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            add("CPU T",fmt(thermalValue?.smoothedC,"°C")+direction)
-            if(HudLayoutPolicy.card(opts.layout) && thermalValue?.rawPeakC!=null)
-                items+=("Peak "+fmt(thermalValue?.rawPeakC,"°C")) to
-                    HudSeverity.Level.NORMAL
         }
-        if(opts.showGpuTemp)add("GPU T",fmt(s?.gpuTempC,"°C"))
-        if(opts.showCpuLoad)add("CPU %",s?.cpuPercent?.let{"$it%"}?:"—")
-        if(opts.showGpuLoad)add("GPU %",s?.gpuPercent?.let{"$it%"}?:"—")
-        if(opts.showRam)add("RAM",fmt(s?.ramGiB," GiB"))
-        if(opts.showPower)add("BAT",fmt(s?.signedBatteryWatts," W"))
-        if(opts.showBatteryTemp) {
-            val valid=s?.batteryTempC?.takeIf { it.isFinite() && it in -10.0..90.0 }
-            add("BAT T",fmt(valid,"°C"))
+        view.text=decorate(formatted.primary)
+        secondaryText?.let {
+            it.text=decorate(formatted.secondary)
+            it.visibility=if(formatted.secondary.isNotEmpty())View.VISIBLE
+                else View.GONE
         }
-        // Game FPS is not collected by the ordinary-app recorder.
-        val builder=SpannableStringBuilder()
-        if(items.isEmpty())builder.append("REC · telemetry")
-        val widthDp=(windowWidth()/context.resources.displayMetrics.density)
-            .roundToInt()
-        val twoRows=HudLayoutPolicy.ribbonTwoRows(items.size,widthDp)
-        items.forEachIndexed{index,pair->
-            if(index>0)builder.append(HudLayoutPolicy.divider(
-                opts.layout,index,items.size,twoRows))
-            val begin=builder.length
-            builder.append(pair.first)
-            if(pair.first.startsWith("BAT T ")) {
-                // The BAT T warning outline is confined to this token, with
-                // constant reserved width even when normal; no layout jump.
-                builder.setSpan(BatteryTemperatureSpan(batteryTemperatureState,
-                    context.resources.displayMetrics.density),begin,
-                    builder.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }else if(pair.second!=HudSeverity.Level.NORMAL)
-                builder.setSpan(ForegroundColorSpan(severityColor(pair.second)),
-                    begin,builder.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        tertiaryText?.let {
+            it.text=decorate(formatted.tertiary)
+            it.visibility=if(formatted.tertiary.isNotEmpty())View.VISIBLE
+                else View.GONE
         }
-        view.text=builder
     }
 
     private fun renderDockState() {
