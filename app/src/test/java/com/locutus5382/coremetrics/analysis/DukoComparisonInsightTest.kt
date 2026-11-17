@@ -131,5 +131,9 @@ class DukoComparisonInsightTest {
             listOf(x,y),1,CompareStudioAnalysis.TestedVariable.DRIVER)
         assertTrue(r.warnings.any{it.contains("Render scale differs")})
         assertFalse(r.warnings.any{it.contains("Graphics driver differs outside")})
+        val undeclared=DukoComparisonInsight.analyze(
+            listOf(x,y),1,CompareStudioAnalysis.TestedVariable.UNDECLARED)
+        assertTrue(undeclared.warnings.any{it.contains("Render scale differs")})
+        assertTrue(undeclared.warnings.any{it.contains("Graphics driver differs")})
     }
 }
