@@ -117,10 +117,12 @@ internal class DukoExportQueueViewModel:ViewModel() {
 
     /** Called only in response to one registered Android SAF chooser result. */
     fun onDocumentResult(
-        format:String,uri:Uri?,context:Context,db:SessionStore
+        kind:DukoReportTask.Kind,format:String,uri:Uri?,
+        context:Context,db:SessionStore
     ) {
         val task=current
-        if(task==null || task.format!=format || !pickerLaunched) {
+        if(task==null || task.kind!=kind || task.format!=format ||
+            !pickerLaunched) {
             if(uri!=null)viewModelScope.launch(Dispatchers.IO) {
                 runCatching { context.contentResolver.delete(uri,null,null) }
             }
