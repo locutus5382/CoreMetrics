@@ -152,4 +152,26 @@ class SessionDiagnosticsAnalyzerTest {
             r.distribution(Metric.CPU_TEMP).readings[11].segment,
             r.distribution(Metric.CPU_TEMP).readings[12].segment)
     }
+    @Test fun primitiveRollingMedianMatchesReferenceAcross240Readings() {
+        val points=(0..239).map { i->
+            point(i,cpu=35.0+(i%19)*.7+(i%4)*.03)
+        }
+        val stats=diagnostics(points).distribution(Metric.CPU_TEMP)
+        assertEquals(points.size,stats.observations)
+        for(i in points.indices) {
+            val now=points[i].timeMs
+            val window=points.take(i+1).filter { now-it.timeMs<=60_000L }
+                .mapNotNull{it.cpu}.sorted()
+            val span=if(window.isEmpty())0L else
+                now-points[(i-12).coerceAtLeast(0)].timeMs
+            val expected=if(window.size>=4 && span>=20_000L)
+                if(window.size%2==1)window[window.size/2]
+                else (window[window.size/2-1]+window[window.size/2])*.5
+                else null
+            val actual=stats.readings[i].rolling60
+            if(expected==null)assertNull(actual)
+            else assertEquals("rolling index "+i,expected,actual!!,.000001)
+        }
+    }
+
 }
