@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.service.quicksettings.TileService
 import com.locutus5382.coremetrics.data.SessionStore
+import com.locutus5382.coremetrics.data.ProcessSessionStoreOwner
 import com.locutus5382.coremetrics.quick.SessionTile
 import com.locutus5382.coremetrics.quick.HudTile
 import com.locutus5382.coremetrics.telemetry.DirectSampler
@@ -84,14 +85,11 @@ class RecordingService:Service() {
 
     override fun onCreate() {
         super.onCreate()
-        db=SessionStore(applicationContext)
+        db=ProcessSessionStoreOwner.get(applicationContext)
         hud=MonitorHudOwner.get(applicationContext)
-        settings=HudOptions.from(this)
+        // HudOptions.from opens the shared SQLite settings database.
+        // Defer that read until AFTER the foreground-service deadline.
         MonitorState.serviceCreated=true
-        RecorderJournal.event(this,"SERVICE_CREATED",
-            "pkg="+packageName+" pid="+android.os.Process.myPid()+
-                " instance="+System.identityHashCode(this)+
-                " "+hud.windowIdentity())
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL,"CoreMetrics recording / HUD standby",
                 NotificationManager.IMPORTANCE_LOW))
@@ -251,6 +249,29 @@ class RecordingService:Service() {
     }
 
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
+        // START / ARM / RECOVER and Android null restarts must satisfy the FGS
+        // deadline BEFORE recovery-lease, SQLite settings or journal disk I/O.
+        // The notification says PREPARING, never REC, until the persisted
+        // session and recovery lease have been checked.
+        val requestedAction=intent?.action
+        val startupRequest=intent==null || requestedAction==START ||
+            requestedAction==ARM || requestedAction==RECOVER
+        val alreadyForeground=armed || MonitorState.running ||
+            MonitorState.starting || MonitorState.standby || task?.isActive==true
+        if(startupRequest && !alreadyForeground) {
+            if(!notificationsAllowed() || !foreground(
+                    "CoreMetrics · preparing",
+                    "Checking the user-requested recorder or HUD standby",
+                    requestedAction==ARM)) {
+                MonitorState.message="Cannot start foreground recorder or standby"
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            RecorderJournal.event(this,"SERVICE_CREATED",
+                "pkg="+packageName+" pid="+android.os.Process.myPid()+
+                    " instance="+System.identityHashCode(this)+
+                    " "+hud.windowIdentity())
+        }
         // START_STICKY is only a *request* to Android; the OEM can still kill
         // this process. A null restart intent requires a fresh, explicitly
         // user-created lease and (for REC) the SAME active SQLite session ID.

@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.Looper
 import com.locutus5382.coremetrics.R
 import android.graphics.drawable.Icon
-import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
 
 /** Independent HUD visibility/standby switch. Never stops an active recording. */
@@ -75,14 +74,8 @@ class HudTile:TileService(){
                 else->error("Unknown HUD action")
             }
             val i=Intent(this,RecordingService::class.java).setAction(actionCode)
-            if(action==QuickTileStatePolicy.HudAction.ARM){
-                val defaults=SessionStore(applicationContext).use {
-                    it.recordingDefaults()
-                }
-                i.putExtra(RecordingService.LABEL,defaults.label)
-                    .putExtra(RecordingService.CONFIG,defaults.configuration)
-                    .putExtra(RecordingService.INTERVAL,defaults.intervalMs)
-            }
+            // Service reads current SQLite defaults after startForeground.
+            // Never open the database on the Quick Settings main thread.
             if(action==QuickTileStatePolicy.HudAction.ARM ||
                 action==QuickTileStatePolicy.HudAction.RECOVER)
                 startForegroundService(i) else startService(i)

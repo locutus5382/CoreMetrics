@@ -9,7 +9,6 @@ import android.service.quicksettings.TileService
 import android.widget.Toast
 import android.os.Handler
 import android.os.Looper
-import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.R
 import android.graphics.drawable.Icon
@@ -62,16 +61,10 @@ class SessionTile:TileService(){
                     startForegroundService(Intent(this,RecordingService::class.java)
                         .setAction(RecordingService.RECOVER))
                 QuickTileStatePolicy.RecordAction.START->{
-                    // A fresh SQLite SELECT, never a cached per-process
-                    // preference copy. If storage is unavailable, fail closed.
-                    val defaults=SessionStore(applicationContext).use {
-                        it.recordingDefaults()
-                    }
+                    // No main-thread SQLite helper/open; the service uses the
+                    // authoritative snapshot after its foreground notification.
                     startForegroundService(Intent(this,RecordingService::class.java)
-                        .setAction(RecordingService.START)
-                        .putExtra(RecordingService.INTERVAL,defaults.intervalMs)
-                        .putExtra(RecordingService.LABEL,defaults.label)
-                        .putExtra(RecordingService.CONFIG,defaults.configuration))
+                        .setAction(RecordingService.START))
                 }
                 else->Unit
             }

@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.9.7 Reliability and Memory alpha** — Five user-selectable styles replace the rejected three: Striker, Ghost, Horizontal Strip, Compact Tactical Card and DUKO Lens. The metric values still come exclusively from existing recorder samples; the recorder, foreground service, no-root permissions, database and user-requested FIFO reports are unchanged. All styles share one overlay owner. DUKO Lens uses translucent frosted fallback instead of risky global game-background blur. Full Android and Odin validation is required before release.
+**Current development status: v0.9.9.8 Lifecycle and Memory alpha** — Five user-selectable styles replace the rejected three: Striker, Ghost, Horizontal Strip, Compact Tactical Card and DUKO Lens. The metric values still come exclusively from existing recorder samples; the recorder, foreground service, no-root permissions, database and user-requested FIFO reports are unchanged. All styles share one overlay owner. DUKO Lens uses translucent frosted fallback instead of risky global game-background blur. Full Android and Odin validation is required before release.
 
-## One-app Quick Start (v0.9.9.7)
+## One-app Quick Start (v0.9.9.8)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.9.7-stability-memory-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.7-stability-memory-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.9.8-lifecycle-memory-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.8-lifecycle-memory-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,15 @@
 
 ---
 
+
+## v0.9.9.8 — Foreground lifecycle and background memory (draft alpha)
+
+- **Start foreground first:** START, ARM and lease recovery present a truthful preparing notification before potentially blocking SQLite/lease/journal I/O; HUD options are no longer queried in service onCreate.
+- **Release data when hidden:** UI releases 12k-row Sessions/Compare caches onStop/trim, preserving session selections and reloading the original saved points on return; pending DUKO/SAF tasks prevent eviction.
+- **Database reads fail visibly:** guarded IO reads for session list, links and sample lists log errors and preserve existing data, while coroutine cancellation is never swallowed.
+- **One SQLite helper per process:** Quick Settings no longer opens temporary SQLite helpers on tap; the service reads live defaults after its foreground notification. The UI/:monitor processes retain distinct process-local helpers and SQLite remains authoritative.
+- **No speculative gains:** real PSS, jank and startup deadline results require Odin hardware checks. Report FIFO, sensor capture, five HUD themes, schema and report format unchanged.
+- Device and CI acceptance: docs/PORTAL_V0998_LIFECYCLE_MEMORY_ACCEPTANCE.md.
 
 ## v0.9.9.7 — Reliability and memory hardening (draft alpha)
 

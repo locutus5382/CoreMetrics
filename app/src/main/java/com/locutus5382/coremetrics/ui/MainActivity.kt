@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
+import android.content.ComponentCallbacks2
 import android.app.StatusBarManager
 import android.service.quicksettings.TileService
 import android.graphics.drawable.Icon
@@ -367,9 +368,26 @@ class MainActivity : ComponentActivity() {
         }
     }
     private var appVisible=false
+    // Compose observes this only to load session data while the UI is
+    // actually visible. A game foreground must not reload released caches.
+    private var sessionUiVisible by mutableStateOf(true)
+    private var releaseUiCaches:(()->Unit)?=null
+    override fun onTrimMemory(level:Int) {
+        super.onTrimMemory(level)
+        // UI_HIDDEN is 20; RUNNING_LOW/CRITICAL use smaller levels. Only
+        // release while backgrounded; never interfere with active charts.
+        if(!sessionUiVisible && (level>=ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+                    level==ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN))
+            releaseUiCaches?.invoke()
+    }
+    override fun onLowMemory() {
+        super.onLowMemory()
+        if(!sessionUiVisible)releaseUiCaches?.invoke()
+    }
     override fun onStart() {
         super.onStart()
         appVisible=true
+        sessionUiVisible=true
         if(lastObservedMonitorActive)notifyAppVisible(true)
         else lifecycleScope.launch {
             // Reconcile on a worker, never synchronously through a Binder
@@ -387,7 +405,11 @@ class MainActivity : ComponentActivity() {
     }
     override fun onStop() {
         appVisible=false
+        sessionUiVisible=false
         notifyAppVisible(false)
+        // A game can consume memory immediately after the user leaves.
+        // Never drop state required to complete a pending SAF export.
+        releaseUiCaches?.invoke()
         super.onStop()
     }
 
@@ -637,6 +659,33 @@ class MainActivity : ComponentActivity() {
             var pngRequest by rememberSaveable { mutableStateOf(null as String?) }
             // DUKO requests and progress live in a single Activity-scoped
             // ViewModel queue, not in independent overlapping busy flags.
+            // Large session arrays must not remain pinned while Eden plays.
+            // Preserve saved selections, but invalidate loaded IDs so the
+            // original SQLite data is reloaded when the Activity resumes.
+            SideEffect {
+                releaseUiCaches = {
+                    val anyLegacyExportPending=exportId>0L || reportAId>0L ||
+                        reportBId>0L || segmentTextRequest!=null ||
+                        segmentCsvRequest!=null || abWindowExport!=null ||
+                        pngRequest!=null
+                    if(UiCacheReleasePolicy.permitted(
+                            sessionUiVisible,
+                            dukoQueue.busy || dukoQueue.current!=null,
+                            anyLegacyExportPending)) {
+                        detailPoints=emptyList()
+                        detailReport=null
+                        detailLoadedId=0L
+                        detailLoadedCount=-1
+                        firstPoints=emptyList()
+                        secondPoints=emptyList()
+                        firstLoadedId=0L
+                        secondLoadedId=0L
+                    }
+                }
+            }
+            DisposableEffect(Unit) {
+                onDispose { releaseUiCaches=null }
+            }
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -1049,19 +1098,34 @@ class MainActivity : ComponentActivity() {
                     compareTechnical=false
                 }
             }
-            LaunchedEffect(page, status.running) {
+            LaunchedEffect(page, status.running, sessionUiVisible) {
+                if(!sessionUiVisible)return@LaunchedEffect
                 if(page=="Live" && !status.running)
-                    sessionList=withContext(Dispatchers.IO){database.list(1)}
-                if (page == "Sessions" || page == "Compare") {
-                    sessionList = withContext(Dispatchers.IO) { database.list() }
+                    guardedUiDatabaseRead(this@MainActivity,"live recent session") {
+                        database.list(1)
+                    }.fold(onSuccess={sessionList=it},onFailure={
+                        message="Could not load recent recording: "+it.javaClass.simpleName
+                    })
+                if(page=="Sessions" || page=="Compare") {
+                    guardedUiDatabaseRead(this@MainActivity,"session list") {
+                        database.list()
+                    }.fold(onSuccess={sessionList=it},onFailure={
+                        message="Could not load sessions; existing list retained: "+
+                            it.javaClass.simpleName
+                    })
                     if(page=="Compare")
-                        linkedPairs=withContext(Dispatchers.IO){database.links()}
+                        guardedUiDatabaseRead(this@MainActivity,"session links") {
+                            database.links()
+                        }.fold(onSuccess={linkedPairs=it},onFailure={
+                            message="Could not load links: "+it.javaClass.simpleName
+                        })
                 }
             }
             // Changing note/driver/profile never rereads recorded telemetry.
             // If a recording gains new persisted samples while the page stays
             // open, the changed count explicitly invalidates the old sample set.
-            LaunchedEffect(page,detailedId,sessionList) {
+            LaunchedEffect(page,detailedId,sessionList,sessionUiVisible) {
+                if(!sessionUiVisible)return@LaunchedEffect
                 val requestedId=detailedId
                 val rowCount=sessionList.firstOrNull{it.id==requestedId}?.count
                 if(SessionSampleCachePolicy.reload(
@@ -1071,42 +1135,66 @@ class MainActivity : ComponentActivity() {
                     detailLoadedId=0L
                     detailLoadedCount=-1
                     detailPoints=emptyList()
-                    val loaded=withContext(Dispatchers.IO){
+                    guardedUiDatabaseRead(this@MainActivity,"session points") {
                         val points=database.points(requestedId)
                         val count=database.sessionById(requestedId)?.count
                             ?:points.size
                         points to count
-                    }
-                    if(page=="Sessions" && detailedId==requestedId) {
-                        detailPoints=loaded.first
-                        detailLoadedCount=loaded.second
-                        detailLoadedId=requestedId
-                    }
+                    }.fold(onSuccess={loaded->
+                        if(sessionUiVisible && page=="Sessions" &&
+                            detailedId==requestedId) {
+                            detailPoints=loaded.first
+                            detailLoadedCount=loaded.second
+                            detailLoadedId=requestedId
+                        }
+                    },onFailure={
+                        message="Could not load recording #"+requestedId+
+                            ": "+it.javaClass.simpleName
+                    })
                 }
             }
             LaunchedEffect(page,detailedId,detailLoadedId,detailPoints,
-                skipWarmUp,sessionList) {
+                skipWarmUp,sessionList,sessionUiVisible) {
+                if(!sessionUiVisible)return@LaunchedEffect
                 val requestedId=detailedId
                 if(page=="Sessions" && requestedId>0L &&
                     detailLoadedId==requestedId) {
                     val session=sessionList.firstOrNull{it.id==requestedId}
-                        ?:withContext(Dispatchers.IO){
+                        ?:guardedUiDatabaseRead(this@MainActivity,"session detail"){
                             database.sessionById(requestedId)
+                        }.getOrElse {
+                            message="Cannot refresh session detail: "+
+                                it.javaClass.simpleName
+                            null
                         }
                     if(session!=null) {
                         val points=detailPoints
                         val report=withContext(Dispatchers.Default){
-                            BenchmarkAnalyzer.analyze(
-                                session,points,if(skipWarmUp)30 else 0)
+                            // Analysis errors must not kill the Compose owner.
+                            // Cancellation is still delivered to LaunchedEffect.
+                            try {
+                                Result.success(BenchmarkAnalyzer.analyze(
+                                    session,points,if(skipWarmUp)30 else 0))
+                            }catch(e:kotlinx.coroutines.CancellationException){
+                                throw e
+                            }catch(e:Exception){
+                                Result.failure(e)
+                            }
                         }
-                        if(page=="Sessions" && detailedId==requestedId &&
-                            detailLoadedId==requestedId)
-                            detailReport=report
+                        report.fold(onSuccess={ready->
+                            if(sessionUiVisible && page=="Sessions" &&
+                                detailedId==requestedId &&
+                                detailLoadedId==requestedId)
+                                detailReport=ready
+                        },onFailure={
+                            message="Session analysis unavailable: "+
+                                it.javaClass.simpleName
+                        })
                     }
                 }
             }
-            LaunchedEffect(page, firstId, secondId) {
-                if(page=="Compare") {
+            LaunchedEffect(page, firstId, secondId,sessionUiVisible) {
+                if(sessionUiVisible && page=="Compare") {
                     val requestedA=firstId
                     val requestedB=secondId
                     val dataA=when {
@@ -1129,20 +1217,24 @@ class MainActivity : ComponentActivity() {
                         secondLoadedId=0L
                         secondPoints=emptyList()
                     }
-                    val result=withContext(Dispatchers.IO) {
+                    guardedUiDatabaseRead(this@MainActivity,"compare session points") {
                         val a=dataA ?: database.points(requestedA)
                         val b=dataB ?: database.points(requestedB)
                         a to b
-                    }
-                    // The coroutine is cancelled on selection change; guard
-                    // against stale query results racing a newer selection.
-                    if(page=="Compare" && firstId==requestedA &&
-                        secondId==requestedB) {
-                        firstPoints=result.first
-                        secondPoints=result.second
-                        firstLoadedId=requestedA
-                        secondLoadedId=requestedB
-                    }
+                    }.fold(onSuccess={result->
+                        // Also guard against UI backgrounding during an I/O
+                        // read and selection changes while the worker ran.
+                        if(sessionUiVisible && page=="Compare" &&
+                            firstId==requestedA && secondId==requestedB) {
+                            firstPoints=result.first
+                            secondPoints=result.second
+                            firstLoadedId=requestedA
+                            secondLoadedId=requestedB
+                        }
+                    },onFailure={
+                        message="Could not load comparison points: "+
+                            it.javaClass.simpleName
+                    })
                 }
             }
 
