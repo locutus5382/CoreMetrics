@@ -2,6 +2,7 @@ package com.locutus5382.coremetrics.monitor
 
 import android.app.ActivityManager
 import com.locutus5382.coremetrics.data.SessionStore
+import com.locutus5382.coremetrics.data.ProcessSessionStoreOwner
 import org.json.JSONObject
 import android.content.Context
 import android.content.Intent
@@ -72,9 +73,8 @@ internal data class HudOptions(
             // Small shared SQL snapshot; legacy per-process preferences are
             // only a migration fallback when no HUD snapshot exists yet.
             val stored=runCatching {
-                SessionStore(context).use { db ->
-                    db.hudOptionsJson()?.let { JSONObject(it) }
-                }
+                ProcessSessionStoreOwner.get(context)
+                    .hudOptionsJson()?.let { JSONObject(it) }
             }.getOrNull()
             fun f(k:String,fallback:Float):Float {
                 val legacy=p.getFloat(k,fallback)
@@ -162,9 +162,8 @@ internal data class HudOptions(
             .put("hud_batteryTemp",showBatteryTemp)
             .put(ADAPTIVE,adaptiveColors)
         return runCatching {
-            SessionStore(context).use { db ->
-                db.saveHudOptionsJson(json.toString())
-            }
+            ProcessSessionStoreOwner.get(context)
+                .saveHudOptionsJson(json.toString())
         }.getOrDefault(false)
     }
     fun selectedCount() = listOf(showCpuTemp,showGpuTemp,showCpuLoad,
