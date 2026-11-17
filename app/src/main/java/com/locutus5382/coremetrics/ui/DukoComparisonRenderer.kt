@@ -30,22 +30,29 @@ internal object DukoComparisonRenderer {
     private val BORDER=Color.rgb(224,232,239)
     private val PAPER=Color.rgb(248,251,253)
 
-    fun png(result:DukoComparisonInsight.Result,out:OutputStream) {
+    fun png(result:DukoComparisonInsight.Result,out:OutputStream,
+            checkpoint:()->Unit={}) {
+        checkpoint()
         val bitmap=Bitmap.createBitmap(WIDTH,HEIGHT,Bitmap.Config.ARGB_8888)
         try {
             summary(Canvas(bitmap),result)
+            checkpoint()
             check(bitmap.compress(Bitmap.CompressFormat.PNG,100,out)) {
                 "Failed to encode DUKO comparison PNG"
             }
+            checkpoint()
             out.flush()
         }finally {bitmap.recycle()}
     }
 
-    fun pdf(result:DukoComparisonInsight.Result,out:OutputStream) {
+    fun pdf(result:DukoComparisonInsight.Result,out:OutputStream,
+            checkpoint:()->Unit={}) {
+        checkpoint()
         val pdf=PdfDocument()
         try {
             var pageNo=0
             fun page(draw:(Canvas)->Unit) {
+                checkpoint()
                 val page=pdf.startPage(PdfDocument.PageInfo.Builder(
                     PAGE_W,PAGE_H,++pageNo).create())
                 try {
@@ -68,7 +75,9 @@ internal object DukoComparisonRenderer {
             result.warnings.chunked(10).forEachIndexed{index,warnings ->
                 page{warningPage(it,result,index,warnings)}
             }
+            checkpoint()
             pdf.writeTo(out)
+            checkpoint()
             out.flush()
         }finally {pdf.close()}
     }
