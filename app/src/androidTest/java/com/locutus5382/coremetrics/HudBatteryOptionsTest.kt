@@ -45,16 +45,23 @@ class HudBatteryOptionsTest {
             // The old rounded-card choice remains loadable and normalizes to
             // the new Compact Glass Card; one canonical value is persisted.
             val migrated=HudOptions.addExtras(Intent(),chosen.copy(layout="pro"))
-            assertEquals(HudLayoutPolicy.GLASS_CARD,
+            assertEquals(HudLayoutPolicy.TACTICAL,
                 HudOptions.from(sandbox,migrated).layout)
-            val card=chosen.copy(layout=HudLayoutPolicy.GLASS_CARD)
+            val card=chosen.copy(layout=HudLayoutPolicy.TACTICAL)
             assertTrue(card.save(sandbox))
-            assertEquals(HudLayoutPolicy.GLASS_CARD,HudOptions.from(sandbox).layout)
+            assertEquals(HudLayoutPolicy.TACTICAL,HudOptions.from(sandbox).layout)
             // Ribbon survives the SQL snapshot used across UI/:monitor/tile.
-            val ribbon=chosen.copy(layout=HudLayoutPolicy.RIBBON)
+            val ribbon=chosen.copy(layout=HudLayoutPolicy.STRIP)
             assertTrue(ribbon.save(sandbox))
-            assertEquals(HudLayoutPolicy.RIBBON,HudOptions.from(sandbox).layout)
-            assertEquals(HudLayoutPolicy.PILL,
+            assertEquals(HudLayoutPolicy.STRIP,HudOptions.from(sandbox).layout)
+            for(theme in HudLayoutPolicy.themes) {
+                val candidate=chosen.copy(layout=theme)
+                assertTrue(candidate.save(sandbox))
+                assertEquals(theme,HudOptions.from(sandbox).layout)
+                val intent=HudOptions.addExtras(Intent(),candidate)
+                assertEquals(theme,HudOptions.from(sandbox,intent).layout)
+            }
+            assertEquals(HudLayoutPolicy.STRIKER,
                 HudLayoutPolicy.normalize("unrecognized-layout"))
         }finally {
             val editor=prefs.edit().clear()
