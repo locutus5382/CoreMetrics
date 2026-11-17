@@ -5,14 +5,18 @@ import com.locutus5382.coremetrics.data.SessionStore
 import org.json.JSONObject
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.InsetDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.text.Layout
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -365,7 +369,7 @@ internal class RecorderHud(private val context:Context) {
         val oldY=main.y+((root?.height?:dp(60f))-dp(48f))/2
         val handle=styledLabel("",11f).apply {
             gravity=Gravity.CENTER
-            background=FlatLockChipDrawable(locked=true)
+            background=InsetDrawable(FlatLockChipDrawable(locked=true),dp(7f))
             contentDescription="Unlock HUD; make the telemetry controls touchable"
             isClickable=true
             isFocusable=false
@@ -748,7 +752,7 @@ internal class RecorderHud(private val context:Context) {
         }
         bottomActions.addView(dragControl)
         lockControl=action(""){onLock?.invoke()}.apply {
-            background=FlatLockChipDrawable(locked=false)
+            background=InsetDrawable(FlatLockChipDrawable(locked=false),dp(4f))
             setPadding(0,0,0,0)
             minimumWidth=dp(38f)
             minimumHeight=dp(38f)
@@ -796,7 +800,7 @@ internal class RecorderHud(private val context:Context) {
         // All layouts retain exactly the same telemetry TextView and controls.
         val heading=styledLabel("COREMETRICS  /  TELEMETRY",10f).apply {
             setTextColor(Color.rgb(135,231,255))
-            letterSpacing=.11f
+            letterSpacing=.15f
             typeface=Typeface.DEFAULT_BOLD
             setPadding(dp(10f),dp(7f),dp(8f),dp(1f))
             visibility=View.GONE
@@ -1024,25 +1028,25 @@ internal class RecorderHud(private val context:Context) {
             }
             val viewport=(windowWidth()-dp(12f)).coerceAtLeast(dp(220f))
             val controlWidth=if(locked)dp(48f) else when(theme) {
-                HudLayoutPolicy.STRIKER->dp(120f)
-                HudLayoutPolicy.TACTICAL->dp(84f)
+                HudLayoutPolicy.STRIKER->dp(105f)
+                HudLayoutPolicy.TACTICAL->dp(78f)
                 HudLayoutPolicy.DUKO->0
                 else->dp(95f)
             }
             val desired=when(theme) {
-                HudLayoutPolicy.STRIKER->dp(470f*scale)
-                HudLayoutPolicy.TACTICAL->dp(355f*scale)
-                HudLayoutPolicy.DUKO->dp(232f*scale)
+                HudLayoutPolicy.STRIKER->dp(385f*scale)
+                HudLayoutPolicy.TACTICAL->dp(305f*scale)
+                HudLayoutPolicy.DUKO->dp(228f*scale)
                 HudLayoutPolicy.GHOST->(measure+controlWidth+dp(18f))
                     .coerceAtLeast(dp(200f))
-                HudLayoutPolicy.STRIP->(measure+controlWidth+dp(22f))
-                    .coerceAtLeast(dp(430f*scale))
+                HudLayoutPolicy.STRIP->(measure+controlWidth+dp(14f))
+                    .coerceAtLeast(dp(300f*scale))
                 else->dp(320f)
             }
             val maxWidth=when(theme) {
-                HudLayoutPolicy.STRIKER->minOf(viewport,dp(520f))
-                HudLayoutPolicy.TACTICAL->minOf(viewport,dp(420f))
-                HudLayoutPolicy.DUKO->minOf(viewport,dp(295f))
+                HudLayoutPolicy.STRIKER->minOf(viewport,dp(440f))
+                HudLayoutPolicy.TACTICAL->minOf(viewport,dp(355f))
+                HudLayoutPolicy.DUKO->minOf(viewport,dp(278f))
                 HudLayoutPolicy.GHOST->minOf(viewport,dp(800f))
                 else->minOf(viewport,(windowWidth()*.95f).roundToInt())
             }
@@ -1182,18 +1186,18 @@ internal class RecorderHud(private val context:Context) {
         val lens=theme==HudLayoutPolicy.DUKO
         cardHeading?.apply {
             visibility=if(tactical && !collapsed)View.VISIBLE else View.GONE
-            text=if(recording)"COREMETRICS / LIVE TELEMETRY"
+            text=if(recording)"COREMETRICS  /  TELEMETRY"
                 else "COREMETRICS / READY"
             setTextColor(Color.rgb(93,215,245))
             setPadding(dp(9f),dp(5f),dp(8f),dp(1f))
         }
-        frame.background=if(collapsed || ghost) null else
+        frame.background=if(collapsed) null else
             HudFrameDrawable(theme,opts.opacity*(if(locked).90f else 1f),
                 context.resources.displayMetrics.density)
-        frame.setPadding(if(collapsed||ghost)0 else dp(if(lens)11f else 7f),
-            if(collapsed||ghost)0 else dp(if(lens)9f else 5f),
-            if(collapsed||ghost)0 else dp(if(lens)11f else 7f),
-            if(collapsed||ghost)0 else dp(if(lens)9f else 5f))
+        frame.setPadding(if(collapsed)0 else dp(if(ghost)3f else if(lens)9f else 6f),
+            if(collapsed)0 else dp(if(ghost)2f else if(lens)7f else 4f),
+            if(collapsed)0 else dp(if(ghost)3f else if(lens)9f else 6f),
+            if(collapsed)0 else dp(if(ghost)2f else if(lens)7f else 4f))
         pill?.visibility=if(collapsed)View.GONE else View.VISIBLE
         dockTab?.visibility=if(collapsed)View.VISIBLE else View.GONE
         drawer?.visibility=View.GONE
@@ -1205,18 +1209,18 @@ internal class RecorderHud(private val context:Context) {
             typeface=when {
                 lens||strip->Typeface.MONOSPACE
                 striker->Typeface.create("sans-serif-condensed",
-                    Typeface.BOLD)
+                    Typeface.NORMAL)
                 else->Typeface.create("sans-serif-medium",Typeface.NORMAL)
             }
             setTextColor(Color.rgb(239,247,255))
-            setShadowLayer(if(ghost)dp(2f).toFloat() else 0f,
+            setShadowLayer(if(ghost)dp(3f).toFloat() else 0f,
                 0f,if(ghost)dp(1f).toFloat() else 0f,Color.BLACK)
             setPadding(dp(if(ghost)1f else if(lens)3f else 6f),
                 dp(if(ghost)2f else 5f),
                 dp(if(ghost)1f else if(lens)3f else 6f),
                 dp(if(ghost)2f else 5f))
             setSingleLine(false)
-            maxLines=if(lens)9 else if(tactical)4 else if(strip)5 else 6
+            maxLines=if(lens)9 else if(tactical)4 else if(strip)4 else 6
             ellipsize=null
         }
         // Tactical has three substantive, independent labelled data blocks.
