@@ -39,7 +39,7 @@ class DukoComparisonReportTest {
         }
         return SessionStore(wrapped) to name
     }
-    private fun csv(driver:String,start:Long):String=buildString {
+    private fun csv(driver:String,start:Long,gpuLoad:Int=60):String=buildString {
         append("game_label,configuration,status,sample_epoch_ms,")
         append("cpu_temp_c,gpu_temp_c,cpu_load_pct,gpu_load_pct,")
         append("battery_net_w,battery_power_status,gpu_telemetry_source,")
@@ -48,7 +48,9 @@ class DukoComparisonReportTest {
         for(i in 0..30) {
             append("Hades,Stock,COMPLETED,")
             append(start+i*5_000L)
-            append(",54.0,43.0,40,60,4.0,DISCHARGING,")
+            append(",54.0,43.0,40,")
+            append(gpuLoad)
+            append(",4.0,DISCHARGING,")
             append("LOAD:KGSL_PERCENT VERIFIED,")
             append("CURRENT:BATTERY_PROPERTY_CURRENT_NOW,")
             append("AYN,Odin 2 Portal,odin2portal,33,")
@@ -109,12 +111,22 @@ class DukoComparisonReportTest {
         val (db,name)=store()
         try {
             val first=db.importCsv(StringReader(csv("T30",1_700_000_000_000L)))
-            val second=db.importCsv(StringReader(csv("StevenMXZ",1_700_100_000_000L)))
+            val second=db.importCsv(StringReader(csv(
+                "StevenMXZ",1_700_100_000_000L,gpuLoad=25)))
             val report=DukoComparisonLoader.build(db,listOf(first,second),
                 first,CompareStudioAnalysis.TestedVariable.DRIVER)
             assertEquals(2,report.runs.size)
             assertEquals(first,report.baselineId)
             assertEquals(9,report.rows.size)
+            // Both sessions reuse the SAME nine primitive percentile buffers,
+            // but the first run's summary must not leak into the second.
+            val firstGpu=report.runs[0].report.stat(
+                com.locutus5382.coremetrics.analysis.DukoSessionInsight.Metric.GPU_LOAD)
+            val secondGpu=report.runs[1].report.stat(
+                com.locutus5382.coremetrics.analysis.DukoSessionInsight.Metric.GPU_LOAD)
+            assertEquals(60.0,firstGpu.p50!!,0.0001)
+            assertEquals(25.0,secondGpu.p50!!,0.0001)
+            assertEquals(25.0,secondGpu.p95!!,0.0001)
             assertEquals(31L,db.storedSampleCount(first))
             assertEquals(31L,db.storedSampleCount(second))
             // Preview retains one canonical String for repeated source tags;
