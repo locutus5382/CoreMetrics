@@ -110,15 +110,9 @@ jobs:
           # One explicit bounded test subset per fresh API 33 emulator.
           # Collect a best-effort logcat while the emulator still exists
           # after an instrumentation abort; no synthetic pass on crash.
-          script: |
-            mkdir -p app/build/outputs/ci-emulator
-            adb logcat -c || true
-            set +e
-            timeout --signal=TERM --kill-after=20s 20m gradle :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="${{ matrix.classes }}" --no-daemon
-            result=$?
-            timeout 12s adb logcat -d -t 3000 > app/build/outputs/ci-emulator/logcat.txt 2>&1 || true
-            adb devices -l > app/build/outputs/ci-emulator/devices.txt 2>&1 || true
-            exit "$result"
+          # Entire test/cleanup sequence runs in one bash process.
+          # The emulator action executes each script line separately.
+          script: bash scripts/ci-android-instrumentation.sh "${{ matrix.classes }}"
       - name: Preserve Android instrumentation reports
         if: always()
         uses: actions/upload-artifact@v4
