@@ -170,8 +170,32 @@ object DukoSessionInsight {
         private var candidateCap:String?=null
         private var candidateCount=0
         private var priorPsiHigh=false
-        private val recentGpu=ArrayDeque<Pair<Long,Double?>>()
-        private val recentCore=ArrayDeque<Pair<Long,Double?>>()
+        // Sliding ~120s window: maintain two counters instead of creating
+        // a new mapNotNull list on every 2s/5s sample (up to 250k rows).
+        private class UtilWindow {
+            val samples=ArrayDeque<Pair<Long,Double?>>()
+            var valid=0
+            var high=0
+            fun add(t:Long,v:Double?) {
+                samples.addLast(t to v)
+                if(v!=null) {
+                    valid++
+                    if(v>=95.0)high++
+                }
+                while(samples.isNotEmpty() && samples.first.first<t-120_000L){
+                    val removed=samples.removeFirst().second
+                    if(removed!=null) {
+                        valid--
+                        if(removed>=95.0)high--
+                    }
+                }
+            }
+            fun clear() {
+                samples.clear();valid=0;high=0
+            }
+        }
+        private val recentGpu=UtilWindow()
+        private val recentCore=UtilWindow()
         private val highEmitted=mutableSetOf<String>()
         private var previousThermal:Int?=null
 
@@ -182,19 +206,17 @@ object DukoSessionInsight {
                 p.timeMs-bounds.firstMs,title,detail,evidence)
         }
 
-        private fun sustained(queue:ArrayDeque<Pair<Long,Double?>>,
+        private fun sustained(window:UtilWindow,
             name:String,p:SessionStore.ReportRow,v:Double?) {
-            queue.addLast(p.timeMs to v)
-            while(queue.isNotEmpty() && queue.first.first<p.timeMs-120_000L)
-                queue.removeFirst()
+            window.add(p.timeMs,v)
+            val queue=window.samples
             if(name in highEmitted || queue.size<3)return
             if(queue.last.first-queue.first.first<120_000L-cadence)return
-            val valid=queue.mapNotNull{it.second}
             val expected=max(2,(120_000L/cadence).toInt())
             // A mostly absent source cannot satisfy a 95%-of-time rule.
             // Sample coverage is an approximation, not continuous-frame proof.
-            if(valid.size<expected*0.95)return
-            if(valid.count{it>=95.0}/valid.size.toDouble()>=0.95) {
+            if(window.valid<expected*0.95)return
+            if(window.valid>0 && window.high/window.valid.toDouble()>=0.95) {
                 emit(p,name+" sustained high utilization",
                     ">=95% expected sample coverage; >=95% of valid readings "+
                     "at >=95% utilization over ~120s. Game FPS and "+
