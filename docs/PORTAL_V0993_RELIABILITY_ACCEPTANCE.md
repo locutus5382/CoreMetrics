@@ -30,6 +30,9 @@ network, root or Shizuku dependency.
   saved allocation: up to 9 × 250,000 × 8 = 18,000,000 bytes per full
   sample-rich report, excluding headroom and GC overhead. This is an
   allocation estimate, **not** a measured speed/RAM improvement.
+- DUKO cursor streaming reuses the initial COUNT/MIN/MAX bounds instead of
+  running an extra full-index count per recording; visited rows must still
+  exactly match the initial count. The old public callback overload remains.
 - Single-session and 2–5-run loaders accept optional cancellation checks.
   On Android, their document export jobs check cancellation every 512
   samples and between recordings. Do not leave prolonged CPU/SQLite work
