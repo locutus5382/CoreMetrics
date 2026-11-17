@@ -29,7 +29,7 @@ internal object DukoReportLoader {
             session,bounds,db.reportCadenceMs(id))
         var visitedSinceCheck=0
         checkpoint()
-        val visited=db.forEachReportPoint(id){ point ->
+        val visited=db.forEachReportPoint(id,bounds){ point ->
             if(++visitedSinceCheck>=512) {
                 checkpoint()
                 visitedSinceCheck=0
