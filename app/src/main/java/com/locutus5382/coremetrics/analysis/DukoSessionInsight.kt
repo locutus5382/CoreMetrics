@@ -95,17 +95,37 @@ object DukoSessionInsight {
             val span=max(1L,end-start)
             val slot=(((at-start).coerceIn(0L,span).toDouble()/span)*
                 CHART_BUCKETS).toInt().coerceIn(0,CHART_BUCKETS-1)
-            val item=Extreme(at,value,segment)
-            if(minima[slot]==null || value<minima[slot]!!.v)minima[slot]=item
-            if(maxima[slot]==null || value>maxima[slot]!!.v)maxima[slot]=item
+            val isMinimum=minima[slot]?.let { value<it.v }?:true
+            val isMaximum=maxima[slot]?.let { value>it.v }?:true
+            // Most middle-of-bucket samples cannot change either bound.
+            // Do not allocate an Extreme for those discarded readings.
+            if(isMinimum || isMaximum) {
+                val item=Extreme(at,value,segment)
+                if(isMinimum)minima[slot]=item
+                if(isMaximum)maxima[slot]=item
+            }
         }
         fun finish():Chart {
             val items=ArrayList<Trace>(CHART_BUCKETS*2)
-            for(i in 0 until CHART_BUCKETS){
-                listOfNotNull(minima[i],maxima[i])
-                    .distinctBy{it.at to it.v}
-                    .sortedBy{it.at}
-                    .forEach{items+=Trace(it.at-start,it.v,it.segment)}
+            for(i in 0 until CHART_BUCKETS) {
+                val lo=minima[i]
+                val hi=maxima[i]
+                if(lo==null && hi==null)continue
+                // Same duplicate rule as distinctBy(at to v), with the
+                // earliest timestamp first. No list/pair/sort per bucket.
+                if(lo!=null && hi!=null) {
+                    if(lo.at<=hi.at) {
+                        items.add(Trace(lo.at-start,lo.v,lo.segment))
+                        if(lo.at!=hi.at || lo.v!=hi.v)
+                            items.add(Trace(hi.at-start,hi.v,hi.segment))
+                    }else{
+                        items.add(Trace(hi.at-start,hi.v,hi.segment))
+                        items.add(Trace(lo.at-start,lo.v,lo.segment))
+                    }
+                }else{
+                    val only=lo?:hi!!
+                    items.add(Trace(only.at-start,only.v,only.segment))
+                }
             }
             return Chart(metric,items)
         }
