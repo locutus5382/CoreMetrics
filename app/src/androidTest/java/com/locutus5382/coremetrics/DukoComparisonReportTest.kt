@@ -57,6 +57,53 @@ class DukoComparisonReportTest {
         }
     }
 
+    @Test fun fiveSessionPdfPaginatesMatricesAndReadinessWithoutChangingSources() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val (db,name)=store()
+        try {
+            val ids=(0 until 5).map{index->
+                db.importCsv(StringReader(csv(
+                    if(index==0)"T30" else "StevenMXZ_"+index,
+                    1_700_000_000_000L+index*1_000_000L)))
+            }
+            val result=DukoComparisonLoader.build(db,ids,ids[2],
+                CompareStudioAnalysis.TestedVariable.DRIVER)
+            assertEquals(5,result.runs.size)
+            assertEquals(5,result.ids.size)
+            val buffer=ByteArrayOutputStream()
+            DukoComparisonRenderer.pdf(result,buffer)
+            val file=File.createTempFile("duko_five_",".pdf",app.cacheDir)
+            try {
+                file.writeBytes(buffer.toByteArray())
+                ParcelFileDescriptor.open(file,
+                    ParcelFileDescriptor.MODE_READ_ONLY).use{fd->
+                    PdfRenderer(fd).use{renderer->
+                        // 2 summary matrices, original metadata, 3 readiness
+                        // pages, method and evidence/warning pages.
+                        assertTrue("Five-session matrix was not paginated",
+                            renderer.pageCount>=8)
+                        for(i in 0 until renderer.pageCount) {
+                            renderer.openPage(i).use{page->
+                                assertEquals(595,page.width)
+                                assertEquals(842,page.height)
+                                val thumb=Bitmap.createBitmap(595,842,
+                                    Bitmap.Config.ARGB_8888)
+                                try {
+                                    page.render(thumb,null,null,
+                                        PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                }finally {thumb.recycle()}
+                            }
+                        }
+                    }
+                }
+            }finally {file.delete()}
+            ids.forEach {assertEquals(31L,db.storedSampleCount(it))}
+        }finally {
+            db.close()
+            app.deleteDatabase(name)
+        }
+    }
+
     @Test fun databaseToPNGAndMultiPagePdfUsingTwoFullRuns() {
         val app=ApplicationProvider.getApplicationContext<Context>()
         val (db,name)=store()
