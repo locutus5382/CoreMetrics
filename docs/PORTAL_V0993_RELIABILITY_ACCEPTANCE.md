@@ -34,6 +34,9 @@ network, root or Shizuku dependency.
   On Android, their document export jobs check cancellation every 512
   samples and between recordings. Do not leave prolonged CPU/SQLite work
   running after an Activity export is cancelled.
+- Only one DUKO export can run concurrently (single-session or comparison).
+  Reject overlapping picker results and remove their just-created SAF files.
+  DUKO selection chips use LazyRow so only visible items are composed.
 - Existing 12k UI preview remains distinct from 250k complete-session
   analytics. Keep read-only export on Dispatchers.IO, not during REC/HUD.
 
