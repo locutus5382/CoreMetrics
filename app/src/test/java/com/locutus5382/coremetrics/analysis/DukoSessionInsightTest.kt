@@ -117,6 +117,37 @@ class DukoSessionInsightTest {
         assertTrue(r.events.any{it.title=="Recording gap"})
     }
 
+    @Test fun sustainedHighUtilizationIsAQualifiedPatternNotAFpsVerdict() {
+        // Existing 2-minute rule: >=95% of eligible readings >=95% load.
+        // It is system telemetry, not an attribution to game bottlenecks.
+        val start=1_000_000L
+        val rows=(0..30).map{i ->
+            p(start+i*5_000L).copy(
+                gpuLoad=if(i==0)50.0 else 97.0,
+                busiestCorePct=96.0)
+        }
+        val result=report(rows)
+        assertTrue(result.events.any {
+            it.title=="GPU sustained high utilization" &&
+                it.evidence==DukoSessionInsight.Evidence.PATTERN
+        })
+        assertTrue(result.events.any {
+            it.title=="Busiest core sustained high utilization" &&
+                it.evidence==DukoSessionInsight.Evidence.PATTERN
+        })
+        assertTrue(result.findings.any {it.text.contains("does not establish game FPS")})
+        assertFalse(result.findings.any {it.text.contains("bottleneck proven")})
+    }
+
+    @Test fun missingGpuLoadCannotProduceSustainedGpuAlert() {
+        val rows=(0..30).map{i ->
+            p(1_000_000L+i*5_000L).copy(gpuLoad=null)
+        }
+        val result=report(rows)
+        assertFalse(result.events.any {it.title.startsWith("GPU sustained")})
+        assertNull(result.stat(DukoSessionInsight.Metric.GPU_LOAD).p50)
+    }
+
     @Test fun changingSourceCountOrOrderRejectsMisleadingReport() {
         val acc=DukoSessionInsight.Accumulator(session(8),
             SessionStore.ReportBounds(8,1000,36_000),5000)
