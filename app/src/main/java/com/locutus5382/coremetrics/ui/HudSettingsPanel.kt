@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontFamily
+import com.locutus5382.coremetrics.monitor.HudReadoutFormatter
 import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.monitor.HudLayoutPolicy
 
@@ -50,8 +52,8 @@ internal fun HudSettingsPanel(
         Text("CM HUD tile shows/hides the HUD without stopping active recording. "+
             "Use only one CoreMetrics variant at a time. "+
             "Start Eden first, open HUD from Quick Settings, then tap REC. " +
-            "Drag the expanded HUD to a screen corner to park it. " +
-            "Tap ⇥ to collapse deliberately; tap the tab to expand. " +
+            "Drag a metric zone to reposition it, or swipe to the left/right " +
+            "edge to auto-collapse. Tap the tiny edge indicator to expand. " +
             "Configure the HUD metrics and appearance here, not during gameplay. " +
             "Standby performs no telemetry sampling.",
             color=coreSecondary,style=MaterialTheme.typography.bodySmall)
@@ -115,145 +117,144 @@ internal fun HudSettingsPanel(
                     onClick={onChange(options.copy(size=key))},label={Text(label)})
             }
         }
-        Text("HUD LAYOUT",color=iceBlue,
+        Text("HUD DESIGN LAB · FIVE THEMES",color=iceBlue,
             style=MaterialTheme.typography.labelLarge)
+        Text("Choose the in-game presentation. The same recorder, REC/STOP, " +
+            "telemetry and overlay owner serve every theme. Legacy themes " +
+            "are migrated to Striker / Tactical Card / Cinema Strip.",
+            color=coreSecondary,style=MaterialTheme.typography.bodySmall)
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            listOf(
-                HudLayoutPolicy.PILL to "Classic pill · default",
-                HudLayoutPolicy.GLASS_CARD to "Compact Glass Card",
-                HudLayoutPolicy.RIBBON to "Horizontal Telemetry Ribbon"
-            ).forEach {(id,label)->
-                FilterChip(selected=HudLayoutPolicy.normalize(options.layout)==id,
+            HudLayoutPolicy.themes.forEach {id ->
+                FilterChip(
+                    selected=HudLayoutPolicy.normalize(options.layout)==id,
                     onClick={onChange(options.copy(layout=id))},
-                    label={Text(label)})
+                    label={Text(HudLayoutPolicy.label(id))})
             }
         }
-        Text(when(HudLayoutPolicy.normalize(options.layout)) {
-            HudLayoutPolicy.GLASS_CARD ->
-                "Stacked glass panel with cyan outline, slim telemetry header and " +
-                "REC/STOP controls below the readings. Best for readability."
-            HudLayoutPolicy.RIBBON ->
-                "Low-profile horizontal telemetry strip for landscape gameplay. " +
-                "On narrow screens it wraps rather than hiding selected readings."
-            else ->
-                "Your original compact floating HUD pill. Preserved as default."
-        },color=coreSecondary,style=MaterialTheme.typography.bodySmall)
-        Text("All three share the same recorder, metrics, lock/unlock and " +
-            "dock controls. Changing layout never restarts REC or adds an overlay.",
-            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+        val theme=HudLayoutPolicy.normalize(options.layout)
+        Text(HudLayoutPolicy.description(theme),
+            color=coreSecondary,style=MaterialTheme.typography.bodySmall)
 
-        // Visual-only preview: fixed example numbers, no extra sensor polling.
-        val previewLayout=HudLayoutPolicy.normalize(options.layout)
-        val isCard=previewLayout==HudLayoutPolicy.GLASS_CARD
-        val isRibbon=previewLayout==HudLayoutPolicy.RIBBON
-        val previewScale=when(options.size) {
-            "small"->.82f
-            "large"->1.20f
-            else->1f
-        }
-        val exampleReadings=buildList {
-            if(options.showCpuTemp)add("CPU T 52.3°C")
-            if(options.showGpuTemp)add("GPU T 44.1°C")
-            if(options.showCpuLoad)add("CPU % 42%")
-            if(options.showGpuLoad)add("GPU % 58%")
-            if(options.showRam)add("RAM 5.9 GiB")
-            if(options.showPower)add("BAT 4.2 W")
-            if(options.showBatteryTemp)add("BAT T 35.2°C")
-        }
-        val demoText=buildString {
-            if(exampleReadings.isEmpty())append("REC · no metrics selected")
-            exampleReadings.forEachIndexed {index,value ->
-                append(HudLayoutPolicy.divider(previewLayout,index,
-                    exampleReadings.size))
-                append(value)
-            }
-        }
-        val previewShape=RoundedCornerShape(when(previewLayout) {
-            HudLayoutPolicy.GLASS_CARD -> 16.dp
-            HudLayoutPolicy.RIBBON -> 12.dp
-            else -> 23.dp
-        })
-        val previewGlassColors=when(previewLayout) {
-            HudLayoutPolicy.GLASS_CARD -> listOf(
-                Color(0xFF071428).copy(alpha=opacityDraft),
-                Color(0xFF1B567C).copy(alpha=opacityDraft),
-                Color(0xFF0B2344).copy(alpha=opacityDraft))
-            HudLayoutPolicy.RIBBON -> listOf(
-                Color(0xFF051326).copy(alpha=opacityDraft),
-                Color(0xFF163450).copy(alpha=opacityDraft))
-            else -> listOf(
-                Color(0xFF071128).copy(alpha=opacityDraft),
-                Color(0xFF1A386B).copy(alpha=opacityDraft))
-        }
+        // Fixed, illustrative values; NEVER initiates device sampling or
+        // report preparation. The overlay uses the exact same text model.
+        val demo=HudReadoutFormatter.render(theme,
+            HudReadoutFormatter.Values(
+                cpuTemp=if(options.showCpuTemp)"43.0 "+if(HudLayoutPolicy.lens(theme))
+                    "C" else "°C" else null,
+                gpuTemp=if(options.showGpuTemp)"39.8 "+if(HudLayoutPolicy.lens(theme))
+                    "C" else "°C" else null,
+                cpuUse=if(options.showCpuLoad)"30 %" else null,
+                gpuUse=if(options.showGpuLoad)"38 %" else null,
+                ram=if(options.showRam)"6.2 G" else null,
+                power=if(options.showPower)"3.8 W" else null,
+                batteryTemp=if(options.showBatteryTemp)"25.0 C" else null
+            ),recording=true)
+        val shape=RoundedCornerShape(
+            if(HudLayoutPolicy.lens(theme))0.dp
+            else if(theme==HudLayoutPolicy.STRIP)5.dp else 10.dp)
+        val ghost=theme==HudLayoutPolicy.GHOST
+        val lens=HudLayoutPolicy.lens(theme)
+        val tactical=theme==HudLayoutPolicy.TACTICAL
+        val striker=theme==HudLayoutPolicy.STRIKER
         Column(Modifier.fillMaxWidth().pureGlass(25).padding(12.dp),
-            verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("LAYOUT PREVIEW · ILLUSTRATIVE VALUES, NOT LIVE READINGS",
+            verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            Text("IN-GAME PREVIEW · FIXED DEMONSTRATION VALUES",
                 color=iceBlue,style=MaterialTheme.typography.labelSmall)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement=Arrangement.End) {
-                val previewModifier=Modifier
-                    .widthIn(min=if(isRibbon)350.dp else 245.dp,
-                        max=if(isRibbon)690.dp else if(isCard)415.dp else 455.dp)
-                    .background(Brush.linearGradient(previewGlassColors),previewShape)
-                    .border(1.dp,Color(0xB0CEE9FA),previewShape)
-                    .padding(horizontal=11.dp,vertical=if(isCard)9.dp else 7.dp)
-                if(isCard) {
-                    Column(previewModifier,
-                        verticalArrangement=Arrangement.spacedBy(7.dp)) {
-                        Text("COREMETRICS  /  LIVE TELEMETRY",
-                            color=Color(0xFF87E7FF),
-                            fontSize=10.sp,fontWeight=FontWeight.Bold,
-                            letterSpacing=1.sp)
-                        Text(demoText,color=coreText,
-                            fontSize=(12.5f*previewScale).sp,
-                            lineHeight=(18f*previewScale).sp)
-                        HorizontalDivider(color=Color(0x35CEE9FA))
+                val bg=if(lens)listOf(Color(0xED182535),Color(0xB01E3548))
+                    else if(striker)listOf(Color(0xE2071328),Color(0xC9104967))
+                    else listOf(Color(0xE208192B),Color(0xBA174365))
+                val borderColor=when {
+                    ghost->Color.Transparent
+                    lens->Color(0xB9DEEDF5)
+                    else->Color(0xFF55CBED)
+                }
+                val panel=Modifier
+                    .widthIn(min=if(theme==HudLayoutPolicy.STRIP)390.dp
+                        else if(striker)340.dp else 200.dp,
+                        max=if(theme==HudLayoutPolicy.STRIP)750.dp
+                        else if(striker)480.dp else 390.dp)
+                    .then(if(ghost)Modifier else
+                        Modifier.background(Brush.linearGradient(bg),shape)
+                            .border(1.dp,borderColor,shape))
+                    .padding(horizontal=if(ghost)3.dp else 12.dp,
+                        vertical=if(ghost)2.dp else 9.dp)
+                Column(panel,
+                    verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                    if(tactical)
+                        Text("COREMETRICS / LIVE TELEMETRY  ● REC",
+                            color=Color(0xFF63D6EC),fontSize=10.sp)
+                    if(striker){
+                        Row(horizontalArrangement=Arrangement.spacedBy(14.dp)) {
+                            Text(demo.primary,
+                                color=Color(0xFFF3F9FF),fontSize=12.sp,
+                                lineHeight=17.sp,
+                                fontWeight=FontWeight.SemiBold)
+                            Text(demo.secondary,
+                                color=Color(0xFFB9E6F2),fontSize=12.sp,
+                                lineHeight=17.sp)
+                            Text("● STOP 25:00\n↔ DRAG  [LOCK]",
+                                color=Color(0xFFFF8994),fontSize=10.sp,
+                                lineHeight=17.sp)
+                        }
+                    }else if(tactical){
+                        listOf(demo.primary,demo.secondary,demo.tertiary)
+                            .filter{it.isNotBlank()}.forEach {value->
+                                Box(Modifier.fillMaxWidth()
+                                    .background(Color(0x44142840),shape)
+                                    .padding(6.dp)) {
+                                    Text(value,color=Color.White,fontSize=12.sp,
+                                        lineHeight=16.sp)
+                                }
+                            }
+                        Text("● STOP 25:00     [LOCK]    [ANCHOR]",
+                            color=Color(0xFFFF8C99),fontSize=11.sp)
+                    }else if(lens){
+                        Text(demo.primary,color=Color.White,
+                            fontFamily=FontFamily.Monospace,
+                            fontSize=12.sp,lineHeight=18.sp)
+                        HorizontalDivider(color=Color.White.copy(alpha=.30f))
                         Row(Modifier.fillMaxWidth(),
-                            horizontalArrangement=Arrangement.SpaceBetween,
-                            verticalAlignment=Alignment.CenterVertically) {
-                            if(locked)Text("LOCK · TAP TO UNLOCK",
-                                color=solarGold,fontSize=11.sp)
-                            else {
-                                Text("● STOP 05:00",color=solarGold,
-                                    fontSize=(11f*previewScale).sp,
-                                    fontWeight=FontWeight.SemiBold)
-                                Text("⇥     LOCK",color=coreText,fontSize=11.sp)
-                            }
+                            horizontalArrangement=Arrangement.SpaceBetween) {
+                            Text("● 25:00",color=Color(0xFFFF667C),
+                                fontFamily=FontFamily.Monospace,
+                                fontSize=12.sp)
+                            Text("[ LOCK ]",color=Color.White,
+                                fontFamily=FontFamily.Monospace,
+                                fontSize=11.sp)
                         }
-                    }
-                }else{
-                    Row(previewModifier,
-                        verticalAlignment=Alignment.CenterVertically,
-                        horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text(demoText,color=coreText,
-                            fontSize=(if(isRibbon)11.2f else 12f).times(previewScale).sp,
-                            lineHeight=(17f*previewScale).sp,
-                            modifier=Modifier.weight(1f))
-                        if(locked) {
-                            Text("LOCK",fontSize=11.sp,color=solarGold)
-                        }else{
-                            Column(horizontalAlignment=Alignment.End,
-                                verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                                Text("● STOP 05:00",color=solarGold,
-                                    fontSize=(11f*previewScale).sp)
-                                Text("⇥   LOCK",color=coreText,fontSize=11.sp)
-                            }
-                        }
+                    }else{
+                        Text(demo.primary.ifBlank{"CM · REC"},
+                            color=Color.White,
+                            fontFamily=if(ghost)FontFamily.Default
+                                else FontFamily.Monospace,
+                            fontSize=if(ghost)12.sp else 11.sp,
+                            lineHeight=17.sp)
+                        Text("● STOP 25:00  [LOCK]",
+                            color=Color(0xFFFF8C99),fontSize=10.sp)
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End,
-                verticalAlignment=Alignment.CenterVertically) {
-                Text("Collapsed edge tab  ",color=coreSecondary,
+            Row(Modifier.fillMaxWidth(),
+                verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.SpaceBetween) {
+                Text("SWIPE TO EDGE →  COLLAPSED",
+                    color=coreSecondary,
                     style=MaterialTheme.typography.labelSmall)
-                Box(Modifier.background(Color(0xF012385B),RoundedCornerShape(10.dp))
-                    .border(2.dp,Color(0xFFFF6870),RoundedCornerShape(10.dp))
-                    .padding(horizontal=9.dp,vertical=7.dp)) {
-                    Text("● R\n05:00",color=Color(0xFFFFAFB4),fontSize=11.sp,
-                        fontWeight=FontWeight.Bold)
+                Box(Modifier.width(44.dp).height(44.dp)
+                    .background(Color(0xBA11263A),RoundedCornerShape(7.dp))
+                    .border(1.dp,Color(0xA855D9EC),RoundedCornerShape(7.dp)),
+                    contentAlignment=Alignment.Center) {
+                    Text(if(lens)"│●" else "●",
+                        color=Color(0xFFFF6C79),fontSize=12.sp)
                 }
             }
+            Text("Preview does not run sensors. The real collapsed HUD " +
+                "retains a 44dp accessible touch target, with a 2dp line " +
+                "and recording dot in DUKO Lens.",
+                color=coreSecondary,style=MaterialTheme.typography.labelSmall)
         }
         HorizontalDivider(color=Color.White.copy(alpha=.15f))
         Text("OS WARNING ACCENT · AMBER = CAUTION · RED = SEVERE",
