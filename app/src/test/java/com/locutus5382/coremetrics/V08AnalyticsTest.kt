@@ -30,11 +30,18 @@ class V08AnalyticsTest {
     @Test fun busiestCoreCountsRecordedWinnersOnly() {
         val d=V08Analytics.busiestCores(listOf(p(10,"cpu0"),p(20,"cpu0"),
             p(30,"cpu7"),p(40,null),p(50,"cpu99")))
-        assertEquals(3,d.observations)
-        assertEquals(2,d.ignored)
+        // Other Android devices can have CPU IDs beyond 7. cpu99 is
+        // a valid numeric core identity, not necessarily a game thread.
+        assertEquals(4,d.observations)
+        assertEquals(1,d.ignored)
         assertEquals(2,d.winners[0].count)
-        assertEquals(200.0/3.0,d.winners[0].sharePct,1e-6)
+        assertEquals(50.0,d.winners[0].sharePct,1e-6)
         assertEquals(1,d.winners[7].count)
+        assertEquals(1,d.winners[99].count)
+        val malformed=V08Analytics.busiestCores(listOf(
+            p(10,"cpu128"),p(20,"cpu-1"),p(30,"cpuUnknown")))
+        assertEquals(0,malformed.observations)
+        assertEquals(3,malformed.ignored)
     }
     @Test fun chronologicalLinkKeepsGapAndIDs() {
         val t=V08Analytics.linkedTimeline(s(8),
@@ -110,7 +117,7 @@ class V08AnalyticsTest {
         assertEquals(2,result.phases.size)
         assertTrue(result.conflict)
         assertEquals("Stock",result.selected)
-        assertEquals("No readable P3/P7 frequency limits",
+        assertEquals("No readable CPU policy frequency ceilings",
             V08Analytics.profile("Custom",listOf(p(0))).note)
     }
 }

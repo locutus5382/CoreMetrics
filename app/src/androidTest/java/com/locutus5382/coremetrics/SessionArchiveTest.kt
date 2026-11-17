@@ -39,11 +39,15 @@ class SessionArchiveTest {
     }
 
     private fun makeCsv(id:Int):String=buildString {
-        append("game_label,configuration,status,sample_epoch_ms,cpu_temp_c,gpu_temp_c,battery_net_w,battery_power_status,graphics_driver,profile_name\n")
+        append("game_label,configuration,status,sample_epoch_ms,cpu_temp_c,gpu_temp_c,")
+        append("battery_net_w,battery_power_status,graphics_driver,profile_name,")
+        append("device_manufacturer,device_model,device_code,android_api,gpu_telemetry_source\n")
         for(i in 0 until 16) {
             append("NFS,Stock,COMPLETED,")
             append(1_700_000_000_000L+id*500_000L+i*5_000L)
-            append(",55.0,44.0,4.6,DISCHARGING; BATTERY_NET_ONLY,Custom: T30,T30\n")
+            append(",55.0,44.0,4.6,DISCHARGING; BATTERY_NET_ONLY,Custom: T30,T30,")
+            append("AYN,Odin 2 Portal,odin2,33,")
+            append("LOAD:KGSL_PERCENT; CLOCK:KGSL_CLOCK; READABLE_NOT_VALIDATED\n")
         }
     }
 
@@ -84,6 +88,13 @@ class SessionArchiveTest {
             assertEquals(3,sessions.size)
             assertEquals(16L,store.storedSampleCount(existing))
             assertEquals(2,sessions.count{it.profileName=="T30"})
+            val imported=sessions.filter{it.profileName=="T30"}
+            assertTrue(imported.all{it.deviceManufacturer=="AYN"})
+            assertTrue(imported.all{it.deviceModel=="Odin 2 Portal"})
+            assertTrue(imported.all{it.androidApi==33})
+            assertTrue(store.points(imported.first().id).all{
+                it.gpuTelemetrySource?.contains("KGSL_PERCENT")==true
+            })
             assertEquals(1,store.links().size)
             assertEquals(1,store.quickProfiles().size)
             // Second restore appends; existing data and links remain intact.

@@ -2,6 +2,7 @@ package com.locutus5382.coremetrics.data
 
 import android.content.ContentValues
 import android.content.Context
+import android.os.Build
 import android.database.Cursor
 import com.locutus5382.coremetrics.monitor.RecorderLease
 import android.database.sqlite.SQLiteDatabase
@@ -13,7 +14,7 @@ import java.io.Writer
  * :monitor owns writes, UI reads through WAL. Data never leaves this database
  * without a user-selected Android document URI.
  */
-class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 8) {
+class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db", null, 9) {
     private val leaseContext = context.applicationContext
 
     data class Session(val id: Long, val startedAt: Long, val endedAt: Long?,
@@ -22,7 +23,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val graphicsDriver: String? = null, val resolutionScale: String? = null,
         val hasExternalPower:Boolean=false, val hasDischargePower:Boolean=false,
         val performanceMode:String?=null,val fanMode:String?=null,
-        val clusterTuneMode:String?=null,val profileName:String?=null)
+        val clusterTuneMode:String?=null,val profileName:String?=null,
+        val deviceManufacturer:String?=null,val deviceModel:String?=null,
+        val deviceCode:String?=null,val androidApi:Int?=null)
     data class Point(val timeMs: Long, val cpu: Double?, val gpu: Double?,
         val cpuLoad: Double?, val gpuLoad: Double?, val ram: Double?,
         val batteryWatts: Double?, val sfFps: Double?, val appPackage: String?,
@@ -33,7 +36,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         val thermalStatus: Int? = null, val thermalHeadroom: Double? = null,
         val swapUsedGiB: Double? = null, val memoryPsiSomeAvg10: Double? = null,
         val sampleDurationMs: Double? = null, val sampleElapsedMs: Long? = null,
-        val batteryPowerSource:String?=null)
+        val batteryPowerSource:String?=null,
+        val gpuTelemetrySource:String?=null)
 
     /**
      * Single cross-process source for recording-critical QS settings.
@@ -145,7 +149,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             status TEXT NOT NULL, game_note TEXT,
             graphics_driver TEXT, resolution_scale TEXT,
             performance_mode TEXT, fan_mode TEXT, cluster_tune_mode TEXT,
-            profile_name TEXT)""")
+            profile_name TEXT,
+            device_manufacturer TEXT, device_model TEXT, device_code TEXT,
+            android_api INTEGER)""")
         db.execSQL("""CREATE TABLE samples (
             session_id INTEGER NOT NULL, time_ms INTEGER NOT NULL,
             cpu_temp REAL, gpu_temp REAL, battery_temp REAL, battery_pct INTEGER,
@@ -158,7 +164,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             observed_cpu_limits TEXT,
             thermal_status INTEGER, thermal_headroom REAL, swap_used_gib REAL,
             mem_psi_some10 REAL, sample_duration_ms REAL,
-            sample_elapsed_ms INTEGER)""")
+            sample_elapsed_ms INTEGER, gpu_source TEXT)""")
         db.execSQL("CREATE INDEX samples_by_time ON samples(session_id,time_ms)")
         // Cover battery status predicates without visiting large sample rows.
         db.execSQL("CREATE INDEX samples_by_session_power ON samples(session_id,battery_status)")
@@ -176,7 +182,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion in 1..7 && newVersion==8) {
+        require(oldVersion in 1..8 && newVersion==9) {
             "Unsupported database migration $oldVersion -> $newVersion"
         }
         if(oldVersion<2) {
@@ -214,6 +220,15 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             createProfileTable(db)
         }
         if(oldVersion<8)createSettingsTable(db)
+        if(oldVersion<9) {
+            for((name,type) in listOf(
+                "device_manufacturer" to "TEXT",
+                "device_model" to "TEXT",
+                "device_code" to "TEXT",
+                "android_api" to "INTEGER"))
+                db.execSQL("ALTER TABLE sessions ADD COLUMN "+name+" "+type)
+            db.execSQL("ALTER TABLE samples ADD COLUMN gpu_source TEXT")
+        }
     }
 
     /** Optional, explicitly user-entered test settings; never inferred from load. */
@@ -429,6 +444,10 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     else -> "Custom"
                 })
                 put("status","RECORDING")
+                put("device_manufacturer",cleanLabel(Build.MANUFACTURER,64))
+                put("device_model",cleanLabel(Build.MODEL,64))
+                put("device_code",cleanLabel(Build.DEVICE,64))
+                put("android_api",Build.VERSION.SDK_INT)
                 val preset=activeProfileIn(db)
                 if(preset!=null) {
                     put("profile_name",preset.name)
@@ -462,6 +481,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             put("battery_ua", s.batteryCurrentMicroAmps)
             put("battery_mv", s.batteryVoltageMilliVolts)
             put("battery_source", s.batteryPowerSource)
+            put("gpu_source", s.gpuTelemetrySource?.take(128))
             put("battery_status", s.batteryPowerStatus)
             put("sf_layer_fps", s.surfaceFps)
             put("sf_frame_ms", s.surfaceFrameMs)
@@ -521,7 +541,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             (x.battery_status LIKE 'CHARGING_OR_EXTERNAL_POWER%'
              OR x.battery_status LIKE 'FULL%' OR x.battery_status LIKE 'PLUGGED%')),
         EXISTS(SELECT 1 FROM samples x WHERE x.session_id=s.id AND
-            x.battery_status LIKE 'DISCHARGING%')
+            x.battery_status LIKE 'DISCHARGING%'),
+        s.device_manufacturer,s.device_model,s.device_code,s.android_api
         FROM sessions s
     """.trimIndent()
 
@@ -537,7 +558,11 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         if(c.isNull(10))null else c.getString(10),
         if(c.isNull(11))null else c.getString(11),
         if(c.isNull(12))null else c.getString(12),
-        if(c.isNull(13))null else c.getString(13)
+        if(c.isNull(13))null else c.getString(13),
+        if(c.isNull(16))null else c.getString(16),
+        if(c.isNull(17))null else c.getString(17),
+        if(c.isNull(18))null else c.getString(18),
+        if(c.isNull(19))null else c.getInt(19)
     )
 
     @Synchronized fun list(limit:Int=80):List<Session> =
@@ -609,7 +634,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
         observed_cpu_limits,busiest_pct,battery_status,busiest_core,
         battery_temp,battery_pct,cpu_clocks,gpu_mhz,
         thermal_status,thermal_headroom,swap_used_gib,mem_psi_some10,
-        sample_duration_ms,sample_elapsed_ms,battery_source
+        sample_duration_ms,sample_elapsed_ms,battery_source,gpu_source
         FROM samples WHERE session_id=? ORDER BY time_ms ASC LIMIT ?""",
         arrayOf(id.toString(), max.coerceIn(1,12000).toString())
     ).use { c ->
@@ -626,7 +651,8 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 if(c.isNull(17)) null else c.getInt(17),
                 value(18),value(19),value(20),value(21),
                 if(c.isNull(22)) null else c.getLong(22),
-                if(c.isNull(23)) null else c.getString(23)))
+                if(c.isNull(23)) null else c.getString(23),
+                if(c.isNull(24)) null else c.getString(24)))
         }
     }
 
@@ -682,6 +708,14 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                         put("cluster_tune_mode",columns.field(row,"cluster_tune_mode")
                             ?.takeIf{it in clusterModes})
                         put("profile_name",cleanLabel(columns.field(row,"profile_name")))
+                        put("device_manufacturer",cleanLabel(
+                            columns.field(row,"device_manufacturer"),64))
+                        put("device_model",cleanLabel(
+                            columns.field(row,"device_model"),64))
+                        put("device_code",cleanLabel(
+                            columns.field(row,"device_code"),64))
+                        put("android_api",columns.field(row,"android_api")
+                            ?.toIntOrNull()?.takeIf{it in 1..50})
                         put("configuration",config)
                         put("status",ImportedSessionStatus.store(
                             columns.field(row,"status")))
@@ -740,6 +774,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                     columns.integer(row,"battery_current_ua")?.let{put("battery_ua",it)}
                     columns.integer(row,"battery_voltage_mv")?.let{put("battery_mv",it)}
                     text("battery_source","battery_power_source")
+                    text("gpu_source","gpu_telemetry_source")
                     text("battery_status","battery_power_status")
                     decimal("sf_layer_fps","sf_layer_fps")
                     decimal("sf_frame_ms","sf_frame_time_ms")
@@ -796,7 +831,9 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             "graphics_driver","resolution_scale",
             "thermal_status","thermal_headroom","swap_used_gib","mem_psi_some10",
             "sample_duration_ms","sample_elapsed_ms",
-            "performance_mode","fan_mode","cluster_tune_mode","profile_name")
+            "performance_mode","fan_mode","cluster_tune_mode","profile_name",
+            "device_manufacturer","device_model","device_code","android_api",
+            "gpu_telemetry_source")
         writer.append(headers.joinToString(",")).append('\n')
         readableDatabase.rawQuery(
             """SELECT time_ms,cpu_temp,gpu_temp,battery_temp,battery_pct,cpu_pct,
@@ -804,7 +841,7 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             battery_net_w,battery_ua,battery_mv,battery_source,battery_status,
             sf_layer_fps,sf_frame_ms,sf_status,observed_cpu_limits,
             thermal_status,thermal_headroom,swap_used_gib,mem_psi_some10,
-            sample_duration_ms,sample_elapsed_ms
+            sample_duration_ms,sample_elapsed_ms,gpu_source
             FROM samples WHERE session_id=?
             """ + if(startMs!=null && endMs!=null)
                 "AND time_ms>=? AND time_ms<=? ORDER BY time_ms LIMIT 12000"
@@ -817,9 +854,14 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
                 val values = listOf(id.toString(),session.note?.takeIf{it.isNotBlank()} ?: session.label,session.configuration,session.status) +
                     (0 until 22).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
                     listOf(session.graphicsDriver.orEmpty(),session.resolutionScale.orEmpty()) +
-                    (22 until c.columnCount).map { if (c.isNull(it)) "" else c.getString(it) ?: "" } +
+                    (22 until c.columnCount-1).map {
+                        if (c.isNull(it)) "" else c.getString(it) ?: ""
+                    } +
                     listOf(session.performanceMode.orEmpty(),session.fanMode.orEmpty(),
-                        session.clusterTuneMode.orEmpty(),session.profileName.orEmpty())
+                        session.clusterTuneMode.orEmpty(),session.profileName.orEmpty(),
+                        session.deviceManufacturer.orEmpty(),session.deviceModel.orEmpty(),
+                        session.deviceCode.orEmpty(),session.androidApi?.toString().orEmpty(),
+                        if(c.isNull(c.columnCount-1))"" else c.getString(c.columnCount-1) ?: "")
                 writer.append(values.joinToString(",") { Csv.escape(it) }).append('\n')
             }
         }

@@ -1,6 +1,7 @@
 package com.locutus5382.coremetrics.analysis
 
 import kotlin.math.abs
+import com.locutus5382.coremetrics.telemetry.CpuPolicyTelemetry
 
 /**
  * Read-only analysis of *observed* cpufreq ceilings. A limit is not proof that
@@ -8,7 +9,8 @@ import kotlin.math.abs
  * even if the same limit returns later in the recording.
  */
 object SessionRegimeAnalyzer {
-    const val NOMINAL_BATTERY_WH = 30.8  // Odin 2 Portal estimate, NOT measured usable capacity
+    // No fixed pack Wh. Projected runtime requires externally validated
+    // usable energy and is therefore unavailable at this stage.
     private const val MIN_RUN_SAMPLES = 3
     private val capPattern = Regex("""policy(3|7)\s+max\s+([0-9]+(?:\.[0-9]+)?)\s+GHz""")
 
@@ -58,6 +60,9 @@ object SessionRegimeAnalyzer {
      * Missing limits are explicitly 'unknown', never assumed stock.
      */
     fun key(raw: String?): String {
+        // New recordings explicitly mark discovered policies; do not
+        // silently reinterpret policy3/policy7 as named hardware clusters.
+        CpuPolicyTelemetry.signature(raw)?.let{return it}
         val caps = capPattern.findAll(raw.orEmpty()).associate {
             it.groupValues[1] to it.groupValues[2].toDouble()
         }
@@ -90,6 +95,8 @@ object SessionRegimeAnalyzer {
     }
 
     fun label(key: String): String {
+        if(key.startsWith("POLICIES:"))
+            return CpuPolicyTelemetry.label(key)
         val parts = key.split('|')
         val p3 = parts.firstOrNull()?.substringAfter(':') ?: "?"
         val p7 = parts.getOrNull(1)?.substringAfter(':') ?: "?"
@@ -201,7 +208,7 @@ object SessionRegimeAnalyzer {
                     meanGpuLoadPct=mean(stats.map { it.gpuLoadPct }),
                     meanRamGib=mean(stats.map { it.ramUsedGib }),
                     meanDischargeW=power,
-                    projectedHours=power?.let { NOMINAL_BATTERY_WH / it }
+                    projectedHours=null  // Device-agnostic; no assumed battery size
                 )
             }
         }.mapIndexed { idx, s -> s.copy(index=idx) }

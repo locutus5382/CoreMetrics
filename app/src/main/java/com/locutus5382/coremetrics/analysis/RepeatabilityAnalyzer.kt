@@ -56,6 +56,18 @@ object RepeatabilityAnalyzer {
         }
         val cautions=mutableListOf<String>()
         val first=runs.first().session
+        val devices=runs.map{listOf(it.session.deviceManufacturer,
+            it.session.deviceModel,it.session.deviceCode)}
+        if(devices.any{row->row.any{it.isNullOrBlank()}})
+            cautions+="Original device identity missing in at least one repetition"
+        else if(devices.distinct().size>1)
+            cautions+="Repeated-run group contains DIFFERENT hardware; "+
+                "treat the variation as cross-device measurements, not A/A repeatability"
+        val gpuSources=runs.map{run->run.points.mapNotNull{
+            it.gpuTelemetrySource?.takeIf{v->v!="UNAVAILABLE" && v.isNotBlank()}
+        }.toSet()}
+        if(gpuSources.filter{it.isNotEmpty()}.distinct().size>1)
+            cautions+="GPU measurement sources differ across repetitions"
         val metadata=listOf(
             "Graphics driver" to runs.map{it.session.graphicsDriver},
             "Resolution/scale" to runs.map{it.session.resolutionScale},

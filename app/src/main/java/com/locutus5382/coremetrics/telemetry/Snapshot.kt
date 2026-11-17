@@ -33,5 +33,7 @@ data class Snapshot(
     val sampleElapsedMs: Long? = null,
     // Live HUD-only battery-health evidence; not stored in SQLite v7.
     // null = unavailable/unknown; true = explicit Android OVERHEAT report.
-    val batteryOverheatReported: Boolean? = null
+    val batteryOverheatReported: Boolean? = null,
+    // Measurement read-path provenance, not a claim of vendor validation.
+    val gpuTelemetrySource:String?=null
 )

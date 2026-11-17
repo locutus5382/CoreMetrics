@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
+import com.locutus5382.coremetrics.telemetry.CpuPolicyTelemetry
+import com.locutus5382.coremetrics.telemetry.GpuTelemetryProbe
 import android.os.PowerManager
 import java.io.File
 import java.text.SimpleDateFormat
@@ -97,6 +99,19 @@ internal object DeviceCapabilityProbe {
                 (source.data?.trim()?.take(64)?:source.reason)+
                 " (raw kernel units; vendor validation required)")
         }
+        val energyDesign=BatteryDesignCapacity.fromEnergyMicroWh(
+            readBounded("/sys/class/power_supply/battery/energy_full_design",128).data)
+        val chargeDesign=BatteryDesignCapacity.fromChargeMicroAhAndNominalMicroV(
+            readBounded("/sys/class/power_supply/battery/charge_full_design",128).data,
+            // voltage_min_design is the minimum/cutoff voltage, NOT nominal
+            // pack voltage. Do not multiply design charge by it.
+            readBounded("/sys/class/power_supply/battery/voltage_nominal",128).data)
+        val design=energyDesign?:chargeDesign
+        appendLine("Battery design energy candidate: "+
+            (design?.let{
+                String.format(Locale.US,"%.2f Wh [%s]",it.designWh,it.provenance)
+            }?:"unavailable")+
+            " (NOT validated usable capacity; runtime estimation disabled)")
         val meminfo=readBounded("/proc/meminfo",8192)
         val swap=meminfo.data?.let{SystemCapabilityParser.swapFieldsKiB(it)}
         appendLine("proc/meminfo: "+meminfo.reason)
@@ -123,12 +138,27 @@ internal object DeviceCapabilityProbe {
             appendLine("GPU frequency source "+label+": "+
                 (raw ?: source.reason)+" (raw kernel units; no scaling claim)")
         }
+        val gpu=GpuTelemetryProbe(
+            read={path->readBounded(path,128).data},
+            devfreqPaths={
+                GpuTelemetryProbe.gpuDevfreqCandidates(
+                    File("/sys/class/devfreq").listFiles()?.map{it.name}.orEmpty())
+            }).sample(android.os.SystemClock.elapsedRealtime())
+        appendLine("GPU utilization source: "+gpu.source)
+        appendLine("GPU readable load: "+(gpu.loadPct?.toString()?:"unavailable")+
+            "%; clock "+(gpu.frequencyMHz?.toString()?:"unavailable")+
+            " MHz (readability is NOT validation)")
         val root=File("/sys/devices/system/cpu/cpufreq")
         val names=SystemCapabilityParser.cpuPolicyNames(
             root.listFiles()?.map{it.name}.orEmpty())
         appendLine("CPU frequency policies discovered: "+
             names.ifEmpty{listOf("unavailable")}.joinToString(", "))
         for(name in names) {
+            val related=CpuPolicyTelemetry.relatedCpus(
+                readBounded(File(root,"$name/related_cpus").path,256).data)
+            appendLine("CPU $name related logical cores: "+
+                if(related.isEmpty())"unavailable"
+                else related.joinToString(","))
             val source=readBounded(File(root,"$name/stats/time_in_state").path,4096)
             val residence=source.data?.let{SystemCapabilityParser.residency(it)}
             if(residence==null)
@@ -141,7 +171,7 @@ internal object DeviceCapabilityProbe {
             }
         }
         appendLine("This report is a one-shot capability snapshot, not a saved gameplay sample. " +
-            "v0.9.8.3 records supported thermal, swap and PSI signals only during REC; " +
+            "v0.9.9.0 records supported thermal, swap and PSI signals only during REC; " +
             "actual values still require Odin ROM validation.")
     }
 }

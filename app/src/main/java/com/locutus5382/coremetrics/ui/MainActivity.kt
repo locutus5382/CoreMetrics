@@ -2278,6 +2278,8 @@ class MainActivity : ComponentActivity() {
                                         GlassPanel {
                                             Text("Settings & privacy",color=iceBlue,
                                                 style = MaterialTheme.typography.titleMedium)
+                                            DeviceCompatibilityPanel()
+                                            HorizontalDivider(color=coreBorder)
                                              Text("CONTROLLER · L1/R1 (or L2/R2) switches tabs; "+
                                                  "D-pad/hat and right joystick move focus; "+
                                                  "A/DPAD CENTER selects focused controls. "+

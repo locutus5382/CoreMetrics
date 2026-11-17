@@ -42,7 +42,8 @@ object BenchmarkAnalyzer {
         val meanCpuLoad:Double?, val meanGpuLoad:Double?,
         val quality:Quality, val energy:Energy, val thermal:Thermal,
         val frames:FrameEfficiency, val skippedWarmUpSeconds:Int = 0,
-        val recordingIntegrity:RecordingIntegrityAnalyzer.Result? = null
+        val recordingIntegrity:RecordingIntegrityAnalyzer.Result? = null,
+        val gpuSources:List<String> = emptyList()
     )
     private fun mean(v:List<Double?>):Double? {
         val values=v.filterNotNull().filter { it.isFinite() }
@@ -160,7 +161,7 @@ object BenchmarkAnalyzer {
         val weightedW=if(dischargeMs>0L)wh*3_600_000.0/dischargeMs else null
         val mWhPerMinute=if(dischargeMs>0L)wh*60_000_000.0/dischargeMs else null
         val capGroups=pts.map { SessionRegimeAnalyzer.key(it.observedCpuLimits) }
-            .filterNot { it=="P3:?|P7:?" }
+            .filterNot { it.contains("?") }
             .distinct()
         val labels=capGroups.map{SessionRegimeAnalyzer.label(it)}
         val observed=if(labels.isEmpty())"unavailable" else labels.joinToString(" | ")
@@ -239,7 +240,8 @@ object BenchmarkAnalyzer {
             Energy(if(dischargeMs>0L)wh else null,dischargeMs/1000.0,
                 energyCoverage,weightedW,mWhPerMinute,weightedW,condition),
             thermal(pts),frames,skip,
-            RecordingIntegrityAnalyzer.analyze(pts,session.status))
+            RecordingIntegrityAnalyzer.analyze(pts,session.status),
+            pts.mapNotNull{it.gpuTelemetrySource?.takeIf{v->v.isNotBlank()}}.distinct())
     }
 
     fun text(report:Report):String=buildString {
@@ -247,6 +249,14 @@ object BenchmarkAnalyzer {
         appendLine("COREMETRICS | BENCHMARK ASSESSMENT (OBSERVATIONAL)")
         appendLine("Session #${r.session.id}: ${r.session.label} · ${r.session.configuration}")
         appendLine("Session status: ${r.session.status}; samples ${r.sampleCount}")
+        appendLine("Recorded device: "+listOfNotNull(
+            r.session.deviceManufacturer,r.session.deviceModel,
+            r.session.deviceCode).joinToString(" / ").ifBlank{"unknown"}+
+            " · Android API "+(r.session.androidApi?.toString()?:"unknown"))
+        val gpuSources=r.gpuSources
+        appendLine("GPU source(s): "+gpuSources.joinToString("; ")
+            .ifBlank{"not recorded / unavailable"})
+        appendLine("Readable GPU paths are not necessarily calibrated or comparable.")
         r.session.note?.let{ appendLine("Game/track note: "+it) }
         appendLine("Manual driver tag: "+(r.session.graphicsDriver?:"unavailable"))
         appendLine("Manual resolution tag: "+(r.session.resolutionScale?:"unavailable"))

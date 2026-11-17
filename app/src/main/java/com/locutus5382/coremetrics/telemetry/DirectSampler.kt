@@ -21,9 +21,12 @@ class DirectSampler(private val app: Application) {
     // or NaN. Recheck at a bounded cadence without repeating binder/sysfs work.
     private val headroomSchedule = ReadOnlyProbeSchedule(10_000L,120_000L)
     private val memoryPsiSchedule = ReadOnlyProbeSchedule(5_000L,60_000L)
-    private val gpuFrequencyPaths = arrayOf(
-        "/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq",
-        "/sys/class/kgsl/kgsl-3d0/gpuclk")
+    private val gpuProbe=GpuTelemetryProbe(::read) {
+        // One directory snapshot is cheap; only the selected clock file
+        // is read on subsequent ticks, not all devfreq devices.
+        GpuTelemetryProbe.gpuDevfreqCandidates(
+            File("/sys/class/devfreq").listFiles()?.map{it.name}.orEmpty())
+    }
     private val policyName = Regex("""policy\d+""")
     private val coreName = Regex("""cpu\d+""")
     private val whitespace = Regex("""\s+""")
@@ -105,31 +108,18 @@ class DirectSampler(private val app: Application) {
         return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
     }
 
-    private fun gpuClock(): Double? {
-        for (path in gpuFrequencyPaths) {
-            val value = read(path)?.toLongOrNull()?.takeIf { it > 0 } ?: continue
-            return if (value > 2_000_000) value / 1e6 else value / 1000.0
-        }
-        return null
-    }
 
-    private fun gpuLoad(): Int? {
-        val root = "/sys/class/kgsl/kgsl-3d0/"
-        val primary = read(root + "gpu_busy_percentage")
-            ?.substringBefore(" ")?.removeSuffix("%")?.trim()?.toIntOrNull()
-        if (primary != null && primary in 0..100) return primary
-        val values = read(root + "gpubusy")?.split(whitespace)
-            ?.mapNotNull { it.toLongOrNull() }.orEmpty()
-        return if (values.size >= 2 && values[1] > 0 && values[0] in 0..values[1])
-            (values[0] * 100.0 / values[1]).roundToInt() else null
-    }
 
     private fun cpuLimits(): String? {
         // Read-only, instantaneous policy limits. Never infer which tuner set
         // them; never use observed scaling_cur_freq as a cap.
-        val names = listOf("policy0", "policy3", "policy7")
-        val parts = names.mapNotNull { p ->
-            val path = "/sys/devices/system/cpu/cpufreq/" + p + "/"
+        val policies=cpuPolicies()
+        if(policies.isEmpty())return null
+        // The full hardware topology may include >6 frequency policies.
+        // Do not pretend a partial snapshot is a complete cap signature.
+        val parts = policies.take(6).mapNotNull { policy ->
+            val p=policy.name
+            val path = policy.path + "/"
             val ceiling = read(path + "scaling_max_freq")?.toLongOrNull()
                 ?.takeIf { it in 100_000L..5_000_000L }
                 ?: return@mapNotNull null
@@ -140,7 +130,10 @@ class DirectSampler(private val app: Application) {
             p + " max " + String.format(java.util.Locale.US, "%.2f", ceiling/1e6) +
                 " GHz" + if (limited) " (below hw)" else ""
         }
-        return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+        if(parts.isEmpty())return null
+        val result="CPU_POLICIES: "+parts.joinToString(" · ")
+        return if(policies.size>6 || parts.size!=policies.size ||
+            result.length>250) "CPU_POLICIES: INCOMPLETE" else result
     }
 
     fun sample(appPackage: String?, frame: FrameEstimate? = null): Snapshot {
@@ -197,12 +190,16 @@ class DirectSampler(private val app: Application) {
                 it!=BatteryManager.BATTERY_HEALTH_UNKNOWN }
             ?.let { it==BatteryManager.BATTERY_HEALTH_OVERHEAT }
         val power = batteryPower.read(batteryIntent)
+        val gpuReading=gpuProbe.sample(sampledElapsedMs)
         val snapshot = Snapshot(
             timeMs = now, cpuTempC = thermal(true), gpuTempC = thermal(false),
             batteryTempC = battery.first, batteryPercent = battery.second,
             batteryOverheatReported = batteryHealth,
             cpuPercent = cpuPercent, busiestPercent = peakLoad, busiestCore = uniqueWinner?.first,
-            gpuPercent = gpuLoad(), gpuMHz = gpuClock(), ramGiB = memory?.usedRamGiB,
+            gpuPercent = gpuReading.loadPct,
+            gpuMHz = gpuReading.frequencyMHz,
+            gpuTelemetrySource = gpuReading.source,
+            ramGiB = memory?.usedRamGiB,
             cpuClockSummary = cpuClockSummary(), appPackage = appPackage,
             signedBatteryWatts = power.signedBatteryWatts,
             batteryCurrentMicroAmps = power.currentMicroAmps,

@@ -14,7 +14,6 @@ import kotlin.math.min
  * emulator scene equivalence or a confirmed single-thread bottleneck.
  */
 object SessionDiagnosticsAnalyzer {
-    const val NOMINAL_BATTERY_WH = 30.8
 
     enum class Metric(val title: String, val unit: String) {
         CPU_TEMP("CPU sensor temperature", "°C"),
@@ -24,8 +23,8 @@ object SessionDiagnosticsAnalyzer {
         BUSIEST_CORE("Busiest observed core", "%"),
         GPU_LOAD("GPU utilization", "%"),
         DISCHARGE_W("Battery terminal discharge", "W"),
-        P3_CLOCK("Performance cluster clock", "GHz"),
-        P7_CLOCK("Prime core clock", "GHz"),
+        P3_CLOCK("CPU policy3 clock (if present)", "GHz"),
+        P7_CLOCK("CPU policy7 clock (if present)", "GHz"),
         GPU_CLOCK("GPU clock", "MHz"),
         BATTERY_PCT("Battery level", "%")
     }
@@ -243,12 +242,15 @@ object SessionDiagnosticsAnalyzer {
             report.energy.measuredSeconds >= 120.0 &&
             power != null && power.isFinite() && power > 0.0 &&
             batteryPct != null
-        val remaining = if (sufficient) NOMINAL_BATTERY_WH *
-            batteryPct!!.toDouble() / 100.0 / power!! else null
-        val full = if (sufficient) NOMINAL_BATTERY_WH / power!! else null
+        // No trusted usable-pack Wh is available through an ordinary
+        // Android API. Design capacity is not equivalent to usable energy.
+        // Never project runtime from an Odin-specific constant on other devices.
+        val remaining:Double?=null
+        val full:Double?=null
         val reason = when {
-            sufficient -> "Approximate, not a fuel-gauge prediction; assumes nominal " +
-                "30.8 Wh usable capacity and this session's time-weighted power."
+            sufficient -> "Runtime unavailable: usable battery capacity has not been " +
+                "validated for the recording device. Measured battery-terminal W " +
+                "and integrated Wh remain available."
             report.energy.powerCondition != BenchmarkAnalyzer.PowerCondition.DISCHARGING ->
                 "Runtime unavailable: recording was not exclusively discharging."
             report.energy.coveragePct < 60.0 || report.energy.measuredSeconds < 120.0 ->
