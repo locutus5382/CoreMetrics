@@ -16,6 +16,7 @@ import com.locutus5382.coremetrics.analysis.DukoReportScheduler
 import com.locutus5382.coremetrics.analysis.DukoReportTask
 import com.locutus5382.coremetrics.data.SessionStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -147,7 +148,10 @@ internal class DukoExportQueueViewModel:ViewModel() {
         stage="Analyzing · "+task.title
         percent=0
         val resolver=context.applicationContext.contentResolver
-        val job=viewModelScope.launch {
+        // Enter try/finally synchronously before onDocumentResult returns.
+        // Otherwise a rapid Cancel can cancel a not-yet-dispatched job and
+        // strand the FIFO request with busy=true indefinitely.
+        val job=viewModelScope.launch(start=CoroutineStart.UNDISPATCHED) {
             val startedAt=SystemClock.elapsedRealtime()
             try {
                 val metrics=withContext(Dispatchers.IO) {
