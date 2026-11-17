@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.9.3 Reliability & Reporting alpha** — correcting Android integration fixtures, preserving emulator failure reports, reducing large-session report quantile allocations and enabling cancellation during lengthy offline exports. DUKO single-session and 2–5-run reporting, 2s/5s REC, HUD and Quick Settings are preserved. SQLite v9 unchanged; hardware testing is still deferred until the combined build is ready.
+**Current development status: v0.9.9.4 Pre-Odin Hardening alpha** — user-requested diagnostics now summarize the basic integrity of recent saved sessions and instantaneous UI-process memory without loading telemetry arrays. Android emulator instrumentation has a bounded execution time. DUKO FIFO reports, full-session analytics, 2s/5s recording, HUD and Quick Settings remain from v0.9.9.3. Real Odin 2 Portal acceptance has not yet happened; do not treat this as a final/public release.
 
-## One-app Quick Start (v0.9.9.3)
+## One-app Quick Start (v0.9.9.4)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.9.3-reliability-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.3-reliability-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.9.4-pre-odin-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.4-pre-odin-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,14 @@
 
 ---
 
+
+## v0.9.9.4 — Pre-Odin hardening and test diagnostics
+
+- **On-demand diagnostics:** Settings → View process-exit & lifecycle log now includes a read-only check of the latest five saved sessions (counts, source timestamp bounds, basic consistency flags), plus point-in-time PSS/Java heap of the UI process. No game labels or raw telemetry are included in this new section.
+- **No automatic work:** Diagnostics are collected only when a user presses the button. All DUKO report preparation remains explicit and FIFO, one request at a time. No added background services or sampling loops.
+- **Bounded Android CI:** API 33 emulator instrumentation has a 20-minute command timeout inside the existing job timeout, and stores XML/HTML results when available.
+- **Compatibility:** VersionCode **47**, SQLite still **v9**, no new permission, recorder, overlay, Quick Settings or hardware-control changes. Use the v0.9.9.4 debug artifact for the first combined Odin validation.
+- **Acceptance:** `docs/PORTAL_V0994_PRE_ODIN_ACCEPTANCE.md`. Draft-only until full CI and real Odin gameplay testing.
 
 ## v0.9.9.3 — Reliability & Reporting hardening
 
