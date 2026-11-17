@@ -122,7 +122,7 @@ internal fun HudSettingsPanel(
             listOf(
                 HudLayoutPolicy.PILL to "Classic pill · default",
                 HudLayoutPolicy.GLASS_CARD to "Compact Glass Card",
-                HudLayoutPolicy.RIBBON to "Telemetry Ribbon"
+                HudLayoutPolicy.RIBBON to "Horizontal Telemetry Ribbon"
             ).forEach {(id,label)->
                 FilterChip(selected=HudLayoutPolicy.normalize(options.layout)==id,
                     onClick={onChange(options.copy(layout=id))},
