@@ -963,69 +963,93 @@ internal class RecorderHud(private val context:Context) {
     /** Keep one overlay window. Docking MUST change WindowManager dimensions
      * as well as the child visibility; an invisible 475dp window is not a tab. */
     private fun updateGeometry() {
-        val frame=root ?:return
-        val p=params ?:return
+        val frame=root?:return
+        val p=params?:return
+        val theme=HudLayoutPolicy.normalize(opts.layout)
         if(collapsed) {
-            val top=dockEdge==DockEdge.TOP
-            val w=dp(if(top)112f else 60f)
-            val h=dp(if(top)48f else 86f)
-            val tab=dockTab
-            tab?.layoutParams=LinearLayout.LayoutParams(w,h)
-            (dockVisual as? TextView)?.apply {
-                layoutParams=LinearLayout.LayoutParams(
-                    dp(if(top)108f else 56f),dp(if(top)44f else 82f))
+            // 44dp accessible tap target; the DUKO lens draws only a 2dp
+            // bezel line and status dot. Never leave an invisible big window.
+            val width=dp(44f)
+            val height=dp(44f)
+            dockTab?.layoutParams=LinearLayout.LayoutParams(width,height)
+            (dockVisual as? TextView)?.layoutParams=
+                LinearLayout.LayoutParams(width,height)
+            (dockVisual as? TextView)?.background=if(HudLayoutPolicy.lens(theme))
+                HudEdgeLineDrawable(context.resources.displayMetrics.density,
+                    dockEdge==DockEdge.LEFT)
+            else GradientDrawable().apply {
+                cornerRadius=dp(10f).toFloat()
+                setColor(Color.argb(225,9,23,46))
+                setStroke(dp(1f).coerceAtLeast(1),
+                    Color.rgb(77,216,241))
             }
+            p.width=width;p.height=height
+            val xy=HudDockGeometry.place(dockEdge,windowWidth(),
+                windowHeight(),width,height,expandedX,expandedY)
+            p.x=xy.first;p.y=xy.second
             renderDockState()
-            p.width=w
-            p.height=h
-            val positioned=HudDockGeometry.place(dockEdge,
-                windowWidth(),windowHeight(),w,h,expandedX,expandedY)
-            p.x=positioned.first
-            p.y=positioned.second
-        }else{
+        }else {
             p.height=WindowManager.LayoutParams.WRAP_CONTENT
             val text=mainText
-            // Include the fixed-width BAT T inline span. Plain string
-            // measureText() ignores ReplacementSpan's reserved insets.
-            val longest=if(text!=null)
-                Layout.getDesiredWidth(text.text,text.paint) else 0f
-            // Compact side-by-side layout; reserve measured telemetry width
-            // plus only the actual right-side controls or unlock target.
-            val viewport=(windowWidth()-dp(8f)).coerceAtLeast(dp(220f))
-            val layout=HudLayoutPolicy.normalize(opts.layout)
-            val card=layout==HudLayoutPolicy.GLASS_CARD
-            val ribbon=layout==HudLayoutPolicy.RIBBON
-            val controlWidth=if(locked)dp(58f) else dp(126f)
-            val maxWidth=if(card)minOf(viewport,dp(425f)) else viewport
-            val minimum=dp(
-                if(card) {if(locked)230f else 275f}
-                else if(ribbon) {if(locked)205f else 300f}
-                else {if(locked)200f else 300f}
-            ).coerceAtMost(maxWidth)
-            // A stacked glass card reserves bottom-row room for the REC,
-            // dock and lock controls. Pill/ribbon remain side-by-side.
-            val natural=longest.roundToInt()+
-                if(card)dp(26f) else controlWidth
-            p.width=natural.coerceIn(minimum,maxWidth)
-            text?.maxWidth=(p.width-if(card)dp(26f) else controlWidth)
-                .coerceAtLeast(dp(85f))
+            val measure=if(text!=null)
+                Layout.getDesiredWidth(text.text,text.paint).roundToInt() else 0
+            val sec=secondaryText
+            val secondWidth=if(sec?.visibility==View.VISIBLE)
+                Layout.getDesiredWidth(sec.text,sec.paint).roundToInt() else 0
+            val scale=when(opts.size){
+                "small"->.82f;"large"->1.18f;else->1f
+            }
+            val viewport=(windowWidth()-dp(12f)).coerceAtLeast(dp(220f))
+            val controlWidth=if(locked)dp(48f) else when(theme) {
+                HudLayoutPolicy.STRIKER->dp(120f)
+                HudLayoutPolicy.TACTICAL->dp(84f)
+                HudLayoutPolicy.DUKO->0
+                else->dp(95f)
+            }
+            val desired=when(theme) {
+                HudLayoutPolicy.STRIKER->dp(470f*scale)
+                HudLayoutPolicy.TACTICAL->dp(355f*scale)
+                HudLayoutPolicy.DUKO->dp(232f*scale)
+                HudLayoutPolicy.GHOST->(measure+controlWidth+dp(18f))
+                    .coerceAtLeast(dp(200f))
+                HudLayoutPolicy.STRIP->(measure+controlWidth+dp(22f))
+                    .coerceAtLeast(dp(430f*scale))
+                else->dp(320f)
+            }
+            val maxWidth=when(theme) {
+                HudLayoutPolicy.STRIKER->minOf(viewport,dp(520f))
+                HudLayoutPolicy.TACTICAL->minOf(viewport,dp(420f))
+                HudLayoutPolicy.DUKO->minOf(viewport,dp(295f))
+                HudLayoutPolicy.GHOST->minOf(viewport,dp(800f))
+                else->minOf(viewport,(windowWidth()*.95f).roundToInt())
+            }
+            val minWidth=minOf(maxWidth,dp(190f*scale))
+            p.width=desired.coerceIn(minWidth,maxWidth)
+            text?.maxWidth=when(theme){
+                HudLayoutPolicy.STRIKER->((p.width-controlWidth-dp(18f))/2)
+                    .coerceAtLeast(dp(75f))
+                HudLayoutPolicy.TACTICAL->(p.width-controlWidth-dp(20f))
+                    .coerceAtLeast(dp(85f))
+                HudLayoutPolicy.DUKO->(p.width-dp(24f))
+                    .coerceAtLeast(dp(90f))
+                else->(p.width-controlWidth-dp(15f))
+                    .coerceAtLeast(dp(75f))
+            }
+            secondaryText?.maxWidth=text?.maxWidth?:dp(120f)
+            tertiaryText?.maxWidth=text?.maxWidth?:dp(120f)
             p.x=if(anchoredRight)
                 (windowWidth()-p.width-dp(4f)).coerceAtLeast(0)
                 else p.x.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
             p.y=p.y.coerceIn(0,(windowHeight()-dp(48f)).coerceAtLeast(0))
         }
-        if(attached()) {
-            if(layoutChanged(p)) {
-                runCatching { wm.updateViewLayout(frame,p) }
-                    .onSuccess {
-                        markLayoutApplied(p)
-                        // A locked card can change width as numbers grow.
-                        // Keep the separately touchable unlock chip aligned.
-                        if(locked)frame.post {
-                            if(root===frame && locked)repositionUnlockControl()
-                        }
+        if(attached() && layoutChanged(p)) {
+            runCatching{wm.updateViewLayout(frame,p)}
+                .onSuccess {
+                    markLayoutApplied(p)
+                    if(locked)frame.post {
+                        if(root===frame && locked)repositionUnlockControl()
                     }
-            }
+                }
         }
     }
 
