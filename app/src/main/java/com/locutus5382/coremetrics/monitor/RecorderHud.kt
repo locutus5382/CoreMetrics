@@ -1227,13 +1227,11 @@ internal class RecorderHud(private val context:Context) {
         }
         // Tactical has three substantive, independent labelled data blocks.
         // No extra background bitmap or shader is created on sampling ticks.
-        for(view in arrayOf(mainText,secondaryText,tertiaryText)){
-            view?.background=if(tactical)GradientDrawable().apply {
-                cornerRadius=dp(4f).toFloat()
-                setColor(Color.argb(110,12,34,58))
-                setStroke(dp(.6f).coerceAtLeast(1),
-                    Color.argb(80,118,172,200))
-            } else null
+        for((index,view) in arrayOf(mainText,secondaryText,tertiaryText)
+            .withIndex()){
+            view?.background=if(tactical)HudTacticalCellDrawable(index,
+                context.resources.displayMetrics.density)
+            else null
         }
         secondaryText?.setPadding(dp(6f),dp(5f),dp(5f),dp(5f))
         tertiaryText?.setPadding(dp(6f),dp(5f),dp(5f),dp(5f))
@@ -1504,7 +1502,7 @@ internal class RecorderHud(private val context:Context) {
         val timer=String.format(Locale.US,"%02d:%02d",
             seconds/60,seconds%60)
         recText?.text=if(!recording)"REC"
-            else if(lens)timer
+            else if(lens)"REC "+timer
             else "STOP "+timer
         recText?.setTextColor(
             if(lens)Color.rgb(251,104,119) else Color.rgb(236,248,255))
