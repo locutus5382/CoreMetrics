@@ -1423,29 +1423,20 @@ internal class RecorderHud(private val context:Context) {
                 if(lens)"C" else "°C") else null
         )
         val formatted=HudReadoutFormatter.render(layout,readings,recording)
-        // DUKO Lens has exactly one exception to monochrome values: a
-        // source-specific, display-only CPU advisory (not a device limit).
-        val cpuBand=HudLayoutPolicy.advisoryBand(cpuValue)
-        fun decorate(text:String):CharSequence {
-            if(!recording || cpuBand==0 || readings.cpuTemp==null)return text
-            val start=text.indexOf(readings.cpuTemp)
-            if(start<0)return text
-            val color=if(cpuBand==2)Color.rgb(244,67,79)
-                else Color.rgb(255,146,49)
-            return SpannableStringBuilder(text).apply {
-                setSpan(ForegroundColorSpan(color),start,
-                    start+readings.cpuTemp.length,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-        }
-        view.text=decorate(formatted.primary)
+        // Keep presentation-only spans on the existing snapshot text. No
+        // extra hardware read, overlay, animation loop or background job.
+        val band=HudLayoutPolicy.advisoryBand(cpuValue)
+        view.text=HudTextStyler.style(layout,formatted.primary,
+            readings.cpuTemp,band)
         secondaryText?.let {
-            it.text=decorate(formatted.secondary)
+            it.text=HudTextStyler.style(layout,formatted.secondary,
+                readings.cpuTemp,band)
             it.visibility=if(formatted.secondary.isNotEmpty())View.VISIBLE
                 else View.GONE
         }
         tertiaryText?.let {
-            it.text=decorate(formatted.tertiary)
+            it.text=HudTextStyler.style(layout,formatted.tertiary,
+                readings.cpuTemp,band)
             it.visibility=if(formatted.tertiary.isNotEmpty())View.VISIBLE
                 else View.GONE
         }
