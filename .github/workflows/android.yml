@@ -83,7 +83,11 @@ jobs:
         with:
           api-level: 33
           arch: x86_64
-          target: google_apis
+          # Lean AOSP API 33 image: no background GMS/Google NetworkStack
+          # traffic. Previous Google-APIs emulator lost its network stack
+          # and system_server during report tests, and sometimes failed
+          # immediately after sys.boot_completed before tests started.
+          target: default
           profile: pixel_4
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -memory 2048 -cores 2
