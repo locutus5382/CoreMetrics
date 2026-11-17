@@ -4,12 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.9.2 DUKO Comparison Report alpha** — select 2–5 completed recordings, choose a baseline, and export an offline PNG or vector PDF evidence matrix. It reuses the v0.9.9.1 full-session analytics and source provenance without changing the recorder, HUD, Quick Settings, permissions or SQLite v9. This is a test candidate; real Odin 2 Portal validation is intentionally deferred until after this milestone.
+**Current development status: v0.9.9.3 Reliability & Reporting alpha** — correcting Android integration fixtures, preserving emulator failure reports, reducing large-session report quantile allocations and enabling cancellation during lengthy offline exports. DUKO single-session and 2–5-run reporting, 2s/5s REC, HUD and Quick Settings are preserved. SQLite v9 unchanged; hardware testing is still deferred until the combined build is ready.
 
+## One-app Quick Start (v0.9.9.3)
 
-## One-app Quick Start (v0.9.9.2)
-
-1. For fault diagnosis install `CoreMetrics-v0.9.9.2-duko-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.2-duko-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.9.3-reliability-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.3-reliability-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -24,6 +23,15 @@
 
 ---
 
+
+## v0.9.9.3 — Reliability & Reporting hardening
+
+- Restored realistic Android v7/v8 migration test fixtures, corrected archive-restoration and SAF assertions, and retained production transaction and deletion safeguards.
+- In-place primitive quantile sorting avoids up to ~18 MB of temporary source-array copies in a maximally populated 250k-sample, nine-metric report (engineering estimate, not measured Odin PSS savings).
+- Offline DUKO single- and multi-session exports check Android coroutine cancellation during long sample scans, avoiding continued analysis of abandoned export jobs.
+- CI runs API 33 instrumentation and retains emulator test reports even on failure. Both debug and R8 optimized APK builds remain independent gates.
+- No new Android permissions, recorder services, HUD redesign, performance tuning controls or database migration.
+- See `docs/PORTAL_V0993_RELIABILITY_ACCEPTANCE.md`. This version remains a draft alpha until emulator and Odin acceptance.
 
 ## v0.9.9.2 — DUKO Comparison Report (2–5 recordings)
 
