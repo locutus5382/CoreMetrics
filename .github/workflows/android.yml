@@ -1,4 +1,4 @@
-name: CoreMetrics v0.9.9.1 DUKO Session Insight build
+name: CoreMetrics v0.9.9.2 DUKO Comparison build
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -32,12 +32,12 @@ jobs:
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.1-duko-debug
+          name: CoreMetrics-v0.9.9.2-duko-debug
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Upload R8-optimized installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.1-duko-optimized-test
+          name: CoreMetrics-v0.9.9.2-duko-optimized-test
           path: app/build/outputs/apk/optimizedTest/app-optimizedTest.apk
 
   android-instrumentation:
