@@ -41,6 +41,45 @@ class DukoSessionReportTest {
         return SessionStore(context) to name
     }
 
+    @Test fun cachedBoundsAndCancellationPreserveAllSourceRows() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val (db,name)=store()
+        try {
+            val csv=buildString {
+                append("game_label,configuration,status,sample_epoch_ms,cpu_temp_c\\n")
+                for(i in 0..1024) {
+                    append("NFS,Stock,COMPLETED,")
+                    append(1_700_000_100_000L+i*2_000L)
+                    append(",50.0\\n")
+                }
+            }
+            val id=db.importCsv(StringReader(csv))
+            val bounds=db.reportBounds(id)!!
+            var visited=0L
+            assertEquals(bounds.count,db.forEachReportPoint(id,bounds) {
+                visited++
+            })
+            assertEquals(1025L,visited)
+            assertTrue(runCatching {
+                db.forEachReportPoint(id,bounds.copy(count=bounds.count+1)) { }
+            }.isFailure)
+            var checks=0
+            assertTrue(runCatching {
+                DukoReportLoader.build(db,id) {
+                    if(++checks>=2)
+                        throw java.util.concurrent.CancellationException(
+                            "Synthetic Activity cancellation")
+                }
+            }.isFailure)
+            assertTrue("Cancellation was observed during the cursor scan",
+                checks>=2)
+            assertEquals(1025L,db.storedSampleCount(id))
+        }finally {
+            db.close()
+            app.deleteDatabase(name)
+        }
+    }
+
     @Test fun fullCursorPNGAndVectorPDFUseSameSourceData() {
         val app=ApplicationProvider.getApplicationContext<Context>()
         val (db,name)=store()
