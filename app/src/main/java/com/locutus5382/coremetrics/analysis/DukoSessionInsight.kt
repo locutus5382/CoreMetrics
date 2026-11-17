@@ -111,7 +111,7 @@ object DukoSessionInsight {
         }
     }
 
-    fun reading(m:Metric,p:SessionStore.Point):Double? {
+    fun reading(m:Metric,p:SessionStore.ReportRow):Double? {
         val value=when(m) {
             Metric.CPU_TEMP->p.cpu
             Metric.GPU_TEMP->p.gpu
@@ -151,7 +151,10 @@ object DukoSessionInsight {
         private val batterySources=LinkedHashSet<String>()
         private val warmth=BatteryTemperatureAdvisory()
         private var lastWarmth=BatteryTemperatureAdvisory.State.UNAVAILABLE
-        private var prior:SessionStore.Point?=null
+        // The report cursor reuses ONE mutable row. Retain exactly one
+        // independent scratch snapshot for energy/temperature intervals.
+        private val priorSnapshot=SessionStore.ReportScratch()
+        private var hasPrior=false
         private var samples=0
         // Each plotted sensor has independent missing-reading boundaries.
         // A missing GPU source must not fragment a valid CPU temperature trace.
@@ -172,7 +175,7 @@ object DukoSessionInsight {
         private val highEmitted=mutableSetOf<String>()
         private var previousThermal:Int?=null
 
-        private fun emit(p:SessionStore.Point,title:String,detail:String,
+        private fun emit(p:SessionStore.ReportRow,title:String,detail:String,
             evidence:Evidence) {
             eventCount++
             if(events.size<MAX_EVENTS)events+=Event(
@@ -180,7 +183,7 @@ object DukoSessionInsight {
         }
 
         private fun sustained(queue:ArrayDeque<Pair<Long,Double?>>,
-            name:String,p:SessionStore.Point,v:Double?) {
+            name:String,p:SessionStore.ReportRow,v:Double?) {
             queue.addLast(p.timeMs to v)
             while(queue.isNotEmpty() && queue.first.first<p.timeMs-120_000L)
                 queue.removeFirst()
@@ -200,9 +203,13 @@ object DukoSessionInsight {
             }
         }
 
-        fun accept(p:SessionStore.Point) {
+        // Existing immutable Point test/legacy callers remain supported.
+        fun accept(p:SessionStore.Point)=acceptSample(p)
+
+        // No per-sample Point copy is needed for the optimized SQLite cursor.
+        fun acceptSample(p:SessionStore.ReportRow) {
             require(samples<MAX_SAMPLES){"Too many samples for bounded DUKO export"}
-            val previous=prior
+            val previous=if(hasPrior)priorSnapshot else null
             require(previous==null || p.timeMs>previous.timeMs) {
                 "Non-monotonic timestamps; cannot produce truthful timeline"
             }
@@ -300,7 +307,9 @@ object DukoSessionInsight {
 
             sustained(recentGpu,"GPU",p,reading(Metric.GPU_LOAD,p))
             sustained(recentCore,"Busiest core",p,reading(Metric.BUSIEST,p))
-            prior=p;samples++
+            priorSnapshot.copyFrom(p)
+            hasPrior=true
+            samples++
         }
 
         fun finish():Report {
