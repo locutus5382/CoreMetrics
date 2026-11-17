@@ -105,6 +105,38 @@ network, root or Shizuku dependency.
   recovery across Eden/Hades launch and exit. Emulator policy tests do
   NOT establish device-overlay reliability.
 
+## Second-pass memory, CPU and cancellation audit
+
+The source of truth is the report code. These savings are **design estimates**,
+not measured Odin 2 Portal performance until the APK runs there.
+
+- **Opaque PNG canvas:** Both DUKO summary exporters now use RGB_565 for
+  1600×2200 print/white-background canvases, reducing the bitmap's backing
+  allocation from about **14.08 MB to 7.04 MB** (decimal units). PDF is still
+  native, full-colour vector A4. RGB_565 slightly reduces colour precision;
+  inspect labels and cyan accents visually on the Odin before release.
+- **Utilization ring:** Two 120-second GPU/core windows use primitive
+  timestamp/value arrays with dynamic ring growth, instead of creating one
+  boxed timestamp/value Pair per window and sample. NaN is an internal
+  unavailable-value sentinel; existing sample-count/coverage thresholds and
+  gap reset behaviour must remain unchanged.
+- **Extrema chart buckets:** New Extreme objects are created only if a value
+  changes a bucket's min/max. Chart finishing emits the two extremes in time
+  order without listOfNotNull/distinctBy/sortedBy allocations per bucket.
+- **CPU policy parser cache:** Repeated identical raw policy strings reuse
+  their parsed signature while real changes still require three consecutive
+  observations. The cache never replaces gap/unknown state reset.
+- **Report queue cancellation race:** Export coroutine enters its
+  try/finally before onDocumentResult returns, preventing a rapid Cancel from
+  stranding a pending request with busy=true forever.
+- **Regression tests:** Dense 200-ms imported 720-row util streams force ring
+  growth; 20/120-degree chart spikes survive time-bucket compaction; repeated
+  and then changed CPU policy signatures generate both observed transitions.
+
+Do not interpret reduced allocations as a measured application PSS reduction,
+a battery-life improvement or higher gameplay FPS. Actual export time, sampled
+PSS, user-visible colour fidelity and process stability need Odin tests.
+
 ## Automated acceptance
 
 1. JVM: all existing analytics, full-session quantile, exact Wh and report
