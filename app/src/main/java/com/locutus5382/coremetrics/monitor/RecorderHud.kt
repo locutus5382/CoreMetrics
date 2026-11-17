@@ -471,6 +471,27 @@ internal class RecorderHud(private val context:Context) {
         typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
         gravity=Gravity.CENTER_VERTICAL
     }
+    /** Tiny one-shot visual feedback: the native View click is authoritative.
+     * No repeat animation or pointer capture outside this button's own bounds.
+     */
+    private fun pressFeedback(view:View) {
+        view.setOnTouchListener { touched,event ->
+            when(event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touched.animate().cancel()
+                    touched.animate().scaleX(.94f).scaleY(.94f)
+                        .setDuration(75L).start()
+                }
+                MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL -> {
+                    touched.animate().cancel()
+                    touched.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(145L)
+                        .setInterpolator(OvershootInterpolator(.5f)).start()
+                }
+            }
+            false // Preserve the existing onClick and Android accessibility.
+        }
+    }
     private fun action(label:String,handler:()->Unit):TextView =
         styledLabel(label,13f).apply {
             isClickable=true
@@ -480,6 +501,7 @@ internal class RecorderHud(private val context:Context) {
             setPadding(dp(8f),dp(7f),dp(8f),dp(7f))
             background=rounded(.35f)
             setOnClickListener{handler()}
+            pressFeedback(this)
         }
 
     /** Neutral Frosted Glass: enabled = translucent white glass with a subtle
@@ -718,6 +740,7 @@ internal class RecorderHud(private val context:Context) {
             gravity=Gravity.CENTER_VERTICAL
             isClickable=true
             setOnClickListener{onRecord?.invoke()}
+            pressFeedback(this)
             background=rounded(.43f)
             setPadding(dp(8f),dp(5f),dp(8f),dp(5f))
         }
