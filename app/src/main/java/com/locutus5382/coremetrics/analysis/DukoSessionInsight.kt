@@ -350,7 +350,7 @@ object DukoSessionInsight {
             if(session.status !in setOf("COMPLETED","IMPORTED_COMPLETED"))
                 cautions+="Recording was not a clean completed session."
 
-            val energy=if(powerMs>0L)powerWms/3_600_000_000.0 else null
+            val energy=if(powerMs>0L)powerWms/3_600_000.0 else null
             val weighted=if(powerMs>0L)powerWms/powerMs else null
             return Report(session,MODEL_VERSION,ExportVersion.APP_VERSION,
                 bounds.firstMs,bounds.lastMs,samples,bounds.count,
