@@ -184,11 +184,14 @@ object DukoSessionInsight {
             if(queue.last.first-queue.first.first<120_000L-cadence)return
             val valid=queue.mapNotNull{it.second}
             val expected=max(2,(120_000L/cadence).toInt())
-            if(valid.size<expected*0.9)return
+            // A mostly absent source cannot satisfy a 95%-of-time rule.
+            // Sample coverage is an approximation, not continuous-frame proof.
+            if(valid.size<expected*0.95)return
             if(valid.count{it>=95.0}/valid.size.toDouble()>=0.95) {
                 emit(p,name+" sustained high utilization",
-                    "95%+ readings in 95%+ of valid samples over ~120s; "+
-                    "game FPS and bottleneck cause unmeasured.",Evidence.PATTERN)
+                    ">=95% expected sample coverage; >=95% of valid readings "+
+                    "at >=95% utilization over ~120s. Game FPS and "+
+                    "bottleneck cause unmeasured.",Evidence.PATTERN)
                 highEmitted+=name
             }
         }
