@@ -61,6 +61,7 @@ internal object DukoComparisonRenderer {
             }
             page{summary(it,result)}
             page{evidence(it,result)}
+            page{methods(it,result)}
             result.warnings.chunked(10).forEachIndexed{index,warnings ->
                 page{warningPage(it,result,index,warnings)}
             }
@@ -227,15 +228,38 @@ internal object DukoComparisonRenderer {
             y+=233f
         }
         y+=15f
-        a.rule(y);y+=51f
-        a.text("HOW TO INTERPRET THE MATRIX",81f,y,31f,BLUE,true)
-        y+=51f
-        for(item in r.methodology) {
-            if(y>2020f)break
-            y=a.wrap("• "+item,88f,y,1415f,23f,INK,3,33f)+18f
-        }
-        a.text("Remaining detailed limitations continue on notice pages.",
+        a.rule(y)
+        a.text("METHODOLOGY FOLLOWS ON PAGE 3",
+            82f,y+58f,29f,BLUE,true)
+        a.wrap("Original device, game, driver and power-source metadata "+
+            "are recorded observations or user-entered labels. "+
+            "Source equality does not prove equal game scenes.",
+            86f,y+100f,1400f,26f,INK,3,35f)
+        a.text("All source warnings are printed on subsequent notice pages.",
             85f,2147f,22f,ORANGE,true)
+    }
+
+    private fun methods(canvas:Canvas,r:DukoComparisonInsight.Result) {
+        val a=Art(canvas)
+        header(a,"How comparisons work",
+            "Eligibility rules, reporting boundaries and confidence labels",
+            "03 / DUKO")
+        a.text("COMPARABILITY: "+r.overall.label,
+            81f,329f,30f,ORANGE,true)
+        a.wrap("A sensor difference is an observation, not evidence "+
+            "that a game became smoother, faster or more efficient.",
+            84f,377f,1430f,26f,INK,3,38f)
+        var y=515f
+        r.methodology.forEachIndexed { index,item ->
+            a.rect(78f,y-30f,1447f,152f,Color.WHITE,12f)
+            a.rect(84f,y-20f,8f,127f,BLUE)
+            a.text((index+1).toString(),112f,y+2f,27f,BLUE,true)
+            a.wrap(item,161f,y,1320f,24f,INK,3,33f)
+            y+=170f
+        }
+        a.rule(2055f)
+        a.text("All notices follow. None is silently discarded.",
+            86f,2114f,23f,ORANGE,true)
     }
 
     private fun warningPage(canvas:Canvas,r:DukoComparisonInsight.Result,
