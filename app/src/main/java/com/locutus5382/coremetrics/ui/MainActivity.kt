@@ -1158,18 +1158,36 @@ class MainActivity : ComponentActivity() {
                 if(page=="Sessions" && requestedId>0L &&
                     detailLoadedId==requestedId) {
                     val session=sessionList.firstOrNull{it.id==requestedId}
-                        ?:withContext(Dispatchers.IO){
+                        ?:guardedUiDatabaseRead(this@MainActivity,"session detail"){
                             database.sessionById(requestedId)
+                        }.getOrElse {
+                            message="Cannot refresh session detail: "+
+                                it.javaClass.simpleName
+                            null
                         }
                     if(session!=null) {
                         val points=detailPoints
                         val report=withContext(Dispatchers.Default){
-                            BenchmarkAnalyzer.analyze(
-                                session,points,if(skipWarmUp)30 else 0)
+                            // Analysis errors must not kill the Compose owner.
+                            // Cancellation is still delivered to LaunchedEffect.
+                            try {
+                                Result.success(BenchmarkAnalyzer.analyze(
+                                    session,points,if(skipWarmUp)30 else 0))
+                            }catch(e:kotlinx.coroutines.CancellationException){
+                                throw e
+                            }catch(e:Exception){
+                                Result.failure(e)
+                            }
                         }
-                        if(page=="Sessions" && detailedId==requestedId &&
-                            detailLoadedId==requestedId)
-                            detailReport=report
+                        report.fold(onSuccess={ready->
+                            if(sessionUiVisible && page=="Sessions" &&
+                                detailedId==requestedId &&
+                                detailLoadedId==requestedId)
+                                detailReport=ready
+                        },onFailure={
+                            message="Session analysis unavailable: "+
+                                it.javaClass.simpleName
+                        })
                     }
                 }
             }
