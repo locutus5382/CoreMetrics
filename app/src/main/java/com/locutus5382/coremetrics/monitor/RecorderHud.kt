@@ -287,8 +287,8 @@ internal class RecorderHud(private val context:Context) {
     }
     private fun rounded(alpha:Float=opts.opacity):GradientDrawable {
         val layout=HudLayoutPolicy.normalize(opts.layout)
-        val glass=layout==HudLayoutPolicy.GLASS_CARD
-        val ribbon=layout==HudLayoutPolicy.RIBBON
+        val glass=layout==HudLayoutPolicy.TACTICAL
+        val ribbon=layout==HudLayoutPolicy.STRIP
         return GradientDrawable(GradientDrawable.Orientation.TL_BR,
             if(glass)intArrayOf(
                 Color.argb((255*alpha).roundToInt(),6,19,44),
@@ -302,8 +302,8 @@ internal class RecorderHud(private val context:Context) {
                 Color.argb((220*alpha).roundToInt(),26,56,107))
         ).apply {
             cornerRadius=dp(when(layout) {
-                HudLayoutPolicy.GLASS_CARD -> 16f
-                HudLayoutPolicy.RIBBON -> 12f
+                HudLayoutPolicy.TACTICAL -> 16f
+                HudLayoutPolicy.STRIP -> 12f
                 else -> 23f
             }).toFloat()
             setStroke(dp(1f).coerceAtLeast(1),
