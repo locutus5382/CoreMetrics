@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.text.Layout
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -261,14 +262,16 @@ internal class RecorderHud(private val context:Context) {
     private var disposed=false
 
     private fun shouldBlink() =
-        !disposed && recording && opts.blink && !locked && visible()
+        !disposed && recording && !locked && visible()
 
     private val blink=object:Runnable {
         override fun run() {
             if(!shouldBlink())return
-            blinkOn=!blinkOn
+            if(opts.blink)blinkOn=!blinkOn else blinkOn=true
             renderAction()
-            ui.postDelayed(this,650L)
+            // One existing UI clock keeps the elapsed timer correct even
+            // when blinking is OFF; never samples hardware or writes DB.
+            ui.postDelayed(this,1000L)
         }
     }
     /** Centralize scheduling to avoid duplicate callbacks across dock/expand,
@@ -277,7 +280,7 @@ internal class RecorderHud(private val context:Context) {
         ui.removeCallbacks(blink)
         blinkOn=true
         renderAction()
-        if(shouldBlink())ui.postDelayed(blink,650L)
+        if(shouldBlink())ui.postDelayed(blink,1000L)
     }
     private fun dp(v:Float)=(v*context.resources.displayMetrics.density).roundToInt()
     private fun windowWidth()=wm.currentWindowMetrics.bounds.width()
@@ -979,10 +982,10 @@ internal class RecorderHud(private val context:Context) {
         frame.pivotX=if(dockEdge==DockEdge.LEFT)0f else frame.width.toFloat()
         frame.pivotY=0f
         frame.alpha=.84f
-        frame.scaleX=.975f;frame.scaleY=.975f
+        frame.scaleX=.94f;frame.scaleY=.94f
         frame.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(150L)
-            .setInterpolator(DecelerateInterpolator()).start()
+            .setDuration(210L)
+            .setInterpolator(OvershootInterpolator(.7f)).start()
     }
 
     /** Keep one overlay window. Docking MUST change WindowManager dimensions
