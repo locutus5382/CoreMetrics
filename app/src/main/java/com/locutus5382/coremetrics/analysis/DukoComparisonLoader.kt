@@ -18,6 +18,15 @@ internal object DukoComparisonLoader {
             require(stored.status!="RECORDING") { "Stop recording session #"+id+" first" }
             DukoReportLoader.build(store,id)
         }
+        // A user may delete a previously loaded run while the next run is
+        // scanned. Refuse a mixed-age comparison instead of exporting silently.
+        reports.forEach { report ->
+            check(store.storedSampleCount(report.session.id)==
+                report.sourceSampleCount) {
+                "Selected session #"+report.session.id+
+                    " changed or was deleted during comparison export"
+            }
+        }
         return DukoComparisonInsight.analyze(reports,baselineId,testedVariable)
     }
 }
