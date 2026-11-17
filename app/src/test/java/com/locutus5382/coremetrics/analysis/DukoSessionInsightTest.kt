@@ -203,6 +203,24 @@ class DukoSessionInsightTest {
         assertTrue(points.zipWithNext().all{it.first.offsetMs<=it.second.offsetMs})
     }
 
+    @Test fun cachedCpuPolicyParsingStillReportsActualCapTransitions() {
+        val stock="policy3 max 2.80 GHz policy7 max 3.19 GHz"
+        val limited="policy3 max 1.79 GHz policy7 max 1.84 GHz"
+        val rows=(0..17).map { i ->
+            val raw=when {
+                i<6 -> stock
+                i<12 -> limited
+                else -> stock
+            }
+            p(1_000_000L+i*5000L).copy(observedCpuLimits=raw)
+        }
+        val r=report(rows)
+        val changes=r.events.filter{it.title=="CPU frequency ceiling changed"}
+        assertEquals(2,changes.size)
+        assertEquals(0,r.gapCount)
+        assertTrue(changes.all{it.detail.contains("Observed cap")})
+    }
+
     @Test fun changingSourceCountOrOrderRejectsMisleadingReport() {
         val acc=DukoSessionInsight.Accumulator(session(8),
             SessionStore.ReportBounds(8,1000,36_000),5000)
