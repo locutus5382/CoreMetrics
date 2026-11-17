@@ -2,6 +2,8 @@ package com.locutus5382.coremetrics.ui
 
 import android.content.Context
 import android.net.Uri
+import android.os.Debug
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -144,15 +146,34 @@ internal class DukoExportQueueViewModel:ViewModel() {
         percent=0
         val resolver=context.applicationContext.contentResolver
         val job=viewModelScope.launch {
+            val startedAt=SystemClock.elapsedRealtime()
             try {
-                withContext(Dispatchers.IO) {
+                val metrics=withContext(Dispatchers.IO) {
                     val worker=coroutineContext[Job]
                     var latest=-1
+                    var lastMemoryBucket=-1
+                    var highestPssKiB=0L
+                    var highestJavaHeapBytes=0L
+                    fun sampleMemory(percent:Int,force:Boolean=false) {
+                        // Samples at 10% increments DURING a user-requested
+                        // export only. This is approximate PSS, NOT exact peak
+                        // working set or a background monitor.
+                        val bucket=percent/10
+                        if(!force && bucket<=lastMemoryBucket)return
+                        lastMemoryBucket=bucket
+                        val heap=Runtime.getRuntime().let{
+                            it.totalMemory()-it.freeMemory()
+                        }
+                        if(heap>highestJavaHeapBytes)highestJavaHeapBytes=heap
+                        val pss=runCatching{Debug.getPss()}.getOrDefault(0L)
+                        if(pss>highestPssKiB)highestPssKiB=pss
+                    }
                     fun checkpoint() { worker?.ensureActive() }
                     fun progress(value:Int,label:String) {
                         val v=value.coerceIn(0,99)
                         if(v<=latest)return
                         latest=v
+                        sampleMemory(v)
                         viewModelScope.launch(Dispatchers.Main.immediate) {
                             if(current==task) {
                                 percent=v
@@ -201,11 +222,20 @@ internal class DukoExportQueueViewModel:ViewModel() {
                     }
                     checkpoint()
                     progress(99,"Saving report…")
-                    generated
-                }.let { description ->
-                    percent=100
-                    resultMessage=task.title+" saved ("+description+")."
+                    sampleMemory(100,force=true)
+                    Triple(generated,highestPssKiB,highestJavaHeapBytes)
                 }
+                val seconds=(SystemClock.elapsedRealtime()-startedAt)/1000.0
+                percent=100
+                val pss=if(metrics.second>0L)
+                    " · sampled PSS up to "+(metrics.second/1024L)+" MiB"
+                    else ""
+                val heap=if(metrics.third>0L)
+                    " · sampled Java heap up to "+(metrics.third/1_048_576L)+
+                        " MiB" else ""
+                resultMessage=task.title+" saved ("+metrics.first+
+                    "), "+String.format(java.util.Locale.US,"%.1f",seconds)+
+                    " s"+pss+heap+"; samples only, not verified peak."
             }catch(e:CancellationException) {
                 val removed=withContext(NonCancellable+Dispatchers.IO) {
                     runCatching {resolver.delete(uri,null,null)>0}
