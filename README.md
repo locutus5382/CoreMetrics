@@ -33,6 +33,10 @@
 - No new Android permissions, recorder services, HUD redesign, performance tuning controls or database migration.
 - See `docs/PORTAL_V0993_RELIABILITY_ACCEPTANCE.md`. This version remains a draft alpha until emulator and Odin acceptance.
 
+**On-demand FIFO reporting (v0.9.9.3):** Every DUKO PNG/PDF is created only after an explicit button press and user-selected document destination. Multiple requests are queued and prepared in click order; **only one report runs at a time**, including its file picker. Sessions and Compare show a queue with progress, Cancel, and Remove controls. The queue survives screen rotation but is not a persistent background worker. During requested exports, the app shows an elapsed-time and sampled PSS/Java-heap estimate, not a measured true memory peak.
+
+**Large-recording optimization:** DUKO now uses one reusable 15-field cursor scratch row instead of one 25-field Point per sample, keeps sliding-window utilization counters without repeated list allocations, and reuses bounds during source scans. The detailed five-session PDF splits matrices for legibility and explains ineligible sensor comparisons; the PNG remains a compact overview. See `docs/PORTAL_V0993_RELIABILITY_ACCEPTANCE.md`.
+
 ## v0.9.9.2 — DUKO Comparison Report (2–5 recordings)
 
 - **How to use:** Compare → **DUKO COMPARISON REPORT** → select 2–5 recordings → pick the baseline and any declared test variable → **DUKO Comparison PNG / PDF**. The Android document picker controls where the offline output is saved.
