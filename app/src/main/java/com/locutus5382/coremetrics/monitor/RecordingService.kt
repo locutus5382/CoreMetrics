@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.service.quicksettings.TileService
 import com.locutus5382.coremetrics.data.SessionStore
+import com.locutus5382.coremetrics.data.ProcessSessionStoreOwner
 import com.locutus5382.coremetrics.quick.SessionTile
 import com.locutus5382.coremetrics.quick.HudTile
 import com.locutus5382.coremetrics.telemetry.DirectSampler
@@ -84,7 +85,7 @@ class RecordingService:Service() {
 
     override fun onCreate() {
         super.onCreate()
-        db=SessionStore(applicationContext)
+        db=ProcessSessionStoreOwner.get(applicationContext)
         hud=MonitorHudOwner.get(applicationContext)
         // HudOptions.from opens the shared SQLite settings database.
         // Defer that read until AFTER the foreground-service deadline.
