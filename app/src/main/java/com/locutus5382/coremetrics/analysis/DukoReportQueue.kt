@@ -66,7 +66,7 @@ internal class DukoReportScheduler(private val maxWaiting:Int=12) {
             active=waiting.removeFirst()
     }
     fun complete(request:DukoReportTask) {
-        check(active==request){"Completing a report that is not current"}
+        check(active===request){"Completing a report that is not current"}
         active=null
         nextIfIdle()
     }
