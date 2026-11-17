@@ -60,6 +60,34 @@ class DukoSessionReportTest {
                 visited++
             })
             assertEquals(1025L,visited)
+            var scratchCount=0L
+            var previous=-1L
+            val ids=HashSet<Int>()
+            assertEquals(bounds.count,db.forEachReportSample(id,bounds){row ->
+                assertTrue(row.timeMs>previous)
+                previous=row.timeMs
+                // The scratch instance must be physically reused for all
+                // rows, not secretly reallocated for each stored sample.
+                ids+=System.identityHashCode(row)
+                scratchCount++
+            })
+            assertEquals(1,ids.size)
+            assertEquals(1025L,scratchCount)
+            // Compare full Point-based analysis and optimized primitive
+            // cursor analysis; numerical results must be identical.
+            val optimized=DukoReportLoader.build(db,id)
+            val reference=DukoSessionInsight.Accumulator(
+                db.sessionById(id)!!,bounds,db.reportCadenceMs(id))
+            db.forEachReportPoint(id,bounds){reference.accept(it)}
+            val oldReport=reference.finish()
+            for(metric in DukoSessionInsight.Metric.entries) {
+                val x=optimized.stat(metric)
+                val y=oldReport.stat(metric)
+                assertEquals(y.count,x.count)
+                assertEquals(y.p50,x.p50)
+                assertEquals(y.p95,x.p95)
+            }
+            assertEquals(oldReport.measuredEnergyWh,optimized.measuredEnergyWh)
             assertTrue(runCatching {
                 db.forEachReportPoint(id,bounds.copy(count=bounds.count+1)) { }
             }.isFailure)
