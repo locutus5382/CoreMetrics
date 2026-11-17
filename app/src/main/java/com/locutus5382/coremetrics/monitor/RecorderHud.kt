@@ -1125,66 +1125,109 @@ internal class RecorderHud(private val context:Context) {
     }
 
     private fun applyAppearance() {
-        val frame=root ?:return
+        val frame=root?:return
         applyLayoutStructure()
-        val layout=HudLayoutPolicy.normalize(opts.layout)
-        val card=layout==HudLayoutPolicy.GLASS_CARD
-        val ribbon=layout==HudLayoutPolicy.RIBBON
+        val theme=HudLayoutPolicy.normalize(opts.layout)
+        val striker=theme==HudLayoutPolicy.STRIKER
+        val tactical=theme==HudLayoutPolicy.TACTICAL
+        val strip=theme==HudLayoutPolicy.STRIP
+        val ghost=theme==HudLayoutPolicy.GHOST
+        val lens=theme==HudLayoutPolicy.DUKO
         cardHeading?.apply {
-            visibility=if(card && !collapsed)View.VISIBLE else View.GONE
-            text=if(recording)"COREMETRICS  /  LIVE TELEMETRY"
-                else "COREMETRICS  /  STANDBY"
+            visibility=if(tactical && !collapsed)View.VISIBLE else View.GONE
+            text=if(recording)"COREMETRICS / LIVE TELEMETRY"
+                else "COREMETRICS / READY"
+            setTextColor(Color.rgb(93,215,245))
+            setPadding(dp(9f),dp(5f),dp(8f),dp(1f))
         }
-        frame.background=if(collapsed) null else rounded(
-            opts.opacity*(if(locked) .90f else 1f))
-        frame.setPadding(if(collapsed)0 else dp(5f),
-            if(collapsed)0 else dp(3f),
-            if(collapsed)0 else dp(5f),
-            if(collapsed)0 else dp(3f))
+        frame.background=if(collapsed || ghost) null else
+            HudFrameDrawable(theme,opts.opacity*(if(locked).90f else 1f),
+                context.resources.displayMetrics.density)
+        frame.setPadding(if(collapsed||ghost)0 else dp(if(lens)11f else 7f),
+            if(collapsed||ghost)0 else dp(if(lens)9f else 5f),
+            if(collapsed||ghost)0 else dp(if(lens)11f else 7f),
+            if(collapsed||ghost)0 else dp(if(lens)9f else 5f))
         pill?.visibility=if(collapsed)View.GONE else View.VISIBLE
         dockTab?.visibility=if(collapsed)View.VISIBLE else View.GONE
-        drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
-        if(drawer!=null)refreshDrawerControls()
-        val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
-        mainText?.textSize=HudLayoutPolicy.nominalTextSp(layout,opts.size)
-        mainText?.typeface=if(ribbon)Typeface.MONOSPACE else Typeface.DEFAULT
-        mainText?.setPadding(
-            dp(if(card)10f else if(ribbon)5f else 6f),
-            dp(if(card)8f else if(ribbon)4f else 5f),
-            dp(if(card)9f else 4f),
-            dp(if(card)8f else if(ribbon)4f else 5f))
-        // All enabled metrics stay visible in short lines, with REC, gear,
-        // dock and unlock controls remaining fixed-size touch targets.
-        mainText?.maxWidth=dp((if(card)390f else if(ribbon)700f else 460f)*scale)
-        mainText?.setSingleLine(false)
-        // A narrow ribbon may need four rows when all seven metrics are
-        // selected; NEVER silently truncate the final metric.
-        mainText?.maxLines=if(ribbon)8 else 5
-        mainText?.ellipsize=null
-        recText?.textSize=11f*scale
-        // The unlocked main control and separate locked recovery chip share the
-        // same vector linework, without an OS-dependent emoji glyph.
-        // Retain the icon's layout width so the separate unlock chip is exactly
-        // where the user expects it, but it cannot receive main-window touches.
+        drawer?.visibility=View.GONE
+        drawerOpen=false
+        val scale=when(opts.size){"small"->.82f;"large"->1.18f;else->1f}
+        val textSp=HudLayoutPolicy.nominalTextSp(theme,opts.size)
+        for(view in arrayOf(mainText,secondaryText,tertiaryText))view?.apply {
+            textSize=textSp
+            typeface=when {
+                lens||strip->Typeface.MONOSPACE
+                striker->Typeface.create("sans-serif-condensed",
+                    Typeface.BOLD)
+                else->Typeface.create("sans-serif-medium",Typeface.NORMAL)
+            }
+            setTextColor(Color.rgb(239,247,255))
+            setShadowLayer(if(ghost)dp(2f).toFloat() else 0f,
+                0f,if(ghost)dp(1f).toFloat() else 0f,Color.BLACK)
+            setPadding(dp(if(ghost)1f else if(lens)3f else 6f),
+                dp(if(ghost)2f else 5f),
+                dp(if(ghost)1f else if(lens)3f else 6f),
+                dp(if(ghost)2f else 5f))
+            setSingleLine(false)
+            maxLines=if(lens)9 else if(tactical)4 else if(strip)5 else 6
+            ellipsize=null
+        }
+        // Tactical has three substantive, independent labelled data blocks.
+        // No extra background bitmap or shader is created on sampling ticks.
+        for(view in arrayOf(mainText,secondaryText,tertiaryText)){
+            view?.background=if(tactical)GradientDrawable().apply {
+                cornerRadius=dp(4f).toFloat()
+                setColor(Color.argb(110,12,34,58))
+                setStroke(dp(.6f).coerceAtLeast(1),
+                    Color.argb(80,118,172,200))
+            } else null
+        }
+        secondaryText?.setPadding(dp(6f),dp(5f),dp(5f),dp(5f))
+        tertiaryText?.setPadding(dp(6f),dp(5f),dp(5f),dp(5f))
+        if(striker) {
+            mainText?.setPadding(dp(8f),dp(6f),dp(7f),dp(6f))
+            secondaryText?.setPadding(dp(10f),dp(6f),dp(3f),dp(6f))
+        }
+        recControl?.background=when {
+            ghost||lens->null
+            else->GradientDrawable().apply {
+                cornerRadius=dp(if(striker)5f else 8f).toFloat()
+                setColor(Color.argb(125,9,22,41))
+                setStroke(dp(1f).coerceAtLeast(1),
+                    Color.argb(210,255,91,109))
+            }
+        }
+        recControl?.setPadding(dp(if(lens)2f else 8f),dp(3f),
+            dp(if(lens)5f else 8f),dp(3f))
+        recText?.apply {
+            textSize=(if(lens)12f else 11f)*scale
+            typeface=if(lens||strip)Typeface.MONOSPACE
+                else Typeface.DEFAULT_BOLD
+        }
+        lockControl?.apply {
+            if(lens){
+                background=null
+                text="[ LOCK ]"
+                setTextColor(Color.rgb(225,237,249))
+                textSize=11f*scale
+                minimumWidth=dp(64f)
+                minimumHeight=dp(36f)
+            }else{
+                background=FlatLockChipDrawable(locked=false)
+                text=""
+                minimumWidth=dp(38f)
+                minimumHeight=dp(38f)
+            }
+        }
         controlsRow?.visibility=if(locked)View.GONE else View.VISIBLE
         lockedSpace?.visibility=if(locked)View.VISIBLE else View.GONE
         lockControl?.visibility=if(locked)View.GONE else View.VISIBLE
         closeControl?.visibility=if(recording)View.GONE else View.VISIBLE
+        minimizeControl?.visibility=if(striker||tactical)View.VISIBLE else View.GONE
         refreshThermalIndicator()
         renderTelemetry()
         renderAction()
         updateGeometry()
-        if(drawerOpen && !collapsed)frame.post {
-            if(root===frame && attached() && drawerOpen && !collapsed) {
-                val p=params ?:return@post
-                val safeX=(windowWidth()-frame.width-dp(8f)).coerceAtLeast(0)
-                if(p.x>safeX) {
-                    p.x=safeX
-                    runCatching{wm.updateViewLayout(frame,p)}
-                }
-                if(locked)repositionUnlockControl()
-            }
-        }
         if(locked)frame.post{if(root===frame)repositionUnlockControl()}
     }
 
