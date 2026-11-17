@@ -95,7 +95,7 @@ internal data class HudOptions(
             return HudOptions(
                 opacity=f(OPACITY,.57f).coerceIn(.30f,.90f),
                 size=s(SIZE,"regular").takeIf { it in setOf("small","regular","large") } ?: "regular",
-                layout=s(LAYOUT,"pill").takeIf { it in setOf("pill","pro") } ?: "pill",
+                layout=HudLayoutPolicy.normalize(s(LAYOUT,"pill")),
                 indicatorColor=s(INDICATOR,"red").takeIf {
                     it in setOf("red","orange","cyan","violet") } ?: "red",
                 blink=b(BLINK,true),
@@ -114,7 +114,7 @@ internal data class HudOptions(
         fun addExtras(i: Intent, options: HudOptions): Intent = i.apply {
             putExtra(OPACITY,options.opacity)
             putExtra(SIZE,options.size)
-            putExtra(LAYOUT,options.layout)
+            putExtra(LAYOUT,HudLayoutPolicy.normalize(options.layout))
             putExtra(INDICATOR,options.indicatorColor)
             putExtra(BLINK,options.blink)
             putExtra(ADAPTIVE,options.adaptiveColors)
@@ -134,7 +134,7 @@ internal data class HudOptions(
     fun save(context:Context):Boolean {
         val p=context.getSharedPreferences("coremetrics_settings",Context.MODE_PRIVATE)
         p.edit().putFloat(OPACITY,opacity)
-            .putString(SIZE,size).putString(LAYOUT,layout)
+            .putString(SIZE,size).putString(LAYOUT,HudLayoutPolicy.normalize(layout))
             .putString(INDICATOR,indicatorColor).putBoolean(BLINK,blink)
             .putBoolean("hud_cpuTemp",showCpuTemp)
             .putBoolean("hud_gpuTemp",showGpuTemp)
@@ -148,7 +148,7 @@ internal data class HudOptions(
             .putBoolean(ADAPTIVE,adaptiveColors).apply()
         val json=JSONObject()
             .put(OPACITY,opacity.toDouble())
-            .put(SIZE,size).put(LAYOUT,layout)
+            .put(SIZE,size).put(LAYOUT,HudLayoutPolicy.normalize(layout))
             .put(INDICATOR,indicatorColor).put(BLINK,blink)
             .put("hud_cpuTemp",showCpuTemp)
             .put("hud_gpuTemp",showGpuTemp)
@@ -181,7 +181,12 @@ internal class RecorderHud(private val context:Context) {
     // detached tracked view can be cleaned only after this grace period.
     private var lastAddRequestedAt=0L
     private var pill:LinearLayout?=null
+    private var readingsRow:LinearLayout?=null
     private var controlsRow:LinearLayout?=null
+    private var topActionsRow:LinearLayout?=null
+    private var bottomActionsRow:LinearLayout?=null
+    private var cardHeading:TextView?=null
+    private var structuralLayout:String?=null
     private var drawer:LinearLayout?=null
     private var dockTab:LinearLayout?=null
     private var dockVisual:View?=null
@@ -277,13 +282,32 @@ internal class RecorderHud(private val context:Context) {
         "violet" -> Color.rgb(190,139,250)
         else -> Color.rgb(255,68,76)
     }
-    private fun rounded(alpha:Float=opts.opacity):GradientDrawable =
-        GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(
-            Color.argb((255*alpha).roundToInt(),7,17,40),
-            Color.argb((220*alpha).roundToInt(),26,56,107))).apply {
-            cornerRadius=dp(if(opts.layout=="pro")13f else 23f).toFloat()
-            setStroke(dp(1f).coerceAtLeast(1),Color.argb(150,210,234,255))
+    private fun rounded(alpha:Float=opts.opacity):GradientDrawable {
+        val layout=HudLayoutPolicy.normalize(opts.layout)
+        val glass=layout==HudLayoutPolicy.GLASS_CARD
+        val ribbon=layout==HudLayoutPolicy.RIBBON
+        return GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            if(glass)intArrayOf(
+                Color.argb((255*alpha).roundToInt(),6,19,44),
+                Color.argb((242*alpha).roundToInt(),20,55,91),
+                Color.argb((226*alpha).roundToInt(),11,35,68))
+            else if(ribbon)intArrayOf(
+                Color.argb((255*alpha).roundToInt(),5,19,38),
+                Color.argb((240*alpha).roundToInt(),18,51,80))
+            else intArrayOf(
+                Color.argb((255*alpha).roundToInt(),7,17,40),
+                Color.argb((220*alpha).roundToInt(),26,56,107))
+        ).apply {
+            cornerRadius=dp(when(layout) {
+                HudLayoutPolicy.GLASS_CARD -> 16f
+                HudLayoutPolicy.RIBBON -> 12f
+                else -> 23f
+            }).toFloat()
+            setStroke(dp(1f).coerceAtLeast(1),
+                Color.argb(if(glass)192 else if(ribbon)165 else 150,
+                    210,234,255))
         }
+    }
 
     fun permissionGranted()=Settings.canDrawOverlays(context)
     /** Record only identity/ownership, never game labels or sample data. */
@@ -634,6 +658,7 @@ internal class RecorderHud(private val context:Context) {
         }
         line.addView(readings,LinearLayout.LayoutParams(
             0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
+        readingsRow=readings
         val actions=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
             gravity=Gravity.CENTER
@@ -683,6 +708,7 @@ internal class RecorderHud(private val context:Context) {
         topActions.addView(rec)
         actions.addView(topActions,LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,dp(33f)))
+        topActionsRow=topActions
         val bottomActions=LinearLayout(context).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.END or Gravity.CENTER_VERTICAL
@@ -708,6 +734,7 @@ internal class RecorderHud(private val context:Context) {
         }
         bottomActions.addView(closeControl)
         actions.addView(bottomActions)
+        bottomActionsRow=bottomActions
         // HUD metric customization is in the app's HUD Studio. Do not
         // allocate or expose the former in-game settings tray.
         drawerControl=null
@@ -737,8 +764,19 @@ internal class RecorderHud(private val context:Context) {
         dockVisual=badge
         dockTab=tab
 
+        // The compact glass card gets one static branded heading.
+        // All layouts retain exactly the same telemetry TextView and controls.
+        val heading=styledLabel("COREMETRICS  /  TELEMETRY",10f).apply {
+            setTextColor(Color.rgb(135,231,255))
+            letterSpacing=.11f
+            typeface=Typeface.DEFAULT_BOLD
+            setPadding(dp(10f),dp(7f),dp(8f),dp(1f))
+            visibility=View.GONE
+        }
+        cardHeading=heading
         val frame=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL
+            addView(heading)
             addView(line)
             addView(tab)
         }
@@ -936,13 +974,23 @@ internal class RecorderHud(private val context:Context) {
             // Compact side-by-side layout; reserve measured telemetry width
             // plus only the actual right-side controls or unlock target.
             val viewport=(windowWidth()-dp(8f)).coerceAtLeast(dp(220f))
+            val layout=HudLayoutPolicy.normalize(opts.layout)
+            val card=layout==HudLayoutPolicy.GLASS_CARD
+            val ribbon=layout==HudLayoutPolicy.RIBBON
             val controlWidth=if(locked)dp(58f) else dp(126f)
-            val minimum=dp(if(locked)200f else 300f).coerceAtMost(viewport)
-            // One compact horizontal row. When locked, the only space on the
-            // right is the separate touchable 48dp unlock handle.
-            val natural=longest.roundToInt()+controlWidth
-            p.width=natural.coerceIn(minimum,viewport)
-            text?.maxWidth=(p.width-controlWidth).coerceAtLeast(dp(85f))
+            val maxWidth=if(card)minOf(viewport,dp(425f)) else viewport
+            val minimum=dp(
+                if(card) {if(locked)230f else 275f}
+                else if(ribbon) {if(locked)205f else 300f}
+                else {if(locked)200f else 300f}
+            ).coerceAtMost(maxWidth)
+            // A stacked glass card reserves bottom-row room for the REC,
+            // dock and lock controls. Pill/ribbon remain side-by-side.
+            val natural=longest.roundToInt()+
+                if(card)dp(26f) else controlWidth
+            p.width=natural.coerceIn(minimum,maxWidth)
+            text?.maxWidth=(p.width-if(card)dp(26f) else controlWidth)
+                .coerceAtLeast(dp(85f))
             p.x=if(anchoredRight)
                 (windowWidth()-p.width-dp(4f)).coerceAtLeast(0)
                 else p.x.coerceIn(0,(windowWidth()-p.width).coerceAtLeast(0))
@@ -986,8 +1034,64 @@ internal class RecorderHud(private val context:Context) {
         runCatching {wm.updateViewLayout(chip,cp)}
     }
 
+    /**
+     * Reconfigure existing views IN PLACE when the user switches layouts.
+     * Do not remove/re-add the WindowManager overlay or duplicate REC controls.
+     * Called only on user configuration, service rebind or mode change.
+     */
+    private fun applyLayoutStructure() {
+        val layout=HudLayoutPolicy.normalize(opts.layout)
+        if(structuralLayout==layout)return
+        val line=pill ?:return
+        val readings=readingsRow ?:return
+        val actions=controlsRow ?:return
+        val top=topActionsRow ?:return
+        val bottom=bottomActionsRow ?:return
+        val card=layout==HudLayoutPolicy.GLASS_CARD
+        line.orientation=if(card)LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        line.gravity=if(card)Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
+        readings.layoutParams=if(card)
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+            else LinearLayout.LayoutParams(
+                0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+        actions.orientation=if(card)LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        actions.gravity=if(card)
+            Gravity.END or Gravity.CENTER_VERTICAL else Gravity.CENTER
+        actions.layoutParams=if(card)
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin=dp(2f)
+            }
+            else LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT)
+        top.gravity=if(card)Gravity.START or Gravity.CENTER_VERTICAL else Gravity.CENTER
+        top.layoutParams=if(card)
+            LinearLayout.LayoutParams(0,dp(39f),1f)
+            else LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,dp(33f))
+        bottom.gravity=Gravity.END or Gravity.CENTER_VERTICAL
+        bottom.layoutParams=LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            if(card)dp(39f) else LinearLayout.LayoutParams.WRAP_CONTENT)
+        structuralLayout=layout
+        invalidateLayoutCache()
+    }
+
     private fun applyAppearance() {
         val frame=root ?:return
+        applyLayoutStructure()
+        val layout=HudLayoutPolicy.normalize(opts.layout)
+        val card=layout==HudLayoutPolicy.GLASS_CARD
+        val ribbon=layout==HudLayoutPolicy.RIBBON
+        cardHeading?.apply {
+            visibility=if(card && !collapsed)View.VISIBLE else View.GONE
+            text=if(recording)"COREMETRICS  /  LIVE TELEMETRY"
+                else "COREMETRICS  /  STANDBY"
+        }
         frame.background=if(collapsed) null else rounded(
             opts.opacity*(if(locked) .90f else 1f))
         frame.setPadding(if(collapsed)0 else dp(5f),
@@ -999,12 +1103,20 @@ internal class RecorderHud(private val context:Context) {
         drawer?.visibility=if(!collapsed && drawerOpen)View.VISIBLE else View.GONE
         if(drawer!=null)refreshDrawerControls()
         val scale=when(opts.size) {"small"->.82f;"large"->1.20f;else->1f}
-        mainText?.textSize=12f*scale
+        mainText?.textSize=HudLayoutPolicy.nominalTextSp(layout,opts.size)
+        mainText?.typeface=if(ribbon)Typeface.MONOSPACE else Typeface.DEFAULT
+        mainText?.setPadding(
+            dp(if(card)10f else if(ribbon)5f else 6f),
+            dp(if(card)8f else if(ribbon)4f else 5f),
+            dp(if(card)9f else 4f),
+            dp(if(card)8f else if(ribbon)4f else 5f))
         // All enabled metrics stay visible in short lines, with REC, gear,
         // dock and unlock controls remaining fixed-size touch targets.
-        mainText?.maxWidth=dp(460f*scale)
+        mainText?.maxWidth=dp((if(card)390f else if(ribbon)700f else 460f)*scale)
         mainText?.setSingleLine(false)
-        mainText?.maxLines=5
+        // A narrow ribbon may need four rows when all seven metrics are
+        // selected; NEVER silently truncate the final metric.
+        mainText?.maxLines=if(ribbon)8 else 5
         mainText?.ellipsize=null
         recText?.textSize=11f*scale
         // The unlocked main control and separate locked recovery chip share the
@@ -1148,7 +1260,11 @@ internal class RecorderHud(private val context:Context) {
     private fun renderTelemetry() {
         val view=mainText ?:return
         if(!recording) {
-            view.text="COREMETRICS · READY\nNo sensor sampling until REC"
+            view.text=when(HudLayoutPolicy.normalize(opts.layout)) {
+                HudLayoutPolicy.GLASS_CARD -> "Ready to record\nTelemetry starts after REC"
+                HudLayoutPolicy.RIBBON -> "CM · READY  │  TAP REC TO START"
+                else -> "COREMETRICS · READY\nNo sensor sampling until REC"
+            }
             return
         }
         val s=latest
@@ -1170,7 +1286,7 @@ internal class RecorderHud(private val context:Context) {
                 else -> ""
             }
             add("CPU T",fmt(thermalValue?.smoothedC,"°C")+direction)
-            if(opts.layout=="pro" && thermalValue?.rawPeakC!=null)
+            if(HudLayoutPolicy.card(opts.layout) && thermalValue?.rawPeakC!=null)
                 items+=("Peak "+fmt(thermalValue?.rawPeakC,"°C")) to
                     HudSeverity.Level.NORMAL
         }
@@ -1186,9 +1302,12 @@ internal class RecorderHud(private val context:Context) {
         // Game FPS is not collected by the ordinary-app recorder.
         val builder=SpannableStringBuilder()
         if(items.isEmpty())builder.append("REC · telemetry")
-        else items.forEachIndexed{index,pair->
-            if(index>0)builder.append(
-                if(items.size>2 && index%2==0)"\n" else " · ")
+        val widthDp=(windowWidth()/context.resources.displayMetrics.density)
+            .roundToInt()
+        val twoRows=HudLayoutPolicy.ribbonTwoRows(items.size,widthDp)
+        items.forEachIndexed{index,pair->
+            if(index>0)builder.append(HudLayoutPolicy.divider(
+                opts.layout,index,items.size,twoRows))
             val begin=builder.length
             builder.append(pair.first)
             if(pair.first.startsWith("BAT T ")) {
@@ -1265,7 +1384,9 @@ internal class RecorderHud(private val context:Context) {
         val rootRemoved=frame==null || removeTracked(frame)
         if(rootRemoved){
             root=null;lastAddRequestedAt=0L
-            params=null;pill=null;controlsRow=null;drawer=null;dockTab=null
+            params=null;pill=null;readingsRow=null;controlsRow=null
+            topActionsRow=null;bottomActionsRow=null;cardHeading=null
+            structuralLayout=null;drawer=null;dockTab=null
             dockVisual=null;mainText=null;thermalIndicator=null;recText=null;recDot=null
             recControl=null;lockControl=null;drawerControl=null
             closeControl=null;minimizeControl=null

@@ -8,6 +8,7 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.locutus5382.coremetrics.monitor.HudOptions
+import com.locutus5382.coremetrics.monitor.HudLayoutPolicy
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +42,20 @@ class HudBatteryOptionsTest {
             assertTrue(HudOptions.from(sandbox).showBatteryTemp)
             val override=HudOptions.addExtras(Intent(),chosen.copy(showBatteryTemp=false))
             assertFalse(HudOptions.from(sandbox,override).showBatteryTemp)
+            // The old rounded-card choice remains loadable and normalizes to
+            // the new Compact Glass Card; one canonical value is persisted.
+            val migrated=HudOptions.addExtras(Intent(),chosen.copy(layout="pro"))
+            assertEquals(HudLayoutPolicy.GLASS_CARD,
+                HudOptions.from(sandbox,migrated).layout)
+            val card=chosen.copy(layout=HudLayoutPolicy.GLASS_CARD)
+            assertTrue(card.save(sandbox))
+            assertEquals(HudLayoutPolicy.GLASS_CARD,HudOptions.from(sandbox).layout)
+            // Ribbon survives the SQL snapshot used across UI/:monitor/tile.
+            val ribbon=chosen.copy(layout=HudLayoutPolicy.RIBBON)
+            assertTrue(ribbon.save(sandbox))
+            assertEquals(HudLayoutPolicy.RIBBON,HudOptions.from(sandbox).layout)
+            assertEquals(HudLayoutPolicy.PILL,
+                HudLayoutPolicy.normalize("unrecognized-layout"))
         }finally {
             val editor=prefs.edit().clear()
             old.forEach{(key,value)->

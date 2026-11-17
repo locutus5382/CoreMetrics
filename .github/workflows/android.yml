@@ -1,4 +1,4 @@
-name: CoreMetrics v0.9.9.4 Pre-Odin Validation CI
+name: CoreMetrics v0.9.9.5 HUD Layouts and Stability CI
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -32,18 +32,18 @@ jobs:
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.4-pre-odin-debug
+          name: CoreMetrics-v0.9.9.5-hud-layouts-debug
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Upload R8-optimized installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.4-pre-odin-optimized-test
+          name: CoreMetrics-v0.9.9.5-hud-layouts-optimized-test
           path: app/build/outputs/apk/optimizedTest/app-optimizedTest.apk
       - name: Preserve JVM unit test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0994-jvm-test-failures
+          name: CoreMetrics-v0995-jvm-test-failures
           if-no-files-found: ignore
           retention-days: 14
           path: |
@@ -110,20 +110,14 @@ jobs:
           # One explicit bounded test subset per fresh API 33 emulator.
           # Collect a best-effort logcat while the emulator still exists
           # after an instrumentation abort; no synthetic pass on crash.
-          script: |
-            mkdir -p app/build/outputs/ci-emulator
-            adb logcat -c || true
-            set +e
-            timeout --signal=TERM --kill-after=20s 20m gradle :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="${{ matrix.classes }}" --no-daemon
-            result=$?
-            timeout 12s adb logcat -d -t 3000 > app/build/outputs/ci-emulator/logcat.txt 2>&1 || true
-            adb devices -l > app/build/outputs/ci-emulator/devices.txt 2>&1 || true
-            exit "$result"
+          # Entire test/cleanup sequence runs in one bash process.
+          # The emulator action executes each script line separately.
+          script: bash scripts/ci-android-instrumentation.sh "${{ matrix.classes }}"
       - name: Preserve Android instrumentation reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0994-android-emulator-${{ matrix.group }}-results
+          name: CoreMetrics-v0995-android-emulator-${{ matrix.group }}-results
           if-no-files-found: ignore
           retention-days: 14
           path: |
