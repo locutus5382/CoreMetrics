@@ -258,7 +258,7 @@ internal class RecorderHud(private val context:Context) {
     private var disposed=false
 
     private fun shouldBlink() =
-        !disposed && recording && opts.blink && !collapsed && !locked && visible()
+        !disposed && recording && opts.blink && !locked && visible()
 
     private val blink=object:Runnable {
         override fun run() {
@@ -1437,43 +1437,47 @@ internal class RecorderHud(private val context:Context) {
 
     private fun renderDockState() {
         if(!collapsed)return
-        val badge=dockVisual as? TextView ?:return
-        val time=if(recording) {
-            val elapsed=((System.currentTimeMillis()-startedAtMs)/1000)
-                .coerceAtLeast(0)
-            String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60)
-        } else ""
-        val top=dockEdge==DockEdge.TOP
+        val badge=dockVisual as? TextView?:return
+        val lens=HudLayoutPolicy.lens(opts.layout)
+        val seconds=((System.currentTimeMillis()-startedAtMs)/1000L)
+            .coerceAtLeast(0L)
+        val timer=String.format(Locale.US,"%02d:%02d",
+            seconds/60,seconds%60)
+        val temperature=thermalValue?.smoothedC?.takeIf{it.isFinite()}
+            ?.roundToInt()?.toString()
+        // DUKO Lens: the 2dp edge bracket and its red dot are painted by
+        // HudEdgeLineDrawable, with a separate 44dp accessible tap surface.
         val label=when {
-            !recording -> if(top)"CM · READY" else "CM\nREADY"
-            top -> "● REC · $time"
-            else -> "● R\n$time"
+            lens -> ""
+            recording -> "●"+(temperature?.let{"\n"+it+"°"}?:"")
+            else -> "CM"
         }
         if(badge.text.toString()!=label)badge.text=label
-        if(lastDockRecording!=recording) {
-            val stroke=if(recording)Color.rgb(255,104,112)
-                else Color.rgb(76,211,243)
-            badge.setTextColor(if(recording)Color.rgb(255,175,180)
-                else Color.rgb(135,231,255))
-            (badge.background as? GradientDrawable)?.setStroke(
-                dp(2f).coerceAtLeast(2),stroke)
-            badge.contentDescription=if(recording)
-                "CoreMetrics recording, elapsed "+time+", tap to expand HUD"
-                else "CoreMetrics standby, tap to expand HUD"
-            lastDockRecording=recording
-        }else if(recording) {
-            badge.contentDescription="CoreMetrics recording, elapsed "+
-                time+", tap to expand HUD"
-        }
+        badge.textSize=if(lens)11f else 10f
+        badge.alpha=if(recording && opts.blink && !blinkOn).60f else 1f
+        badge.contentDescription=if(recording)
+            "CoreMetrics recording $timer, touch to expand HUD"
+        else "CoreMetrics standby, touch to expand HUD"
+        lastDockRecording=recording
     }
     private fun renderAction() {
         renderDockState()
+        val lens=HudLayoutPolicy.lens(opts.layout)
         recDot?.text=if(recording && opts.blink && !blinkOn)"○ " else "● "
-        recDot?.setTextColor(accent())
-        val elapsed=((System.currentTimeMillis()-startedAtMs)/1000).coerceAtLeast(0)
-        recText?.text=if(recording)
-            String.format(Locale.US,"STOP %02d:%02d",elapsed/60,elapsed%60)
-            else "REC"
+        recDot?.setTextColor(
+            if(lens)Color.rgb(255,79,94) else accent())
+        val seconds=((System.currentTimeMillis()-startedAtMs)/1000L)
+            .coerceAtLeast(0L)
+        val timer=String.format(Locale.US,"%02d:%02d",
+            seconds/60,seconds%60)
+        recText?.text=if(!recording)"REC"
+            else if(lens)timer
+            else "STOP "+timer
+        recText?.setTextColor(
+            if(lens)Color.rgb(251,104,119) else Color.rgb(236,248,255))
+        recControl?.contentDescription=if(recording)
+            "STOP and finalize the recording now; elapsed "+timer
+        else "Start a new recording"
     }
 
     fun hide():String {
