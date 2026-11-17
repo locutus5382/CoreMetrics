@@ -211,7 +211,7 @@ internal object DukoComparisonRenderer {
         var y=325f
         for(run in r.runs) {
             val s=run.report.session
-            a.rect(75f,y-27f,1450f,217f,Color.WHITE,13f)
+            a.rect(75f,y-27f,1450f,282f,Color.WHITE,13f)
             a.text("SESSION #"+s.id+
                 if(s.id==r.baselineId)" · SELECTED BASELINE" else "",
                 92f,y+10f,29f,BLUE,true)
@@ -224,8 +224,14 @@ internal object DukoComparisonRenderer {
                 "; fan: "+(s.fanMode?:"unknown")+
                 "; ClusterTune: "+(s.clusterTuneMode?:"unknown")+
                 "; profile: "+(s.profileName?:"unknown"),
-                93f,y+151f,1380f,22f,MUTED,2,29f)
-            y+=233f
+                93f,y+144f,1380f,21f,MUTED,2,27f)
+            a.wrap("GPU source: "+run.report.gpuSources.joinToString(" · ")
+                .ifBlank{"unavailable"},
+                93f,y+193f,1380f,20f,MUTED,2,25f)
+            a.wrap("Battery source: "+run.report.batterySources.joinToString(" · ")
+                .ifBlank{"unavailable"},
+                93f,y+240f,1380f,19f,MUTED,1,24f)
+            y+=300f
         }
         y+=15f
         a.rule(y)
