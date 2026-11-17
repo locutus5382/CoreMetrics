@@ -238,7 +238,7 @@ internal object DukoComparisonRenderer {
         }
         y+=15f
         a.rule(y)
-        a.text("METHODOLOGY FOLLOWS ON PAGE 3",
+        a.text("OBSERVATIONS & METHODOLOGY FOLLOW",
             82f,y+58f,29f,BLUE,true)
         a.wrap("Original device, game, driver and power-source metadata "+
             "are recorded observations or user-entered labels. "+
