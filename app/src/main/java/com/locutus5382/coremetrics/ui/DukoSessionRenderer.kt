@@ -116,8 +116,8 @@ internal object DukoSessionRenderer {
             // Build complete lines first. The previous early break replaced
             // the last visible line with the next word and silently lost text.
             val lines=ArrayList<String>()
-            val words=value.replace('\\n',' ').trim()
-                .split(Regex("""\\s+"""))
+            val words=value.replace('\n',' ').trim()
+                .split(Regex("""\s+"""))
             val measure=Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textSize=size
                 typeface=if(bold)Typeface.DEFAULT_BOLD else Typeface.DEFAULT
