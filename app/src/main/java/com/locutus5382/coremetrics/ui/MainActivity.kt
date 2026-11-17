@@ -1096,19 +1096,34 @@ class MainActivity : ComponentActivity() {
                     compareTechnical=false
                 }
             }
-            LaunchedEffect(page, status.running) {
+            LaunchedEffect(page, status.running, sessionUiVisible) {
+                if(!sessionUiVisible)return@LaunchedEffect
                 if(page=="Live" && !status.running)
-                    sessionList=withContext(Dispatchers.IO){database.list(1)}
-                if (page == "Sessions" || page == "Compare") {
-                    sessionList = withContext(Dispatchers.IO) { database.list() }
+                    guardedUiDatabaseRead(this@MainActivity,"live recent session") {
+                        database.list(1)
+                    }.fold(onSuccess={sessionList=it},onFailure={
+                        message="Could not load recent recording: "+it.javaClass.simpleName
+                    })
+                if(page=="Sessions" || page=="Compare") {
+                    guardedUiDatabaseRead(this@MainActivity,"session list") {
+                        database.list()
+                    }.fold(onSuccess={sessionList=it},onFailure={
+                        message="Could not load sessions; existing list retained: "+
+                            it.javaClass.simpleName
+                    })
                     if(page=="Compare")
-                        linkedPairs=withContext(Dispatchers.IO){database.links()}
+                        guardedUiDatabaseRead(this@MainActivity,"session links") {
+                            database.links()
+                        }.fold(onSuccess={linkedPairs=it},onFailure={
+                            message="Could not load links: "+it.javaClass.simpleName
+                        })
                 }
             }
             // Changing note/driver/profile never rereads recorded telemetry.
             // If a recording gains new persisted samples while the page stays
             // open, the changed count explicitly invalidates the old sample set.
-            LaunchedEffect(page,detailedId,sessionList) {
+            LaunchedEffect(page,detailedId,sessionList,sessionUiVisible) {
+                if(!sessionUiVisible)return@LaunchedEffect
                 val requestedId=detailedId
                 val rowCount=sessionList.firstOrNull{it.id==requestedId}?.count
                 if(SessionSampleCachePolicy.reload(
@@ -1118,21 +1133,27 @@ class MainActivity : ComponentActivity() {
                     detailLoadedId=0L
                     detailLoadedCount=-1
                     detailPoints=emptyList()
-                    val loaded=withContext(Dispatchers.IO){
+                    guardedUiDatabaseRead(this@MainActivity,"session points") {
                         val points=database.points(requestedId)
                         val count=database.sessionById(requestedId)?.count
                             ?:points.size
                         points to count
-                    }
-                    if(page=="Sessions" && detailedId==requestedId) {
-                        detailPoints=loaded.first
-                        detailLoadedCount=loaded.second
-                        detailLoadedId=requestedId
-                    }
+                    }.fold(onSuccess={loaded->
+                        if(sessionUiVisible && page=="Sessions" &&
+                            detailedId==requestedId) {
+                            detailPoints=loaded.first
+                            detailLoadedCount=loaded.second
+                            detailLoadedId=requestedId
+                        }
+                    },onFailure={
+                        message="Could not load recording #"+requestedId+
+                            ": "+it.javaClass.simpleName
+                    })
                 }
             }
             LaunchedEffect(page,detailedId,detailLoadedId,detailPoints,
-                skipWarmUp,sessionList) {
+                skipWarmUp,sessionList,sessionUiVisible) {
+                if(!sessionUiVisible)return@LaunchedEffect
                 val requestedId=detailedId
                 if(page=="Sessions" && requestedId>0L &&
                     detailLoadedId==requestedId) {
@@ -1152,8 +1173,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            LaunchedEffect(page, firstId, secondId) {
-                if(page=="Compare") {
+            LaunchedEffect(page, firstId, secondId,sessionUiVisible) {
+                if(sessionUiVisible && page=="Compare") {
                     val requestedA=firstId
                     val requestedB=secondId
                     val dataA=when {
@@ -1176,20 +1197,24 @@ class MainActivity : ComponentActivity() {
                         secondLoadedId=0L
                         secondPoints=emptyList()
                     }
-                    val result=withContext(Dispatchers.IO) {
+                    guardedUiDatabaseRead(this@MainActivity,"compare session points") {
                         val a=dataA ?: database.points(requestedA)
                         val b=dataB ?: database.points(requestedB)
                         a to b
-                    }
-                    // The coroutine is cancelled on selection change; guard
-                    // against stale query results racing a newer selection.
-                    if(page=="Compare" && firstId==requestedA &&
-                        secondId==requestedB) {
-                        firstPoints=result.first
-                        secondPoints=result.second
-                        firstLoadedId=requestedA
-                        secondLoadedId=requestedB
-                    }
+                    }.fold(onSuccess={result->
+                        // Also guard against UI backgrounding during an I/O
+                        // read and selection changes while the worker ran.
+                        if(sessionUiVisible && page=="Compare" &&
+                            firstId==requestedA && secondId==requestedB) {
+                            firstPoints=result.first
+                            secondPoints=result.second
+                            firstLoadedId=requestedA
+                            secondLoadedId=requestedB
+                        }
+                    },onFailure={
+                        message="Could not load comparison points: "+
+                            it.javaClass.simpleName
+                    })
                 }
             }
 
