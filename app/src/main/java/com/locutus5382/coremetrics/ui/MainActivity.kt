@@ -117,6 +117,13 @@ private data class RecordingDefaultsWrite(
     val confirmed:CompletableDeferred<Boolean>?=null
 )
 
+// Preserve HUD write order across rapid chip edits and ARM's durable barrier.
+// No synchronous SQLite writes or helper opens in Compose event handlers.
+private data class HudOptionsWrite(
+    val options:HudOptions,
+    val confirmed:CompletableDeferred<Boolean>?=null
+)
+
 private data class AbWindowExportRequest(
     val sessionAId:Long,val sessionBId:Long,
     val startElapsedMs:Long,val endElapsedMs:Long
@@ -562,8 +569,39 @@ class MainActivity : ComponentActivity() {
             var hudEnabled by rememberSaveable {
                 mutableStateOf(prefs.getBoolean("hud_enabled", false))
             }
-            var hudOptions by remember { mutableStateOf(HudOptions.from(this@MainActivity)) }
+            var hudOptions by remember { mutableStateOf(HudOptions()) }
+            var hudOptionsEdited by remember { mutableStateOf(false) }
+            var hudOptionsLoaded by remember { mutableStateOf(false) }
             var message by remember { mutableStateOf("") }
+            // Loading HUD settings must not open the SQLite helper on Compose's
+            // main thread. A user edit wins over any late initial read.
+            LaunchedEffect(Unit) {
+                val existing=withContext(Dispatchers.IO) {
+                    HudOptions.from(applicationContext)
+                }
+                if(!hudOptionsEdited)hudOptions=existing
+                hudOptionsLoaded=true
+            }
+            val hudWrites=remember {
+                Channel<HudOptionsWrite>(Channel.UNLIMITED)
+            }
+            LaunchedEffect(hudWrites) {
+                for(initial in hudWrites) {
+                    var request=initial
+                    // Collapse stale visual edits, but NEVER cross an ARM
+                    // confirmation barrier: it must persist the selected HUD.
+                    while(request.confirmed==null) {
+                        val queued=hudWrites.tryReceive().getOrNull()?:break
+                        request=queued
+                    }
+                    val saved=withContext(Dispatchers.IO) {
+                        request.options.save(applicationContext)
+                    }
+                    request.confirmed?.complete(saved)
+                    if(!saved)
+                        message="Could not persist HUD options for Quick Settings"
+                }
+            }
             // All recording defaults use one serial actor. A confirmed ARM
             // message is a durable ordering barrier: older typing updates
             // cannot overwrite it after standby starts.
@@ -999,8 +1037,17 @@ class MainActivity : ComponentActivity() {
                         message="Archive restored additively: "+report.sessions+
                             " new sessions, "+report.samples+" samples, "+
                             report.profiles+" presets and "+report.links+" links"
-                        sessionList=withContext(Dispatchers.IO){database.list()}
-                        linkedPairs=withContext(Dispatchers.IO){database.links()}
+                        guardedUiDatabaseRead(this@MainActivity,
+                            "archive restored refresh") {
+                            database.list() to database.links()
+                        }.fold(onSuccess={ refreshed->
+                            sessionList=refreshed.first
+                            linkedPairs=refreshed.second
+                        },onFailure={ error->
+                            message="Archive restored, but list refresh failed: "+
+                                error.javaClass.simpleName+
+                                ". Reopen Sessions to retry."
+                        })
                         page="Sessions"
                     },onFailure={error->
                         message="Archive restore cancelled with no new sessions: "+
@@ -1021,7 +1068,14 @@ class MainActivity : ComponentActivity() {
                     }
                     result.fold(onSuccess={ id ->
                         message="Imported as session #"+id
-                        sessionList=withContext(Dispatchers.IO){database.list()}
+                        guardedUiDatabaseRead(this@MainActivity,
+                            "CSV import refresh") {
+                            database.list()
+                        }.fold(onSuccess={sessionList=it},onFailure={ error->
+                            message="CSV imported as #"+id+
+                                ", but list refresh failed: "+
+                                error.javaClass.simpleName
+                        })
                         firstId=id
                         page="Compare"
                     }, onFailure={ e ->
@@ -1059,8 +1113,10 @@ class MainActivity : ComponentActivity() {
                             // Synchronize preferences across Android processes without
                             // a HUD_CONFIG echo and without overwriting drawer changes.
                             hudOptions=next.hudChanged
-                            if(!hudOptions.save(this@MainActivity))
-                                message="Could not persist updated HUD options"
+                            hudOptionsEdited=true
+                            if(hudWrites.trySend(HudOptionsWrite(next.hudChanged))
+                                .isFailure)
+                                message="Could not queue updated HUD options"
                         }
                         status = next
                         lastObservedMonitorActive=
@@ -1239,9 +1295,14 @@ class MainActivity : ComponentActivity() {
             }
 
             fun persistHud(updated: HudOptions) {
+                if(!hudOptionsLoaded) {
+                    message="HUD preferences are still loading; try again"
+                    return
+                }
                 hudOptions=updated
-                if(!updated.save(this@MainActivity))
-                    message="HUD options could not be saved for future Quick Settings starts"
+                hudOptionsEdited=true
+                if(hudWrites.trySend(HudOptionsWrite(updated)).isFailure)
+                    message="HUD options could not be queued for persistence"
                 if(status.running || status.starting || status.standby) {
                     val i=HudOptions.addExtras(
                         Intent(this@MainActivity,RecordingService::class.java)
@@ -1277,6 +1338,10 @@ class MainActivity : ComponentActivity() {
                     })
                     return
                 }
+                if(!hudOptionsLoaded) {
+                    message="HUD preferences are still loading; try again"
+                    return
+                }
                 // Commit the cross-process defaults BEFORE closing the UI,
                 // then send explicit extras. No stale QS state after ARM.
                 val request=SessionStore.RecordingDefaults(
@@ -1292,7 +1357,11 @@ class MainActivity : ComponentActivity() {
                     prefs.edit().putString("label",request.label)
                         .putString("configuration",request.configuration)
                         .putLong("interval_ms",request.intervalMs).apply()
-                    if(!selectedHud.save(this@MainActivity)) {
+                    // This acknowledgement orders ALL preceding HUD chip
+                    // updates before the new standby service can read SQLite.
+                    val hudConfirmed=CompletableDeferred<Boolean>()
+                    hudWrites.send(HudOptionsWrite(selectedHud,hudConfirmed))
+                    if(!hudConfirmed.await()) {
                         message="HUD options could not be saved; standby not started"
                         return@launch
                     }
