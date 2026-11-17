@@ -2,7 +2,6 @@ package com.locutus5382.coremetrics.analysis
 
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.BatteryTemperatureAdvisory
-import java.util.ArrayDeque
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -58,24 +57,46 @@ object DukoSessionInsight {
     private class Quantiles(val metric:Metric) {
         private var data=DoubleArray(128)
         private var length=0
+        fun clear() { length=0 }
         fun add(v:Double?) {
             if(v==null || !v.isFinite())return
-            if(length>=data.size)data=data.copyOf(data.size*2)
+            if(length>=data.size)
+                data=data.copyOf((data.size*2).coerceAtMost(MAX_SAMPLES))
             data[length++]=v
         }
         fun finish(total:Int):Stats {
-            val values=data.copyOf(length).apply{sort()}
+            // The Accumulator is consumed once. Sort only populated values
+            // in place instead of allocating a second 250k-double array for
+            // each metric. P50/P95 remain identical exact quantiles.
+            java.util.Arrays.sort(data,0,length)
             fun pct(q:Double):Double? {
                 if(length==0)return null
                 val index=(length-1)*q
                 val i=index.toInt()
                 val j=ceil(index).toInt()
-                return values[i]+(values[j]-values[i])*(index-i)
+                return data[i]+(data[j]-data[i])*(index-i)
             }
             return Stats(metric,length,pct(.5),pct(.95),
-                values.lastOrNull(),values.firstOrNull(),
+                if(length>0)data[length-1] else null,
+                if(length>0)data[0] else null,
                 if(total==0)0.0 else length*100.0/total)
         }
+    }
+
+    /**
+     * Reuse exact percentile buffers across the 2–5 reports in ONE explicit
+     * comparison. No result retains these arrays: finish creates immutable
+     * Stats values, then the next report resets only logical lengths.
+     *
+     * Never share this scratch instance across concurrent Accumulators.
+     * A dedicated scratch belongs to one serial DUKO comparison request.
+     */
+    class QuantileScratch {
+        private val buffers=Metric.entries.map {Quantiles(it)}.toTypedArray()
+        fun reset() {buffers.forEach {it.clear()}}
+        internal fun add(index:Int,value:Double?)=buffers[index].add(value)
+        internal fun results(total:Int):List<Stats> =
+            buffers.map {it.finish(total)}
     }
 
     /** Retains min and max per time bucket, preserving meaningful spikes
@@ -91,23 +112,43 @@ object DukoSessionInsight {
             val span=max(1L,end-start)
             val slot=(((at-start).coerceIn(0L,span).toDouble()/span)*
                 CHART_BUCKETS).toInt().coerceIn(0,CHART_BUCKETS-1)
-            val item=Extreme(at,value,segment)
-            if(minima[slot]==null || value<minima[slot]!!.v)minima[slot]=item
-            if(maxima[slot]==null || value>maxima[slot]!!.v)maxima[slot]=item
+            val isMinimum=minima[slot]?.let { value<it.v }?:true
+            val isMaximum=maxima[slot]?.let { value>it.v }?:true
+            // Most middle-of-bucket samples cannot change either bound.
+            // Do not allocate an Extreme for those discarded readings.
+            if(isMinimum || isMaximum) {
+                val item=Extreme(at,value,segment)
+                if(isMinimum)minima[slot]=item
+                if(isMaximum)maxima[slot]=item
+            }
         }
         fun finish():Chart {
             val items=ArrayList<Trace>(CHART_BUCKETS*2)
-            for(i in 0 until CHART_BUCKETS){
-                listOfNotNull(minima[i],maxima[i])
-                    .distinctBy{it.at to it.v}
-                    .sortedBy{it.at}
-                    .forEach{items+=Trace(it.at-start,it.v,it.segment)}
+            for(i in 0 until CHART_BUCKETS) {
+                val lo=minima[i]
+                val hi=maxima[i]
+                if(lo==null && hi==null)continue
+                // Same duplicate rule as distinctBy(at to v), with the
+                // earliest timestamp first. No list/pair/sort per bucket.
+                if(lo!=null && hi!=null) {
+                    if(lo.at<=hi.at) {
+                        items.add(Trace(lo.at-start,lo.v,lo.segment))
+                        if(lo.at!=hi.at || lo.v!=hi.v)
+                            items.add(Trace(hi.at-start,hi.v,hi.segment))
+                    }else{
+                        items.add(Trace(hi.at-start,hi.v,hi.segment))
+                        items.add(Trace(lo.at-start,lo.v,lo.segment))
+                    }
+                }else{
+                    val only=lo?:hi!!
+                    items.add(Trace(only.at-start,only.v,only.segment))
+                }
             }
             return Chart(metric,items)
         }
     }
 
-    fun reading(m:Metric,p:SessionStore.Point):Double? {
+    fun reading(m:Metric,p:SessionStore.ReportRow):Double? {
         val value=when(m) {
             Metric.CPU_TEMP->p.cpu
             Metric.GPU_TEMP->p.gpu
@@ -135,23 +176,35 @@ object DukoSessionInsight {
     class Accumulator(
         private val session:SessionStore.Session,
         private val bounds:SessionStore.ReportBounds,
-        cadenceEstimateMs:Long
+        cadenceEstimateMs:Long,
+        quantileScratch:QuantileScratch?=null
     ){
         private val cadence=cadenceEstimateMs.coerceIn(500L,15_000L)
         private val gapLimit=max(6_000L,min(15_000L,cadence*3L))
-        private val quantiles=Metric.entries.associateWith{Quantiles(it)}
-        private val plots=listOf(Metric.CPU_TEMP,Metric.GPU_TEMP,Metric.GPU_LOAD)
-            .associateWith{Buckets(it,bounds.firstMs,bounds.lastMs)}
+        // A stable index avoids millions of enum-keyed map lookups while
+        // analysing 250k saved rows, without changing the metric data.
+        private val metrics=Metric.entries
+        private val quantiles=(quantileScratch?:QuantileScratch()).also {
+            it.reset()
+        }
+        private val plots=arrayOf(
+            Buckets(Metric.CPU_TEMP,bounds.firstMs,bounds.lastMs),
+            Buckets(Metric.GPU_TEMP,bounds.firstMs,bounds.lastMs),
+            Buckets(Metric.GPU_LOAD,bounds.firstMs,bounds.lastMs)
+        )
         private val events=ArrayList<Event>()
         private val gpuSources=LinkedHashSet<String>()
         private val batterySources=LinkedHashSet<String>()
         private val warmth=BatteryTemperatureAdvisory()
         private var lastWarmth=BatteryTemperatureAdvisory.State.UNAVAILABLE
-        private var prior:SessionStore.Point?=null
+        // The report cursor reuses ONE mutable row. Retain exactly one
+        // independent scratch snapshot for energy/temperature intervals.
+        private val priorSnapshot=SessionStore.ReportScratch()
+        private var hasPrior=false
         private var samples=0
         // Each plotted sensor has independent missing-reading boundaries.
         // A missing GPU source must not fragment a valid CPU temperature trace.
-        private val traceSegments=plots.keys.associateWith{0}.toMutableMap()
+        private val traceSegments=IntArray(3)
         private var gaps=0
         private var eventCount=0
         private var powerWms=0.0
@@ -163,31 +216,94 @@ object DukoSessionInsight {
         private var candidateCap:String?=null
         private var candidateCount=0
         private var priorPsiHigh=false
-        private val recentGpu=ArrayDeque<Pair<Long,Double?>>()
-        private val recentCore=ArrayDeque<Pair<Long,Double?>>()
+        // Sliding ~120s window: maintain two counters instead of creating
+        // a new mapNotNull list on every 2s/5s sample (up to 250k rows).
+        /**
+         * Sliding 120s window backed by primitive rings. At 2s cadence this
+         * normally contains about 60 entries. Unusual high-frequency imported
+         * timestamps grow the arrays without silently dropping readings.
+         * Missing values use NaN; the reader already rejects non-finite data.
+         */
+        private class UtilWindow {
+            private var times=LongArray(64)
+            private var values=DoubleArray(64)
+            private var head=0
+            var size=0
+                private set
+            var valid=0
+                private set
+            var high=0
+                private set
+            val durationMs:Long get()=if(size<2)0L else
+                times[(head+size-1)%times.size]-times[head]
+
+            private fun grow() {
+                val length=times.size
+                val newSize=length*2
+                val nextTimes=LongArray(newSize)
+                val nextValues=DoubleArray(newSize)
+                for(i in 0 until size) {
+                    val old=(head+i)%length
+                    nextTimes[i]=times[old]
+                    nextValues[i]=values[old]
+                }
+                times=nextTimes
+                values=nextValues
+                head=0
+            }
+            fun add(time:Long,value:Double?) {
+                if(size==times.size)grow()
+                val index=(head+size)%times.size
+                val number=value?:Double.NaN
+                times[index]=time
+                values[index]=number
+                size++
+                if(!number.isNaN()){
+                    valid++
+                    if(number>=95.0)high++
+                }
+                val cutoff=time-120_000L
+                while(size>0 && times[head]<cutoff) {
+                    val dropped=values[head]
+                    if(!dropped.isNaN()) {
+                        valid--
+                        if(dropped>=95.0)high--
+                    }
+                    head=(head+1)%times.size
+                    size--
+                }
+            }
+            fun clear() {
+                head=0;size=0;valid=0;high=0
+            }
+        }
+        private val recentGpu=UtilWindow()
+        private val recentCore=UtilWindow()
         private val highEmitted=mutableSetOf<String>()
         private var previousThermal:Int?=null
+        // Many recordings persist the identical cpufreq policy description
+        // thousands of times. Reparse only when the raw text changes;
+        // do not cache the candidate/cap transition state across gaps.
+        private var cachedCapRaw:String?=null
+        private var cachedCapKey:String?=null
 
-        private fun emit(p:SessionStore.Point,title:String,detail:String,
+        private fun emit(p:SessionStore.ReportRow,title:String,detail:String,
             evidence:Evidence) {
             eventCount++
             if(events.size<MAX_EVENTS)events+=Event(
                 p.timeMs-bounds.firstMs,title,detail,evidence)
         }
 
-        private fun sustained(queue:ArrayDeque<Pair<Long,Double?>>,
-            name:String,p:SessionStore.Point,v:Double?) {
-            queue.addLast(p.timeMs to v)
-            while(queue.isNotEmpty() && queue.first.first<p.timeMs-120_000L)
-                queue.removeFirst()
-            if(name in highEmitted || queue.size<3)return
-            if(queue.last.first-queue.first.first<120_000L-cadence)return
-            val valid=queue.mapNotNull{it.second}
+        private fun sustained(window:UtilWindow,
+            name:String,p:SessionStore.ReportRow,v:Double?) {
+            window.add(p.timeMs,v)
+            if(name in highEmitted || window.size<3)return
+            if(window.durationMs<120_000L-cadence)return
             val expected=max(2,(120_000L/cadence).toInt())
             // A mostly absent source cannot satisfy a 95%-of-time rule.
             // Sample coverage is an approximation, not continuous-frame proof.
-            if(valid.size<expected*0.95)return
-            if(valid.count{it>=95.0}/valid.size.toDouble()>=0.95) {
+            if(window.valid<expected*0.95)return
+            if(window.valid>0 && window.high/window.valid.toDouble()>=0.95) {
                 emit(p,name+" sustained high utilization",
                     ">=95% expected sample coverage; >=95% of valid readings "+
                     "at >=95% utilization over ~120s. Game FPS and "+
@@ -196,9 +312,13 @@ object DukoSessionInsight {
             }
         }
 
-        fun accept(p:SessionStore.Point) {
+        // Existing immutable Point test/legacy callers remain supported.
+        fun accept(p:SessionStore.Point)=acceptSample(p)
+
+        // No per-sample Point copy is needed for the optimized SQLite cursor.
+        fun acceptSample(p:SessionStore.ReportRow) {
             require(samples<MAX_SAMPLES){"Too many samples for bounded DUKO export"}
-            val previous=prior
+            val previous=if(hasPrior)priorSnapshot else null
             require(previous==null || p.timeMs>previous.timeMs) {
                 "Non-monotonic timestamps; cannot produce truthful timeline"
             }
@@ -208,7 +328,7 @@ object DukoSessionInsight {
             val dt=if(previous==null)0L else p.timeMs-previous.timeMs
             if(previous!=null && dt>gapLimit) {
                 gaps++
-                for(m in plots.keys) traceSegments[m]=traceSegments.getValue(m)+1
+                for(i in traceSegments.indices)traceSegments[i]++
                 lastWarmth=BatteryTemperatureAdvisory.State.UNAVAILABLE
                 emit(p,"Recording gap","Preceding interval "+
                     (dt/1000.0)+" s, missing behavior unknown.",Evidence.OBSERVED)
@@ -220,12 +340,19 @@ object DukoSessionInsight {
                 warmth.reset()
             }
 
-            for(m in Metric.entries) {
+            for(i in metrics.indices) {
+                val m=metrics[i]
                 val value=reading(m,p)
-                quantiles.getValue(m).add(value)
-                if(m in plots) {
-                    plots.getValue(m).add(p.timeMs,value,traceSegments.getValue(m))
-                    if(value==null)traceSegments[m]=traceSegments.getValue(m)+1
+                quantiles.add(i,value)
+                val chartIndex=when(m) {
+                    Metric.CPU_TEMP->0
+                    Metric.GPU_TEMP->1
+                    Metric.GPU_LOAD->2
+                    else -> -1
+                }
+                if(chartIndex>=0) {
+                    plots[chartIndex].add(p.timeMs,value,traceSegments[chartIndex])
+                    if(value==null)traceSegments[chartIndex]++
                 }
             }
 
@@ -275,8 +402,13 @@ object DukoSessionInsight {
                     "rather than device safety limit.",Evidence.OBSERVED)
             lastWarmth=state
 
-            val key=SessionRegimeAnalyzer.key(p.observedCpuLimits)
-                .takeUnless{it.contains("?")}
+            val rawCap=p.observedCpuLimits
+            val capKey=if(rawCap==cachedCapRaw && cachedCapKey!=null)
+                cachedCapKey!! else SessionRegimeAnalyzer.key(rawCap).also {
+                    cachedCapRaw=rawCap
+                    cachedCapKey=it
+                }
+            val key=capKey.takeUnless{it.contains("?")}
             if(key==null){
                 candidateCap=null;candidateCount=0
                 currentCap=null // unknown is not a trusted frequency baseline
@@ -296,7 +428,9 @@ object DukoSessionInsight {
 
             sustained(recentGpu,"GPU",p,reading(Metric.GPU_LOAD,p))
             sustained(recentCore,"Busiest core",p,reading(Metric.BUSIEST,p))
-            prior=p;samples++
+            priorSnapshot.copyFrom(p)
+            hasPrior=true
+            samples++
         }
 
         fun finish():Report {
@@ -308,7 +442,7 @@ object DukoSessionInsight {
             }
             val span=bounds.lastMs-bounds.firstMs
             val coverage=100.0*powerMs/span
-            val results=Metric.entries.map{quantiles.getValue(it).finish(samples)}
+            val results=quantiles.results(samples)
             val findings=mutableListOf<Finding>()
             if(gaps==0)findings+=Finding(
                 "No sampling gaps exceeded "+(gapLimit/1000.0)+" seconds.",
@@ -370,7 +504,7 @@ object DukoSessionInsight {
                 powerMs/1000.0,coverage,weighted,
                 warmMs/1000.0,above42Ms/1000.0,
                 maximumThermal,events.toList(),max(0,eventCount-events.size),
-                plots.values.map{it.finish()},findings.take(5),
+                plots.map{it.finish()},findings.take(5),
                 cautions,gpuSources.toList(),batterySources.toList())
         }
     }

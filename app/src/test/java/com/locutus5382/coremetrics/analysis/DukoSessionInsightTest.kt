@@ -161,6 +161,66 @@ class DukoSessionInsightTest {
         assertFalse(result.events.any { it.title.startsWith("GPU sustained") })
     }
 
+    @Test fun denseImportedUtilizationSamplesGrowPrimitiveRingWithoutDroppingEvents() {
+        // 720 observations 200 ms apart keep 600+ samples within the last
+        // 120 s, forcing the primitive ring beyond its initial 64 entries.
+        val n=720
+        val start=1_000_000L
+        val bounds=SessionStore.ReportBounds(n.toLong(),start,
+            start+(n-1)*200L)
+        val acc=DukoSessionInsight.Accumulator(session(n),bounds,500L)
+        repeat(n) { i ->
+            acc.accept(p(start+i*200L).copy(
+                gpuLoad=97.0,busiestCorePct=96.0))
+        }
+        val r=acc.finish()
+        assertEquals(n,r.sampleCount)
+        assertEquals(0,r.gapCount)
+        assertEquals(97.0,r.stat(DukoSessionInsight.Metric.GPU_LOAD).p50!!,.001)
+        assertTrue(r.events.any{it.title=="GPU sustained high utilization"})
+        assertTrue(r.events.any{
+            it.title=="Busiest core sustained high utilization"})
+    }
+
+    @Test fun extremaSpikesAndChronologicalChartOrderSurviveBucketAllocationOptimization() {
+        val time=1_000_000L
+        val rows=listOf(0L,1L,2L,3L,5_000L,10_000L,15_000L,20_000L)
+            .mapIndexed { i,offset ->
+                p(time+offset,cpu=when(i) {
+                    1->20.0
+                    2->120.0
+                    else->55.0
+                })
+            }
+        val r=report(rows)
+        val points=r.charts.first{
+            it.metric==DukoSessionInsight.Metric.CPU_TEMP
+        }.points
+        assertTrue(points.any{it.value==20.0})
+        assertTrue(points.any{it.value==120.0})
+        assertEquals(120.0,
+            r.stat(DukoSessionInsight.Metric.CPU_TEMP).peak!!,.001)
+        assertTrue(points.zipWithNext().all{it.first.offsetMs<=it.second.offsetMs})
+    }
+
+    @Test fun cachedCpuPolicyParsingStillReportsActualCapTransitions() {
+        val stock="policy3 max 2.80 GHz policy7 max 3.19 GHz"
+        val limited="policy3 max 1.79 GHz policy7 max 1.84 GHz"
+        val rows=(0..17).map { i ->
+            val raw=when {
+                i<6 -> stock
+                i<12 -> limited
+                else -> stock
+            }
+            p(1_000_000L+i*5000L).copy(observedCpuLimits=raw)
+        }
+        val r=report(rows)
+        val changes=r.events.filter{it.title=="CPU frequency ceiling changed"}
+        assertEquals(2,changes.size)
+        assertEquals(0,r.gapCount)
+        assertTrue(changes.all{it.detail.contains("Observed cap")})
+    }
+
     @Test fun changingSourceCountOrOrderRejectsMisleadingReport() {
         val acc=DukoSessionInsight.Accumulator(session(8),
             SessionStore.ReportBounds(8,1000,36_000),5000)
@@ -168,4 +228,29 @@ class DukoSessionInsightTest {
         assertTrue(runCatching{acc.finish()}.isFailure)
         assertTrue(runCatching{acc.accept(p(20_000L))}.isFailure)
     }
+    @Test fun sequentialComparisonQuantileScratchNeverCarriesPriorRunValues() {
+        val scratch=DukoSessionInsight.QuantileScratch()
+        val bounds=SessionStore.ReportBounds(13L,1_000_000L,1_060_000L)
+        fun build(cpu:Double,gpu:Double?):DukoSessionInsight.Report {
+            val acc=DukoSessionInsight.Accumulator(
+                session(13),bounds,5_000L,scratch)
+            repeat(13) { i ->
+                acc.accept(p(1_000_000L+i*5000L,cpu=cpu,gpu=gpu))
+            }
+            return acc.finish()
+        }
+        val first=build(55.0,75.0)
+        val second=build(88.0,null)
+        val third=build(33.0,42.0)
+        assertEquals(55.0,first.stat(DukoSessionInsight.Metric.CPU_TEMP).p50!!,.001)
+        assertEquals(75.0,first.stat(DukoSessionInsight.Metric.GPU_TEMP).p95!!,.001)
+        assertEquals(88.0,second.stat(DukoSessionInsight.Metric.CPU_TEMP).p95!!,.001)
+        assertNull(second.stat(DukoSessionInsight.Metric.GPU_TEMP).p50)
+        assertEquals(0,second.stat(DukoSessionInsight.Metric.GPU_TEMP).count)
+        assertEquals(33.0,third.stat(DukoSessionInsight.Metric.CPU_TEMP).p50!!,.001)
+        assertEquals(42.0,third.stat(DukoSessionInsight.Metric.GPU_TEMP).p95!!,.001)
+        // Immutable summary values must remain valid after buffer reuse.
+        assertEquals(55.0,first.stat(DukoSessionInsight.Metric.CPU_TEMP).p50!!,.001)
+    }
+
 }

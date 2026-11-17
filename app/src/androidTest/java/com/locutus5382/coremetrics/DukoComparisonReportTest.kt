@@ -39,7 +39,7 @@ class DukoComparisonReportTest {
         }
         return SessionStore(wrapped) to name
     }
-    private fun csv(driver:String,start:Long):String=buildString {
+    private fun csv(driver:String,start:Long,gpuLoad:Int=60):String=buildString {
         append("game_label,configuration,status,sample_epoch_ms,")
         append("cpu_temp_c,gpu_temp_c,cpu_load_pct,gpu_load_pct,")
         append("battery_net_w,battery_power_status,gpu_telemetry_source,")
@@ -48,7 +48,9 @@ class DukoComparisonReportTest {
         for(i in 0..30) {
             append("Hades,Stock,COMPLETED,")
             append(start+i*5_000L)
-            append(",54.0,43.0,40,60,4.0,DISCHARGING,")
+            append(",54.0,43.0,40,")
+            append(gpuLoad)
+            append(",4.0,DISCHARGING,")
             append("LOAD:KGSL_PERCENT VERIFIED,")
             append("CURRENT:BATTERY_PROPERTY_CURRENT_NOW,")
             append("AYN,Odin 2 Portal,odin2portal,33,")
@@ -57,19 +59,82 @@ class DukoComparisonReportTest {
         }
     }
 
+    @Test fun fiveSessionPdfPaginatesMatricesAndReadinessWithoutChangingSources() {
+        val app=ApplicationProvider.getApplicationContext<Context>()
+        val (db,name)=store()
+        try {
+            val ids=(0 until 5).map{index->
+                db.importCsv(StringReader(csv(
+                    if(index==0)"T30" else "StevenMXZ_"+index,
+                    1_700_000_000_000L+index*1_000_000L)))
+            }
+            val result=DukoComparisonLoader.build(db,ids,ids[2],
+                CompareStudioAnalysis.TestedVariable.DRIVER)
+            assertEquals(5,result.runs.size)
+            assertEquals(5,result.ids.size)
+            val buffer=ByteArrayOutputStream()
+            DukoComparisonRenderer.pdf(result,buffer)
+            val file=File.createTempFile("duko_five_",".pdf",app.cacheDir)
+            try {
+                file.writeBytes(buffer.toByteArray())
+                ParcelFileDescriptor.open(file,
+                    ParcelFileDescriptor.MODE_READ_ONLY).use{fd->
+                    PdfRenderer(fd).use{renderer->
+                        // 2 summary matrices, original metadata, 3 readiness
+                        // pages, method and evidence/warning pages.
+                        assertTrue("Five-session matrix was not paginated",
+                            renderer.pageCount>=8)
+                        for(i in 0 until renderer.pageCount) {
+                            renderer.openPage(i).use{page->
+                                assertEquals(595,page.width)
+                                assertEquals(842,page.height)
+                                val thumb=Bitmap.createBitmap(595,842,
+                                    Bitmap.Config.ARGB_8888)
+                                try {
+                                    page.render(thumb,null,null,
+                                        PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                }finally {thumb.recycle()}
+                            }
+                        }
+                    }
+                }
+            }finally {file.delete()}
+            ids.forEach {assertEquals(31L,db.storedSampleCount(it))}
+        }finally {
+            db.close()
+            app.deleteDatabase(name)
+        }
+    }
+
     @Test fun databaseToPNGAndMultiPagePdfUsingTwoFullRuns() {
         val app=ApplicationProvider.getApplicationContext<Context>()
         val (db,name)=store()
         try {
             val first=db.importCsv(StringReader(csv("T30",1_700_000_000_000L)))
-            val second=db.importCsv(StringReader(csv("StevenMXZ",1_700_100_000_000L)))
+            val second=db.importCsv(StringReader(csv(
+                "StevenMXZ",1_700_100_000_000L,gpuLoad=25)))
             val report=DukoComparisonLoader.build(db,listOf(first,second),
                 first,CompareStudioAnalysis.TestedVariable.DRIVER)
             assertEquals(2,report.runs.size)
             assertEquals(first,report.baselineId)
             assertEquals(9,report.rows.size)
+            // Both sessions reuse the SAME nine primitive percentile buffers,
+            // but the first run's summary must not leak into the second.
+            val firstGpu=report.runs[0].report.stat(
+                com.locutus5382.coremetrics.analysis.DukoSessionInsight.Metric.GPU_LOAD)
+            val secondGpu=report.runs[1].report.stat(
+                com.locutus5382.coremetrics.analysis.DukoSessionInsight.Metric.GPU_LOAD)
+            assertEquals(60.0,firstGpu.p50!!,0.0001)
+            assertEquals(25.0,secondGpu.p50!!,0.0001)
+            assertEquals(25.0,secondGpu.p95!!,0.0001)
             assertEquals(31L,db.storedSampleCount(first))
             assertEquals(31L,db.storedSampleCount(second))
+            // Preview retains one canonical String for repeated source tags;
+            // this is safe because the UI owns immutable Point snapshots.
+            val preview=db.points(first)
+            assertTrue(preview.size>=2)
+            assertEquals("DISCHARGING",preview[0].batteryPowerStatus)
+            assertSame(preview[0].batteryPowerStatus,preview[1].batteryPowerStatus)
             val png=ByteArrayOutputStream()
             DukoComparisonRenderer.png(report,png)
             val bmp=BitmapFactory.decodeByteArray(

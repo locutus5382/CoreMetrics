@@ -224,6 +224,13 @@ class SessionStoreOperationsTest {
                 id INTEGER PRIMARY KEY,name TEXT NOT NULL UNIQUE,
                 game_note TEXT,graphics_driver TEXT,resolution_scale TEXT,
                 performance_mode TEXT,fan_mode TEXT,cluster_tune_mode TEXT)""")
+            // A genuine v7 recording database always has its samples table.
+            // The previous synthetic fixture omitted it and failed during
+            // the normal v8→v9 gpu_source migration for a non-existent table.
+            legacy.execSQL("""CREATE TABLE samples(
+                session_id INTEGER NOT NULL,time_ms INTEGER NOT NULL,
+                battery_status TEXT)""")
+            legacy.execSQL("INSERT INTO samples VALUES(19,1500,'DISCHARGING')")
             legacy.version=7
         }
         val sandbox=object:ContextWrapper(app) {
@@ -247,6 +254,12 @@ class SessionStoreOperationsTest {
                     if(c.moveToFirst())c.getString(0)else null
                 }
             assertEquals("Custom: T30",row)
+            assertEquals(1L,store.storedSampleCount(19))
+            assertEquals("DISCHARGING",store.readableDatabase.rawQuery(
+                "SELECT battery_status FROM samples WHERE session_id=19",
+                null).use { c ->
+                if(c.moveToFirst())c.getString(0) else null
+            })
         }finally{store.close();app.deleteDatabase(name)}
     }
 
@@ -299,9 +312,13 @@ class SessionStoreOperationsTest {
             legacy.execSQL("""INSERT INTO sessions VALUES(
                 11,1000,9000,'NFS','Stock','COMPLETED','track',
                 'Custom: T30','Handheld 1x',NULL,NULL,NULL,'T30')""")
+            // v8 already had battery_status; omitting the column gave the
+            // migrated database a shape impossible for a genuine v8 install.
             legacy.execSQL("""CREATE TABLE samples(
-                session_id INTEGER,time_ms INTEGER,battery_source TEXT)""")
-            legacy.execSQL("INSERT INTO samples VALUES(11,2000,'CURRENT=SYSFS_CURRENT_NOW')")
+                session_id INTEGER,time_ms INTEGER,
+                battery_source TEXT,battery_status TEXT)""")
+            legacy.execSQL("""INSERT INTO samples
+                VALUES(11,2000,'CURRENT=SYSFS_CURRENT_NOW','DISCHARGING')""")
             legacy.execSQL("""CREATE TABLE recording_settings(
                 id INTEGER PRIMARY KEY,label TEXT NOT NULL,
                 configuration TEXT NOT NULL,interval_ms INTEGER NOT NULL,
@@ -417,7 +434,11 @@ class SessionStoreOperationsTest {
             assertTrue(store.updateGameNote(a,"Hades\n· T30\u0085"))
             assertEquals("Hades· T30",store.sessionById(a)?.note)
             assertFalse(store.updateMetadata(b,"=INVALID","Handheld 1x"))
-            assertFalse(store.updateMetadata(b,"Turnip",null))
+            // The combined API accepts explicit null to clear a companion
+            // metadata field. Reject invalid values, not valid partial tags.
+            assertTrue(store.updateMetadata(b,"Turnip",null))
+            assertEquals("Turnip",store.sessionById(b)?.graphicsDriver)
+            assertNull(store.sessionById(b)?.resolutionScale)
             assertTrue(store.updateMetadata(a,"Turnip","Handheld 1x"))
             assertEquals("Turnip",store.sessionById(a)?.graphicsDriver)
             assertTrue(store.updateGraphicsDriver(a,"Custom: T30"))

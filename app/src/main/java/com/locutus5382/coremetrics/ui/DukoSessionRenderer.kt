@@ -40,22 +40,32 @@ internal object DukoSessionRenderer {
     private val BG=Color.rgb(249,251,253)
     private val WHITE=Color.WHITE
 
-    fun png(report:DukoSessionInsight.Report,out:OutputStream) {
-        val bitmap=Bitmap.createBitmap(WIDTH,HEIGHT,Bitmap.Config.ARGB_8888)
+    fun png(report:DukoSessionInsight.Report,out:OutputStream,
+            checkpoint:()->Unit={}) {
+        checkpoint()
+        // The report canvas is fully opaque and always fills its backdrop.
+        // RGB_565 uses ~7.0 MB instead of ARGB_8888's ~14.1 MB per
+        // 1600x2200 PNG export bitmap. PDF stays full-color vector.
+        val bitmap=Bitmap.createBitmap(WIDTH,HEIGHT,Bitmap.Config.RGB_565)
         try {
             drawSummary(Canvas(bitmap),report)
+            checkpoint()
             check(bitmap.compress(Bitmap.CompressFormat.PNG,100,out)) {
                 "Could not encode DUKO PNG"
             }
+            checkpoint()
             out.flush()
         }finally {bitmap.recycle()}
     }
 
-    fun pdf(report:DukoSessionInsight.Report,out:OutputStream) {
+    fun pdf(report:DukoSessionInsight.Report,out:OutputStream,
+            checkpoint:()->Unit={}) {
+        checkpoint()
         val pdf=PdfDocument()
         try {
             var pageNumber=0
             fun add(render:(Canvas)->Unit){
+                checkpoint()
                 pageNumber++
                 val page=pdf.startPage(PdfDocument.PageInfo.Builder(
                     A4_W,A4_H,pageNumber).create())
@@ -79,7 +89,9 @@ internal object DukoSessionRenderer {
                     add{drawEventPage(it,report,events,idx)}
                 }
             }
+            checkpoint()
             pdf.writeTo(out)
+            checkpoint()
             out.flush()
         }finally {pdf.close()}
     }

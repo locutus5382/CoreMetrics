@@ -1,6 +1,8 @@
 package com.locutus5382.coremetrics.ui
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -57,7 +59,7 @@ internal fun DukoComparisonPanel(
         Modifier.fillMaxWidth().padding(vertical=10.dp),
         verticalArrangement=Arrangement.spacedBy(9.dp)
     ) {
-        Text("DUKO COMPARISON REPORT · v0.9.9.2",
+        Text("DUKO COMPARISON REPORT · v0.9.9.3",
             color=accent,fontWeight=FontWeight.Bold)
         Text("Select 2–5 saved sessions. Every chosen recording is scanned in full "+
             "(up to 250,000 samples each). Choose a reference baseline; "+
@@ -65,9 +67,10 @@ internal fun DukoComparisonPanel(
             color=noteColor,style=MaterialTheme.typography.bodySmall)
         Text("Select recordings · "+selected.size+"/5",
             color=accent,style=MaterialTheme.typography.labelLarge)
-        Row(Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-            valid.forEach { s->
+        // Compose only visible session chips. Eager 50-item Rows create
+        // unnecessary Compose nodes on constrained handheld devices.
+        LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+            items(valid,key={it.id}) { s->
                 val checked=s.id in selected
                 FilterChip(
                     selected=checked,

@@ -30,22 +30,32 @@ internal object DukoComparisonRenderer {
     private val BORDER=Color.rgb(224,232,239)
     private val PAPER=Color.rgb(248,251,253)
 
-    fun png(result:DukoComparisonInsight.Result,out:OutputStream) {
-        val bitmap=Bitmap.createBitmap(WIDTH,HEIGHT,Bitmap.Config.ARGB_8888)
+    fun png(result:DukoComparisonInsight.Result,out:OutputStream,
+            checkpoint:()->Unit={}) {
+        checkpoint()
+        // The report canvas is fully opaque and always fills its backdrop.
+        // RGB_565 uses ~7.0 MB instead of ARGB_8888's ~14.1 MB per
+        // 1600x2200 PNG export bitmap. PDF stays full-color vector.
+        val bitmap=Bitmap.createBitmap(WIDTH,HEIGHT,Bitmap.Config.RGB_565)
         try {
             summary(Canvas(bitmap),result)
+            checkpoint()
             check(bitmap.compress(Bitmap.CompressFormat.PNG,100,out)) {
                 "Failed to encode DUKO comparison PNG"
             }
+            checkpoint()
             out.flush()
         }finally {bitmap.recycle()}
     }
 
-    fun pdf(result:DukoComparisonInsight.Result,out:OutputStream) {
+    fun pdf(result:DukoComparisonInsight.Result,out:OutputStream,
+            checkpoint:()->Unit={}) {
+        checkpoint()
         val pdf=PdfDocument()
         try {
             var pageNo=0
             fun page(draw:(Canvas)->Unit) {
+                checkpoint()
                 val page=pdf.startPage(PdfDocument.PageInfo.Builder(
                     PAGE_W,PAGE_H,++pageNo).create())
                 try {
@@ -59,16 +69,44 @@ internal object DukoComparisonRenderer {
                     page.canvas.restore()
                 }finally {pdf.finishPage(page)}
             }
-            page{summary(it,result)}
+            // A five-run matrix is illegible if all five columns are
+            // printed on one A4 portrait page. For PDF only, repeat the
+            // selected baseline on each readable 2–3-column matrix page.
+            // The compact PNG remains a five-run overview.
+            val matrices=if(result.runs.size<=3)listOf(result) else {
+                val baseline=result.baseline
+                result.runs.filter{it.report.session.id!=result.baselineId}
+                    .chunked(2).map { group ->
+                        val visible=listOf(baseline)+group
+                        result.copy(
+                            runs=visible,
+                            rows=result.rows.map{row ->
+                                row.copy(cells=visible.map{run ->
+                                    row.cells.first{
+                                        it.sessionId==run.report.session.id
+                                    }
+                                })
+                            })
+                    }
+            }
+            matrices.forEachIndexed{index,matrix ->
+                page{summary(it,matrix,
+                    "MATRIX "+(index+1)+"/"+matrices.size)}
+            }
             page{evidence(it,result)}
+            result.runs.chunked(2).forEachIndexed{index,items ->
+                page{readinessPage(it,result,index,items)}
+            }
             result.observations.chunked(8).forEachIndexed{index,items->
                 page{observationPage(it,result,index,items)}
             }
             page{methods(it,result)}
-            result.warnings.chunked(10).forEachIndexed{index,warnings ->
+            result.warnings.chunked(8).forEachIndexed{index,warnings ->
                 page{warningPage(it,result,index,warnings)}
             }
+            checkpoint()
             pdf.writeTo(out)
+            checkpoint()
             out.flush()
         }finally {pdf.close()}
     }
@@ -136,12 +174,15 @@ internal object DukoComparisonRenderer {
     private fun time(s:Double):String=String.format(Locale.US,
         "%.1f min",s/60.0)
 
-    private fun summary(canvas:Canvas,r:DukoComparisonInsight.Result) {
+    private fun summary(
+        canvas:Canvas,r:DukoComparisonInsight.Result,
+        pageLabel:String="01 / DUKO"
+    ) {
         val a=Art(canvas)
         header(a,"Comparison Report",
             r.runs.size.toString()+" full recordings  ·  baseline #"+
                 r.baselineId+"  ·  "+r.testedVariable.label,
-            "01 / DUKO")
+            pageLabel)
         a.text("COMPARABILITY: "+r.overall.label,
             79f,317f,29f,if(r.overall==DukoComparisonInsight.Confidence.OBSERVATIONAL)
                 TEAL else ORANGE,true)
@@ -248,6 +289,56 @@ internal object DukoComparisonRenderer {
             85f,2147f,22f,ORANGE,true)
     }
 
+    /**
+     * Explain missing comparison deltas, rather than displaying bare
+     * "unavailable" values. Bounded to two sessions per A4 page.
+     */
+    private fun readinessPage(
+        canvas:Canvas,r:DukoComparisonInsight.Result,
+        pageIndex:Int,runs:List<DukoComparisonInsight.Run>
+    ) {
+        val a=Art(canvas)
+        header(a,"Measurement readiness",
+            "Why a saved sensor is or is not eligible for a baseline delta",
+            "READY "+(pageIndex+1))
+        var y=345f
+        for(run in runs) {
+            val sessionId=run.report.session.id
+            val rejected=r.rows.mapNotNull { row ->
+                val cell=row.cells.firstOrNull{it.sessionId==sessionId}
+                if(cell==null || cell.comparable)null else
+                    row.metric.label+": "+(cell.reason?:"Unavailable")+
+                    " ("+pct(cell.coveragePct)+" coverage)"
+            }
+            val eligible=r.rows.size-rejected.size
+            a.rect(77f,y-39f,1448f,766f,Color.WHITE,13f)
+            a.text("SESSION #"+sessionId+
+                if(sessionId==r.baselineId)" · BASELINE" else "",
+                97f,y+7f,29f,BLUE,true)
+            a.text(eligible.toString()+"/"+r.rows.size+
+                " measurement metrics eligible",
+                99f,y+51f,23f,INK)
+            var lineY=y+110f
+            if(rejected.isEmpty()) {
+                a.wrap("Every metric has sufficient source-level coverage "+
+                    "for a numeric delta. This does NOT prove matched "+
+                    "gameplay or causal performance differences.",
+                    100f,lineY,1390f,23f,INK,3,33f)
+            }else {
+                rejected.take(9).forEach {reason->
+                    a.wrap("• "+reason,100f,lineY,1380f,
+                        21f,INK,2,28f)
+                    lineY+=62f
+                }
+            }
+            y+=798f
+        }
+        a.rule(2105f)
+        a.text("Eligible means comparable sensor provenance and data coverage,"+
+            " not verified game performance.",
+            86f,2152f,20f,MUTED,false,1430f)
+    }
+
     private fun observationPage(
         canvas:Canvas,r:DukoComparisonInsight.Result,
         index:Int,items:List<String>
@@ -301,14 +392,14 @@ internal object DukoComparisonRenderer {
         header(a,"Evidence & limitations",
             "Recorded conditions, device provenance and comparison cautions",
             "NOTES "+(page+1))
-        a.text("NOTICES "+(page*10+1)+"–"+(page*10+items.size)+
+        a.text("NOTICES "+(page*8+1)+"–"+(page*8+items.size)+
             " OF "+r.warnings.size,
             81f,323f,28f,BLUE,true)
         var y=399f
         items.forEachIndexed{i,item->
             a.rect(79f,y-28f,1445f,161f,Color.WHITE,12f)
             a.rect(85f,y-20f,8f,125f,ORANGE)
-            a.text((page*10+i+1).toString().padStart(2,'0'),
+            a.text((page*8+i+1).toString().padStart(2,'0'),
                 112f,y+5f,23f,ORANGE,true)
             a.wrap(item,168f,y+4f,1320f,24f,INK,3,33f)
             y+=174f

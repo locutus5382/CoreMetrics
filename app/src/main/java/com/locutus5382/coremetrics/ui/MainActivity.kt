@@ -66,6 +66,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.locutus5382.coremetrics.analysis.BenchmarkAnalyzer
@@ -78,7 +79,7 @@ import com.locutus5382.coremetrics.analysis.ScorecardExportRequest
 import com.locutus5382.coremetrics.analysis.DocumentWindowRequest
 import com.locutus5382.coremetrics.analysis.DukoReportLoader
 import com.locutus5382.coremetrics.analysis.DukoComparisonLoader
-import com.locutus5382.coremetrics.analysis.DukoComparisonRequest
+import com.locutus5382.coremetrics.analysis.DukoReportTask
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -394,6 +395,9 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("coremetrics_settings", MODE_PRIVATE)
         // SQLite helper survives UI recreation; no close-while-exporting race.
         val database = UiSessionStoreOwner.get(applicationContext)
+        // One FIFO queue across Activity recreation. Only explicit button
+        // presses enqueue work; a document picker runs for each request.
+        val dukoQueue=ViewModelProvider(this)[DukoExportQueueViewModel::class.java]
         setContent {
             // One app, all four finishes. Existing stored preferences stay valid.
             var finish by remember {
@@ -630,12 +634,8 @@ class MainActivity : ComponentActivity() {
             var abWindowExport by rememberSaveable { mutableStateOf(null as String?) }
             // Persist pending SAF intent across configuration/Activity recreation.
             var pngRequest by rememberSaveable { mutableStateOf(null as String?) }
-            var dukoRequest by rememberSaveable { mutableStateOf(null as String?) }
-            var dukoBusy by remember { mutableStateOf(false) }
-            var dukoComparisonRequest by rememberSaveable {
-                mutableStateOf(null as String?)
-            }
-            var dukoComparisonBusy by remember { mutableStateOf(false) }
+            // DUKO requests and progress live in a single Activity-scoped
+            // ViewModel queue, not in independent overlapping busy flags.
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -869,116 +869,50 @@ class MainActivity : ComponentActivity() {
                     })
                 }
             }
-            // v0.9.9.1 DUKO Session Insight: full stored source, not the
-            // truncated 12k UI preview. Keep original recording immutable.
-            val saveDuko:(Uri?,String)->Unit={ uri,format ->
-                val pending=dukoRequest
-                dukoRequest=null
-                val request=pending?.split('|')
-                val id=request?.getOrNull(1)?.toLongOrNull()
-                if(uri!=null && id!=null && id>0L &&
-                    request?.getOrNull(0)==format && !dukoBusy) {
-                    dukoBusy=true
-                    scope.launch {
-                        val outcome=try {
-                            withContext(Dispatchers.IO) {
-                                runCatching {
-                                    val report=DukoReportLoader.build(database,id)
-                                    contentResolver.openOutputStream(uri,"w")?.use { out->
-                                        if(format=="pdf")DukoSessionRenderer.pdf(report,out)
-                                        else DukoSessionRenderer.png(report,out)
-                                    }?:error("Cannot write DUKO document")
-                                    report
-                                }
-                            }
-                        }catch(e:kotlin.coroutines.cancellation.CancellationException) {
-                            withContext(kotlinx.coroutines.NonCancellable+Dispatchers.IO){
-                                runCatching{contentResolver.delete(uri,null,null)}
-                            }
-                            dukoBusy=false
-                            throw e
-                        }
-                        val removed=if(outcome.isFailure)withContext(Dispatchers.IO){
-                            runCatching{contentResolver.delete(uri,null,null)>0}
-                                .getOrDefault(false)
-                        }else true
-                        dukoBusy=false
-                        message=outcome.fold(onSuccess={r->
-                            "DUKO Session Insight "+format.uppercase()+
-                                " saved · "+r.sampleCount+" of "+
-                                r.sourceSampleCount+" samples included"
-                        },onFailure={error->
-                            "DUKO export failed: "+(error.message?:
-                                error.javaClass.simpleName)+
-                                (if(removed)"" else " · Remove incomplete document")
-                        })
-                    }
-                }
-            }
+            // The Android document chooser is part of the ONE active queue
+            // request. No report begins before the user explicitly clicks
+            // and selects a destination. Later requests remain FIFO.
             val dukoPngDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("image/png")
-            ){uri->saveDuko(uri,"png")}
+            ){uri ->
+                dukoQueue.onDocumentResult(
+                    DukoReportTask.Kind.SESSION,"png",uri,applicationContext,database)
+            }
             val dukoPdfDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/pdf")
-            ){uri->saveDuko(uri,"pdf")}
-            // v0.9.9.2: comparison request snapshots stable numeric IDs;
-            // the same pure model is used for the PNG and PDF outputs.
-            val saveDukoComparison:(Uri?,String)->Unit={uri,format->
-                val requested=DukoComparisonRequest.decode(dukoComparisonRequest)
-                dukoComparisonRequest=null
-                if(uri!=null && requested!=null &&
-                    requested.format==format && !dukoComparisonBusy) {
-                    dukoComparisonBusy=true
-                    scope.launch {
-                        val outcome=try {
-                            withContext(Dispatchers.IO) {
-                                runCatching {
-                                    val report=DukoComparisonLoader.build(database,
-                                        requested.ids,requested.baselineId,
-                                        requested.testedVariable)
-                                    contentResolver.openOutputStream(uri,"w")?.use{out->
-                                        if(format=="pdf")
-                                            DukoComparisonRenderer.pdf(report,out)
-                                        else DukoComparisonRenderer.png(report,out)
-                                    }?:error("Cannot open DUKO comparison destination")
-                                    report
-                                }
-                            }
-                        }catch(e:kotlin.coroutines.cancellation.CancellationException){
-                            withContext(kotlinx.coroutines.NonCancellable+Dispatchers.IO) {
-                                runCatching{contentResolver.delete(uri,null,null)}
-                            }
-                            dukoComparisonBusy=false
-                            throw e
-                        }
-                        val removed=if(outcome.isFailure)
-                            withContext(Dispatchers.IO) {
-                                runCatching{contentResolver.delete(uri,null,null)>0}
-                                    .getOrDefault(false)
-                            }else true
-                        dukoComparisonBusy=false
-                        message=outcome.fold(
-                            onSuccess={r->
-                                "DUKO Comparison "+format.uppercase()+
-                                    " saved: "+r.runs.size+" complete recordings; "+
-                                    "baseline #"+r.baselineId+
-                                    "; quality: "+r.overall.label
-                            },
-                            onFailure={err->
-                                "DUKO Comparison export failed: "+
-                                    (err.message?:err.javaClass.simpleName)+
-                                    (if(removed)"" else
-                                        " · Remove incomplete document")
-                            })
-                    }
-                }
+            ){uri ->
+                dukoQueue.onDocumentResult(
+                    DukoReportTask.Kind.SESSION,"pdf",uri,applicationContext,database)
             }
             val dukoComparisonPngDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("image/png")
-            ){uri->saveDukoComparison(uri,"png")}
+            ){uri ->
+                dukoQueue.onDocumentResult(
+                    DukoReportTask.Kind.COMPARISON,"png",uri,applicationContext,database)
+            }
             val dukoComparisonPdfDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/pdf")
-            ){uri->saveDukoComparison(uri,"pdf")}
+            ){uri ->
+                dukoQueue.onDocumentResult(
+                    DukoReportTask.Kind.COMPARISON,"pdf",uri,applicationContext,database)
+            }
+            LaunchedEffect(dukoQueue.current,dukoQueue.pickerLaunched) {
+                val task=dukoQueue.current
+                if(task!=null && dukoQueue.markPickerLaunched(task)) {
+                    when(task.kind) {
+                        DukoReportTask.Kind.SESSION ->
+                            if(task.format=="pdf")
+                                dukoPdfDocument.launch(task.filename)
+                            else
+                                dukoPngDocument.launch(task.filename)
+                        DukoReportTask.Kind.COMPARISON ->
+                            if(task.format=="pdf")
+                                dukoComparisonPdfDocument.launch(task.filename)
+                            else
+                                dukoComparisonPngDocument.launch(task.filename)
+                    }
+                }
+            }
             val backupFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/zip")
             ) { uri ->
@@ -1446,6 +1380,8 @@ class MainActivity : ComponentActivity() {
                             Spacer(Modifier.height(9.dp))
                             Column(Modifier.weight(1f).verticalScroll(contentScroll),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                if(page=="Sessions" || page=="Compare")
+                                    DukoQueueStatusPanel(dukoQueue)
                                 when (page) {
                                     "Live" -> {
                                         if(showSetup) {
@@ -1783,23 +1719,19 @@ class MainActivity : ComponentActivity() {
                                                     Row(horizontalArrangement=
                                                         Arrangement.spacedBy(8.dp)) {
                                                         OutlinedButton(
-                                                            enabled=!dukoBusy &&
-                                                                r.session.status!="RECORDING",
+                                                            enabled=r.session.status!="RECORDING",
                                                             onClick={
-                                                                dukoRequest="png|"+r.session.id
-                                                                dukoPngDocument.launch(
-                                                                    "DUKO_Session_"+r.session.id+
-                                                                    ".png")
+                                                                dukoQueue.enqueue(
+                                                                    DukoReportTask.session(
+                                                                        r.session.id,"png"))
                                                             }
                                                         ){Text("DUKO PNG")}
                                                         OutlinedButton(
-                                                            enabled=!dukoBusy &&
-                                                                r.session.status!="RECORDING",
+                                                            enabled=r.session.status!="RECORDING",
                                                             onClick={
-                                                                dukoRequest="pdf|"+r.session.id
-                                                                dukoPdfDocument.launch(
-                                                                    "DUKO_Session_"+r.session.id+
-                                                                    ".pdf")
+                                                                dukoQueue.enqueue(
+                                                                    DukoReportTask.session(
+                                                                        r.session.id,"pdf"))
                                                             }
                                                         ){Text("DUKO PDF")}
                                                     }
@@ -2020,18 +1952,11 @@ class MainActivity : ComponentActivity() {
                                                  RepeatabilityPanel(database,sessionList,skipWarmUp)
                                              DukoComparisonPanel(
                                                  sessions=sessionList,
-                                                 busy=dukoComparisonBusy,
+                                                 busy=false,
                                                  onExport={ids,baseline,variable,format->
-                                                     val request=DukoComparisonRequest(
-                                                         format,ids,baseline,variable)
-                                                     dukoComparisonRequest=request.encode()
-                                                     val fileName="DUKO_Comparison_"+
-                                                         ids.joinToString("_")+"."+
-                                                         format
-                                                     if(format=="pdf")
-                                                         dukoComparisonPdfDocument.launch(fileName)
-                                                     else
-                                                         dukoComparisonPngDocument.launch(fileName)
+                                                     dukoQueue.enqueue(
+                                                         DukoReportTask.comparison(
+                                                             ids,baseline,variable,format))
                                                  }
                                              )
                                             Row(verticalAlignment=Alignment.CenterVertically) {
