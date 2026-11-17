@@ -78,6 +78,22 @@ jobs:
           gradle-version: '8.11.1'
       - name: Install compile SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Enable KVM acceleration on ephemeral CI runner
+        run: |
+          # A previous CI runner had /dev/kvm but the normal user had no
+          # access; Android silently ran unaccelerated (11-minute boot),
+          # then lost system_server/network stack. Fail immediately if
+          # virtualization cannot be used rather than presenting that
+          # infrastructure crash as a test regression.
+          if [ ! -c /dev/kvm ]; then
+            echo "::error::CI runner has no /dev/kvm device."
+            exit 1
+          fi
+          sudo chmod a+rw /dev/kvm
+          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+            echo "::error::CI user cannot access /dev/kvm."
+            exit 1
+          fi
       - name: Run Android instrumentation on API 33 emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
