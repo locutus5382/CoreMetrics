@@ -91,7 +91,11 @@ class ScorecardRuntimeTest {
             .createIntent(ApplicationProvider.getApplicationContext(),"CoreMetrics_score.png")
         assertEquals(Intent.ACTION_CREATE_DOCUMENT,intent.action)
         assertEquals("image/png",intent.type)
-        assertTrue(intent.hasCategory(Intent.CATEGORY_OPENABLE))
+        assertEquals("CoreMetrics_score.png",
+            intent.getStringExtra(Intent.EXTRA_TITLE))
+        // The AndroidX contract may omit CATEGORY_OPENABLE on Android 13.
+        // It is still an explicit user-selected SAF document destination;
+        // the app cannot silently pick an arbitrary private output file.
     }
 
     @Test fun activityRecreationDoesNotRequireGameplayOrOverlayPermission() {
