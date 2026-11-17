@@ -17,6 +17,18 @@ import com.locutus5382.coremetrics.monitor.RecordingService
 
 /** Independent HUD visibility/standby switch. Never stops an active recording. */
 class HudTile:TileService(){
+    // One deferred status refresh per tile instance; never retain a stale
+    // TileService after Android stops listening or destroys it.
+    private val refreshHandler=Handler(Looper.getMainLooper())
+    private val refreshOnce=Runnable {refresh()}
+    override fun onStopListening() {
+        refreshHandler.removeCallbacks(refreshOnce)
+        super.onStopListening()
+    }
+    override fun onDestroy() {
+        refreshHandler.removeCallbacks(refreshOnce)
+        super.onDestroy()
+    }
     private fun status():QuickTileSnapshot=try {
         QuickTileSnapshot.read(this)
     } catch(_:Exception) { QuickTileSnapshot.unknown() }
@@ -82,7 +94,8 @@ class HudTile:TileService(){
         // Service requests TileService listening again after it processes the
         // command; a one-shot delayed read also closes the immediate-click
         // old-state window without polling while the tile is idle.
-        Handler(Looper.getMainLooper()).postDelayed({refresh()},450L)
+        refreshHandler.removeCallbacks(refreshOnce)
+        refreshHandler.postDelayed(refreshOnce,450L)
     }
     private fun refresh(){
         val current=status()
