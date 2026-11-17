@@ -44,6 +44,8 @@ CoreMetrics attempts to delete only the incomplete selected document.
   cause), Android thermal policy, system memory pressure, sustained
   >=95% GPU or system busiest-core utilization over ~120 seconds,
   and BAT T app advisory. Observed and pattern evidence labelled.
+  Sustained-load pattern requires >=95% expected sample coverage within
+  approximately 120 seconds, and >=95% of available readings >=95% load.
 - Up to 32 event descriptions on PDF supplementary pages, with any
   suppressed count explicitly shown. Chart reducer uses fixed
   280 temporal buckets with extrema, not unbounded line vertices.
