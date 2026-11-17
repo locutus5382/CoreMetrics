@@ -76,8 +76,17 @@ object RecorderJournal {
             context.packageManager.getPackageInfo(context.packageName,0)
                 .versionName ?: "unknown"
         }.getOrDefault("unknown")
+        val memoryAtRequest=runCatching {
+            val pssKiB=android.os.Debug.getPss()
+            val runtime=Runtime.getRuntime()
+            val usedBytes=runtime.totalMemory()-runtime.freeMemory()
+            "Current UI process sampled PSS="+(pssKiB/1024L)+
+                " MiB; Java heap used="+(usedBytes/(1024L*1024L))+
+                " MiB (point-in-time only; not a peak; :monitor process separate)"
+        }.getOrDefault("UI process memory measurement unavailable")
         return "CoreMetrics "+version+" recorder diagnostics\n" +
-            "Current UI PID: " + Process.myPid() + "\n\n" +
+            "Current UI PID: " + Process.myPid() + "\n" +
+            memoryAtRequest+"\n\n" +
             "Recent lifecycle events:\n" + read(context) +
             "\n\n"+liveMemory+"\n\n"+DeviceCapabilityProbe.report(context)+
             "\nAndroid process exit history:\n" + exits + "\n"

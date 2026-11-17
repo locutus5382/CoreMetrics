@@ -1,4 +1,4 @@
-name: CoreMetrics v0.9.9.3 Reliability and Reporting CI
+name: CoreMetrics v0.9.9.4 Pre-Odin Validation CI
 on:
   push:
     branches: [main, 'feature/**', 'fix/**', 'design/**']
@@ -32,18 +32,18 @@ jobs:
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.3-reliability-debug
+          name: CoreMetrics-v0.9.9.4-pre-odin-debug
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Upload R8-optimized installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0.9.9.3-reliability-optimized-test
+          name: CoreMetrics-v0.9.9.4-pre-odin-optimized-test
           path: app/build/outputs/apk/optimizedTest/app-optimizedTest.apk
       - name: Preserve JVM unit test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0993-jvm-test-failures
+          name: CoreMetrics-v0994-jvm-test-failures
           if-no-files-found: ignore
           retention-days: 14
           path: |
@@ -51,9 +51,17 @@ jobs:
             app/build/reports/tests/testDebugUnitTest/
 
   android-instrumentation:
-    name: API 33 emulator integration and migration tests
+    name: API 33 emulator — ${{ matrix.group }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: database-integrity
+            classes: com.locutus5382.coremetrics.SessionStoreOperationsTest,com.locutus5382.coremetrics.SessionArchiveTest,com.locutus5382.coremetrics.SessionIntegritySnapshotAndroidTest
+          - group: reports-ui
+            classes: com.locutus5382.coremetrics.DukoComparisonReportTest,com.locutus5382.coremetrics.DukoSessionReportTest,com.locutus5382.coremetrics.ScorecardRuntimeTest,com.locutus5382.coremetrics.HudBatteryOptionsTest
     permissions:
       contents: read
     steps:
@@ -70,23 +78,55 @@ jobs:
           gradle-version: '8.11.1'
       - name: Install compile SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Enable KVM acceleration on ephemeral CI runner
+        run: |
+          # A previous CI runner had /dev/kvm but the normal user had no
+          # access; Android silently ran unaccelerated (11-minute boot),
+          # then lost system_server/network stack. Fail immediately if
+          # virtualization cannot be used rather than presenting that
+          # infrastructure crash as a test regression.
+          if [ ! -c /dev/kvm ]; then
+            echo "::error::CI runner has no /dev/kvm device."
+            exit 1
+          fi
+          sudo chmod a+rw /dev/kvm
+          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+            echo "::error::CI user cannot access /dev/kvm."
+            exit 1
+          fi
       - name: Run Android instrumentation on API 33 emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
           arch: x86_64
-          target: google_apis
+          # Lean AOSP API 33 image: no background GMS/Google NetworkStack
+          # traffic. Previous Google-APIs emulator lost its network stack
+          # and system_server during report tests, and sometimes failed
+          # immediately after sys.boot_completed before tests started.
+          target: default
           profile: pixel_4
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: gradle :app:connectedDebugAndroidTest --no-daemon
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -memory 2048 -cores 2
+          # One explicit bounded test subset per fresh API 33 emulator.
+          # Collect a best-effort logcat while the emulator still exists
+          # after an instrumentation abort; no synthetic pass on crash.
+          script: |
+            mkdir -p app/build/outputs/ci-emulator
+            adb logcat -c || true
+            set +e
+            timeout --signal=TERM --kill-after=20s 20m gradle :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="${{ matrix.classes }}" --no-daemon
+            result=$?
+            timeout 12s adb logcat -d -t 3000 > app/build/outputs/ci-emulator/logcat.txt 2>&1 || true
+            adb devices -l > app/build/outputs/ci-emulator/devices.txt 2>&1 || true
+            exit "$result"
       - name: Preserve Android instrumentation reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0993-android-emulator-test-results
+          name: CoreMetrics-v0994-android-emulator-${{ matrix.group }}-results
           if-no-files-found: ignore
           retention-days: 14
           path: |
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
+            app/build/outputs/ci-emulator/
