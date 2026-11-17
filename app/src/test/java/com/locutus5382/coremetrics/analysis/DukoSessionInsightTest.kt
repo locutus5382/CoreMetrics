@@ -148,6 +148,19 @@ class DukoSessionInsightTest {
         assertNull(result.stat(DukoSessionInsight.Metric.GPU_LOAD).p50)
     }
 
+    @Test fun highLoadRequiresAtLeastNinetyFivePercentWindowCoverage() {
+        // Three unavailable observations out of 25 across a 120s window.
+        // An alert must not be inferred even though all valid GPU readings
+        // are 98%: coverage is below the agreed 95% threshold.
+        val rows=(0..24).map{i ->
+            p(1_000_000L+i*5_000L).copy(
+                gpuLoad=if(i in setOf(3,11,19))null else 98.0,
+                busiestCorePct=35.0)
+        }
+        val result=report(rows)
+        assertFalse(result.events.any { it.title.startsWith("GPU sustained") })
+    }
+
     @Test fun changingSourceCountOrOrderRejectsMisleadingReport() {
         val acc=DukoSessionInsight.Accumulator(session(8),
             SessionStore.ReportBounds(8,1000,36_000),5000)
