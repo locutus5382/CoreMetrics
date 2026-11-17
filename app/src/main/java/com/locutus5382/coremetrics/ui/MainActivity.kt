@@ -2074,7 +2074,7 @@ class MainActivity : ComponentActivity() {
                                             // composition. A refresh of an
                                             // unrelated session no longer
                                             // re-analyzes these selected runs.
-                                            val analysisA by produceState<BenchmarkAnalyzer.Report?>(
+                                            val analysisAState=produceState<BenchmarkAnalyzer.Report?>(
                                                 null,firstPoints,firstId,selectedSessionA,skipWarmUp) {
                                                 val selected=selectedSessionA
                                                 value=if(selected!=null && firstPoints.isNotEmpty())
@@ -2083,7 +2083,7 @@ class MainActivity : ComponentActivity() {
                                                             firstPoints,if(skipWarmUp)30 else 0)
                                                     } else null
                                             }
-                                            val analysisB by produceState<BenchmarkAnalyzer.Report?>(
+                                            val analysisBState=produceState<BenchmarkAnalyzer.Report?>(
                                                 null,secondPoints,secondId,selectedSessionB,skipWarmUp) {
                                                 val selected=selectedSessionB
                                                 value=if(selected!=null && secondPoints.isNotEmpty())
@@ -2092,6 +2092,8 @@ class MainActivity : ComponentActivity() {
                                                             secondPoints,if(skipWarmUp)30 else 0)
                                                     } else null
                                             }
+                                            val analysisA=analysisAState.value
+                                            val analysisB=analysisBState.value
                                             if(selectedSessionA!=null && selectedSessionB!=null &&
                                                 selectedSessionA.id!=selectedSessionB.id &&
                                                 firstPoints.isNotEmpty() && secondPoints.isNotEmpty()) {
