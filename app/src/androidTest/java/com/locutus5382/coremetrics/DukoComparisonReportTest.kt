@@ -117,6 +117,12 @@ class DukoComparisonReportTest {
             assertEquals(9,report.rows.size)
             assertEquals(31L,db.storedSampleCount(first))
             assertEquals(31L,db.storedSampleCount(second))
+            // Preview retains one canonical String for repeated source tags;
+            // this is safe because the UI owns immutable Point snapshots.
+            val preview=db.points(first)
+            assertTrue(preview.size>=2)
+            assertEquals("DISCHARGING",preview[0].batteryPowerStatus)
+            assertSame(preview[0].batteryPowerStatus,preview[1].batteryPowerStatus)
             val png=ByteArrayOutputStream()
             DukoComparisonRenderer.png(report,png)
             val bmp=BitmapFactory.decodeByteArray(
