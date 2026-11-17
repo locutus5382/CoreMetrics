@@ -32,8 +32,8 @@ internal object DukoReportLoader {
         var visitedSinceCheck=0
         var accepted=0L
         checkpoint()
-        val visited=db.forEachReportPoint(id,bounds){ point ->
-            report.accept(point)
+        val visited=db.forEachReportSample(id,bounds){ sample ->
+            report.acceptSample(sample)
             accepted++
             if(++visitedSinceCheck>=512) {
                 checkpoint()
