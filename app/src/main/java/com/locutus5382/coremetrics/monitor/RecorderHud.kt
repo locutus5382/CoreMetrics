@@ -13,10 +13,13 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.text.Layout
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -259,14 +262,16 @@ internal class RecorderHud(private val context:Context) {
     private var disposed=false
 
     private fun shouldBlink() =
-        !disposed && recording && opts.blink && !locked && visible()
+        !disposed && recording && !locked && visible()
 
     private val blink=object:Runnable {
         override fun run() {
             if(!shouldBlink())return
-            blinkOn=!blinkOn
+            if(opts.blink)blinkOn=!blinkOn else blinkOn=true
             renderAction()
-            ui.postDelayed(this,650L)
+            // One existing UI clock keeps the elapsed timer correct even
+            // when blinking is OFF; never samples hardware or writes DB.
+            ui.postDelayed(this,1000L)
         }
     }
     /** Centralize scheduling to avoid duplicate callbacks across dock/expand,
@@ -275,7 +280,7 @@ internal class RecorderHud(private val context:Context) {
         ui.removeCallbacks(blink)
         blinkOn=true
         renderAction()
-        if(shouldBlink())ui.postDelayed(blink,650L)
+        if(shouldBlink())ui.postDelayed(blink,1000L)
     }
     private fun dp(v:Float)=(v*context.resources.displayMetrics.density).roundToInt()
     private fun windowWidth()=wm.currentWindowMetrics.bounds.width()
@@ -466,6 +471,27 @@ internal class RecorderHud(private val context:Context) {
         typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
         gravity=Gravity.CENTER_VERTICAL
     }
+    /** Tiny one-shot visual feedback: the native View click is authoritative.
+     * No repeat animation or pointer capture outside this button's own bounds.
+     */
+    private fun pressFeedback(view:View) {
+        view.setOnTouchListener { touched,event ->
+            when(event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touched.animate().cancel()
+                    touched.animate().scaleX(.94f).scaleY(.94f)
+                        .setDuration(75L).start()
+                }
+                MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL -> {
+                    touched.animate().cancel()
+                    touched.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(145L)
+                        .setInterpolator(OvershootInterpolator(.5f)).start()
+                }
+            }
+            false // Preserve the existing onClick and Android accessibility.
+        }
+    }
     private fun action(label:String,handler:()->Unit):TextView =
         styledLabel(label,13f).apply {
             isClickable=true
@@ -475,6 +501,7 @@ internal class RecorderHud(private val context:Context) {
             setPadding(dp(8f),dp(7f),dp(8f),dp(7f))
             background=rounded(.35f)
             setOnClickListener{handler()}
+            pressFeedback(this)
         }
 
     /** Neutral Frosted Glass: enabled = translucent white glass with a subtle
@@ -713,6 +740,7 @@ internal class RecorderHud(private val context:Context) {
             gravity=Gravity.CENTER_VERTICAL
             isClickable=true
             setOnClickListener{onRecord?.invoke()}
+            pressFeedback(this)
             background=rounded(.43f)
             setPadding(dp(8f),dp(5f),dp(8f),dp(5f))
         }
@@ -977,10 +1005,10 @@ internal class RecorderHud(private val context:Context) {
         frame.pivotX=if(dockEdge==DockEdge.LEFT)0f else frame.width.toFloat()
         frame.pivotY=0f
         frame.alpha=.84f
-        frame.scaleX=.975f;frame.scaleY=.975f
+        frame.scaleX=.94f;frame.scaleY=.94f
         frame.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(150L)
-            .setInterpolator(DecelerateInterpolator()).start()
+            .setDuration(210L)
+            .setInterpolator(OvershootInterpolator(.7f)).start()
     }
 
     /** Keep one overlay window. Docking MUST change WindowManager dimensions
@@ -1024,15 +1052,15 @@ internal class RecorderHud(private val context:Context) {
             }
             val viewport=(windowWidth()-dp(12f)).coerceAtLeast(dp(220f))
             val controlWidth=if(locked)dp(48f) else when(theme) {
-                HudLayoutPolicy.STRIKER->dp(120f)
-                HudLayoutPolicy.TACTICAL->dp(84f)
+                HudLayoutPolicy.STRIKER->dp(112f)
+                HudLayoutPolicy.TACTICAL->dp(64f)
                 HudLayoutPolicy.DUKO->0
                 else->dp(95f)
             }
             val desired=when(theme) {
-                HudLayoutPolicy.STRIKER->dp(470f*scale)
-                HudLayoutPolicy.TACTICAL->dp(355f*scale)
-                HudLayoutPolicy.DUKO->dp(232f*scale)
+                HudLayoutPolicy.STRIKER->dp(400f*scale)
+                HudLayoutPolicy.TACTICAL->dp(310f*scale)
+                HudLayoutPolicy.DUKO->dp(213f*scale)
                 HudLayoutPolicy.GHOST->(measure+controlWidth+dp(18f))
                     .coerceAtLeast(dp(200f))
                 HudLayoutPolicy.STRIP->(measure+controlWidth+dp(22f))
@@ -1040,9 +1068,9 @@ internal class RecorderHud(private val context:Context) {
                 else->dp(320f)
             }
             val maxWidth=when(theme) {
-                HudLayoutPolicy.STRIKER->minOf(viewport,dp(520f))
-                HudLayoutPolicy.TACTICAL->minOf(viewport,dp(420f))
-                HudLayoutPolicy.DUKO->minOf(viewport,dp(295f))
+                HudLayoutPolicy.STRIKER->minOf(viewport,dp(445f))
+                HudLayoutPolicy.TACTICAL->minOf(viewport,dp(360f))
+                HudLayoutPolicy.DUKO->minOf(viewport,dp(255f))
                 HudLayoutPolicy.GHOST->minOf(viewport,dp(800f))
                 else->minOf(viewport,(windowWidth()*.95f).roundToInt())
             }
@@ -1209,25 +1237,24 @@ internal class RecorderHud(private val context:Context) {
                 else->Typeface.create("sans-serif-medium",Typeface.NORMAL)
             }
             setTextColor(Color.rgb(239,247,255))
-            setShadowLayer(if(ghost)dp(2f).toFloat() else 0f,
+            setShadowLayer(if(ghost)dp(3f).toFloat() else 0f,
                 0f,if(ghost)dp(1f).toFloat() else 0f,Color.BLACK)
-            setPadding(dp(if(ghost)1f else if(lens)3f else 6f),
-                dp(if(ghost)2f else 5f),
-                dp(if(ghost)1f else if(lens)3f else 6f),
-                dp(if(ghost)2f else 5f))
+            setPadding(dp(if(ghost)1f else if(lens)3f else 4f),
+                dp(if(ghost)1f else 3f),
+                dp(if(ghost)1f else if(lens)3f else 4f),
+                dp(if(ghost)1f else 3f))
             setSingleLine(false)
-            maxLines=if(lens)9 else if(tactical)4 else if(strip)5 else 6
+            maxLines=if(lens)9 else if(tactical)4 else if(strip)4 else 6
             ellipsize=null
         }
         // Tactical has three substantive, independent labelled data blocks.
         // No extra background bitmap or shader is created on sampling ticks.
-        for(view in arrayOf(mainText,secondaryText,tertiaryText)){
-            view?.background=if(tactical)GradientDrawable().apply {
-                cornerRadius=dp(4f).toFloat()
-                setColor(Color.argb(110,12,34,58))
-                setStroke(dp(.6f).coerceAtLeast(1),
-                    Color.argb(80,118,172,200))
-            } else null
+        for((channel,view) in arrayOf(mainText,secondaryText,tertiaryText)
+            .withIndex()){
+            view?.background=if(tactical)
+                HudSectionDrawable(context.resources.displayMetrics.density,
+                    channel)
+            else null
         }
         secondaryText?.setPadding(dp(6f),dp(5f),dp(5f),dp(5f))
         tertiaryText?.setPadding(dp(6f),dp(5f),dp(5f),dp(5f))
@@ -1423,16 +1450,41 @@ internal class RecorderHud(private val context:Context) {
         // source-specific, display-only CPU advisory (not a device limit).
         val cpuBand=HudLayoutPolicy.advisoryBand(cpuValue)
         fun decorate(text:String):CharSequence {
-            if(!recording || cpuBand==0 || readings.cpuTemp==null)return text
-            val start=text.indexOf(readings.cpuTemp)
-            if(start<0)return text
-            val color=if(cpuBand==2)Color.rgb(244,67,79)
-                else Color.rgb(255,146,49)
-            return SpannableStringBuilder(text).apply {
-                setSpan(ForegroundColorSpan(color),start,
-                    start+readings.cpuTemp.length,
+            if(text.isEmpty())return text
+            val styled=SpannableStringBuilder(text)
+            // Hierarchy instead of a uniformly bold blob. Only short section
+            // headings are accent-coloured; metric values remain high contrast.
+            if(!lens)for(heading in listOf(
+                "CM / LIVE","THERMALS","UTILIZATION","RESOURCES")) {
+                val i=text.indexOf(heading)
+                if(i>=0) {
+                    styled.setSpan(ForegroundColorSpan(Color.rgb(109,223,249)),
+                        i,i+heading.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    styled.setSpan(RelativeSizeSpan(.85f),
+                        i,i+heading.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    styled.setSpan(StyleSpan(Typeface.BOLD),
+                        i,i+heading.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+            }
+            // Teal instrument trace on GPU values. DUKO remains monochrome.
+            if(!lens && readings.gpuTemp!=null) {
+                val start=text.indexOf(readings.gpuTemp)
+                if(start>=0)styled.setSpan(
+                    ForegroundColorSpan(Color.rgb(133,220,241)),
+                    start,start+readings.gpuTemp.length,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
+            // Temperature accent is a *display advisory*, not a calibrated
+            // hardware-critical threshold or throttling diagnosis.
+            if(recording && cpuBand>0 && readings.cpuTemp!=null) {
+                val start=text.indexOf(readings.cpuTemp)
+                if(start>=0)styled.setSpan(ForegroundColorSpan(
+                    if(cpuBand==2)Color.rgb(244,67,79)
+                    else Color.rgb(255,146,49)),
+                    start,start+readings.cpuTemp.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            return styled
         }
         view.text=decorate(formatted.primary)
         secondaryText?.let {
