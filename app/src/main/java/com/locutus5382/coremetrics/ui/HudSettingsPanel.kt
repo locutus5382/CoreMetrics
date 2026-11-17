@@ -1,6 +1,7 @@
 package com.locutus5382.coremetrics.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.locutus5382.coremetrics.monitor.HudOptions
+import com.locutus5382.coremetrics.monitor.HudLayoutPolicy
 
 /** Interactive UI only: the user toggles HUD monitoring through the same service. */
 @Composable
@@ -113,17 +115,38 @@ internal fun HudSettingsPanel(
                     onClick={onChange(options.copy(size=key))},label={Text(label)})
             }
         }
-        Text("LAYOUT",color=iceBlue,style=MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected=options.layout=="pill",
-                onClick={onChange(options.copy(layout="pill"))},
-                label={Text("Compact pill")})
-            FilterChip(selected=options.layout=="pro",
-                onClick={onChange(options.copy(layout="pro"))},
-                label={Text("Rounded card")})
+        Text("HUD LAYOUT",color=iceBlue,
+            style=MaterialTheme.typography.labelLarge)
+        Row(Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            listOf(
+                HudLayoutPolicy.PILL to "Classic pill · default",
+                HudLayoutPolicy.GLASS_CARD to "Compact Glass Card",
+                HudLayoutPolicy.RIBBON to "Telemetry Ribbon"
+            ).forEach {(id,label)->
+                FilterChip(selected=HudLayoutPolicy.normalize(options.layout)==id,
+                    onClick={onChange(options.copy(layout=id))},
+                    label={Text(label)})
+            }
         }
-        // Static illustrative preview for the horizontal HUD and compact lock state.
-        // There is no additional hardware sampling.
+        Text(when(HudLayoutPolicy.normalize(options.layout)) {
+            HudLayoutPolicy.GLASS_CARD ->
+                "Stacked glass panel with cyan outline, slim telemetry header and " +
+                "REC/STOP controls below the readings. Best for readability."
+            HudLayoutPolicy.RIBBON ->
+                "Low-profile horizontal telemetry strip for landscape gameplay. " +
+                "On narrow screens it wraps rather than hiding selected readings."
+            else ->
+                "Your original compact floating HUD pill. Preserved as default."
+        },color=coreSecondary,style=MaterialTheme.typography.bodySmall)
+        Text("All three share the same recorder, metrics, lock/unlock and " +
+            "dock controls. Changing layout never restarts REC or adds an overlay.",
+            color=coreSecondary,style=MaterialTheme.typography.labelSmall)
+
+        // Visual-only preview: fixed example numbers, no extra sensor polling.
+        val previewLayout=HudLayoutPolicy.normalize(options.layout)
+        val isCard=previewLayout==HudLayoutPolicy.GLASS_CARD
+        val isRibbon=previewLayout==HudLayoutPolicy.RIBBON
         val previewScale=when(options.size) {
             "small"->.82f
             "large"->1.20f
@@ -140,37 +163,82 @@ internal fun HudSettingsPanel(
         }
         val demoText=buildString {
             if(exampleReadings.isEmpty())append("REC · no metrics selected")
-            exampleReadings.forEachIndexed {index,v ->
-                if(index>0)append(if(exampleReadings.size>2 && index%2==0)
-                    "\\n" else " · ")
-                append(v)
+            exampleReadings.forEachIndexed {index,value ->
+                append(HudLayoutPolicy.divider(previewLayout,index,
+                    exampleReadings.size))
+                append(value)
             }
-        }.replace("\\n","\n")
+        }
+        val previewShape=RoundedCornerShape(when(previewLayout) {
+            HudLayoutPolicy.GLASS_CARD -> 16.dp
+            HudLayoutPolicy.RIBBON -> 12.dp
+            else -> 23.dp
+        })
+        val previewGlassColors=when(previewLayout) {
+            HudLayoutPolicy.GLASS_CARD -> listOf(
+                Color(0xFF071428).copy(alpha=opacityDraft),
+                Color(0xFF1B567C).copy(alpha=opacityDraft),
+                Color(0xFF0B2344).copy(alpha=opacityDraft))
+            HudLayoutPolicy.RIBBON -> listOf(
+                Color(0xFF051326).copy(alpha=opacityDraft),
+                Color(0xFF163450).copy(alpha=opacityDraft))
+            else -> listOf(
+                Color(0xFF071128).copy(alpha=opacityDraft),
+                Color(0xFF1A386B).copy(alpha=opacityDraft))
+        }
         Column(Modifier.fillMaxWidth().pureGlass(25).padding(12.dp),
             verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("LIVE PREVIEW · ILLUSTRATIVE VALUES, NOT SENSOR READINGS",
+            Text("LAYOUT PREVIEW · ILLUSTRATIVE VALUES, NOT LIVE READINGS",
                 color=iceBlue,style=MaterialTheme.typography.labelSmall)
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
-                Row(Modifier.widthIn(min=245.dp,max=455.dp)
-                    .background(Color(0xFF0A1A36).copy(alpha=opacityDraft),
-                        RoundedCornerShape(if(options.layout=="pro")13.dp else 23.dp))
-                    .border(1.dp,Color(0xB0CEE9FA),
-                        RoundedCornerShape(if(options.layout=="pro")13.dp else 23.dp))
-                    .padding(horizontal=9.dp,vertical=7.dp),
-                    verticalAlignment=Alignment.CenterVertically,
-                    horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text(demoText,color=coreText,
-                        fontSize=(12f*previewScale).sp,
-                        lineHeight=(17f*previewScale).sp,
-                        modifier=Modifier.weight(1f))
-                    if(locked) {
-                        Text("LOCK",fontSize=11.sp,color=solarGold)
-                    } else {
-                        Column(horizontalAlignment=Alignment.End,
-                            verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                            Text("● STOP 05:00",color=solarGold,
-                                fontSize=(11f*previewScale).sp)
-                            Text("⇥   LOCK",color=coreText,fontSize=11.sp)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement=Arrangement.End) {
+                val previewModifier=Modifier
+                    .widthIn(min=if(isRibbon)350.dp else 245.dp,
+                        max=if(isRibbon)690.dp else if(isCard)415.dp else 455.dp)
+                    .background(Brush.linearGradient(previewGlassColors),previewShape)
+                    .border(1.dp,Color(0xB0CEE9FA),previewShape)
+                    .padding(horizontal=11.dp,vertical=if(isCard)9.dp else 7.dp)
+                if(isCard) {
+                    Column(previewModifier,
+                        verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                        Text("COREMETRICS  /  LIVE TELEMETRY",
+                            color=Color(0xFF87E7FF),
+                            fontSize=10.sp,fontWeight=FontWeight.Bold,
+                            letterSpacing=1.sp)
+                        Text(demoText,color=coreText,
+                            fontSize=(12.5f*previewScale).sp,
+                            lineHeight=(18f*previewScale).sp)
+                        HorizontalDivider(color=Color(0x35CEE9FA))
+                        Row(Modifier.fillMaxWidth(),
+                            horizontalArrangement=Arrangement.SpaceBetween,
+                            verticalAlignment=Alignment.CenterVertically) {
+                            if(locked)Text("LOCK · TAP TO UNLOCK",
+                                color=solarGold,fontSize=11.sp)
+                            else {
+                                Text("● STOP 05:00",color=solarGold,
+                                    fontSize=(11f*previewScale).sp,
+                                    fontWeight=FontWeight.SemiBold)
+                                Text("⇥     LOCK",color=coreText,fontSize=11.sp)
+                            }
+                        }
+                    }
+                }else{
+                    Row(previewModifier,
+                        verticalAlignment=Alignment.CenterVertically,
+                        horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text(demoText,color=coreText,
+                            fontSize=(if(isRibbon)11.2f else 12f).times(previewScale).sp,
+                            lineHeight=(17f*previewScale).sp,
+                            modifier=Modifier.weight(1f))
+                        if(locked) {
+                            Text("LOCK",fontSize=11.sp,color=solarGold)
+                        }else{
+                            Column(horizontalAlignment=Alignment.End,
+                                verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                Text("● STOP 05:00",color=solarGold,
+                                    fontSize=(11f*previewScale).sp)
+                                Text("⇥   LOCK",color=coreText,fontSize=11.sp)
+                            }
                         }
                     }
                 }
