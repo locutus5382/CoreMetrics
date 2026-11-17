@@ -501,6 +501,65 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             put("ended_at", time); put("status", status)
         }, "id=?", arrayOf(id.toString()))==1
 
+    /** Total range is read from persisted samples, never from guessed game times.
+     * This metadata query is bounded and does not load raw points into RAM.
+     */
+    data class ReportBounds(val count:Long,val firstMs:Long,val lastMs:Long)
+    @Synchronized fun reportBounds(id:Long):ReportBounds? {
+        require(id>0L) { "Invalid session ID" }
+        return readableDatabase.rawQuery(
+            "SELECT COUNT(*),MIN(time_ms),MAX(time_ms) FROM samples WHERE session_id=?",
+            arrayOf(id.toString())).use { c ->
+            if(!c.moveToFirst() || c.isNull(1) || c.isNull(2))null
+            else ReportBounds(c.getLong(0),c.getLong(1),c.getLong(2))
+        }
+    }
+
+    /** Full chronological streaming read for DUKO reports. The standard
+     * 12k-point UI preview remains unchanged. Only one cursor row and
+     * temporary Point are retained per callback. Caller runs on IO.
+     * A hard safety cap makes unusually large exports explicit rather
+     * than silently truncating a recording.
+     */
+    @Synchronized fun forEachReportPoint(id:Long,onPoint:(Point)->Unit):Long {
+        val bounds=reportBounds(id) ?:error("Recording contains no samples")
+        require(bounds.count in 2..250_000) {
+            "DUKO Report supports 2–250,000 samples. Recording has "+
+                bounds.count+"; no partial report generated"
+        }
+        val projection="""SELECT time_ms,cpu_temp,gpu_temp,cpu_pct,gpu_pct,ram_gib,
+            battery_net_w,sf_layer_fps,app_package,
+            observed_cpu_limits,busiest_pct,battery_status,busiest_core,
+            battery_temp,battery_pct,cpu_clocks,gpu_mhz,
+            thermal_status,thermal_headroom,swap_used_gib,mem_psi_some10,
+            sample_duration_ms,sample_elapsed_ms,battery_source,gpu_source
+            FROM samples WHERE session_id=? ORDER BY time_ms ASC"""
+        var read=0L
+        readableDatabase.rawQuery(projection,arrayOf(id.toString())).use{ c ->
+            fun value(i:Int):Double?=if(c.isNull(i))null else c.getDouble(i)
+            while(c.moveToNext()) {
+                onPoint(Point(c.getLong(0),value(1),value(2),
+                    value(3),value(4),value(5),value(6),value(7),
+                    if(c.isNull(8))null else c.getString(8),
+                    if(c.isNull(9))null else c.getString(9),
+                    value(10),if(c.isNull(11))null else c.getString(11),
+                    if(c.isNull(12))null else c.getString(12),value(13),
+                    if(c.isNull(14))null else c.getInt(14),
+                    if(c.isNull(15))null else c.getString(15),value(16),
+                    if(c.isNull(17))null else c.getInt(17),
+                    value(18),value(19),value(20),value(21),
+                    if(c.isNull(22))null else c.getLong(22),
+                    if(c.isNull(23))null else c.getString(23),
+                    if(c.isNull(24))null else c.getString(24)))
+                read++
+            }
+        }
+        require(read==bounds.count) {
+            "Recording changed while its report was generated; export cancelled"
+        }
+        return read
+    }
+
     /** Count already persisted points when recovering the same SQLite ID. */
     @Synchronized fun storedSampleCount(id:Long):Long =
         readableDatabase.rawQuery(
