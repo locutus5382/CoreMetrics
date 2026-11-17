@@ -77,6 +77,8 @@ import com.locutus5382.coremetrics.analysis.ScorecardModel
 import com.locutus5382.coremetrics.analysis.ScorecardExportRequest
 import com.locutus5382.coremetrics.analysis.DocumentWindowRequest
 import com.locutus5382.coremetrics.analysis.DukoReportLoader
+import com.locutus5382.coremetrics.analysis.DukoComparisonLoader
+import com.locutus5382.coremetrics.analysis.DukoComparisonRequest
 import com.locutus5382.coremetrics.analysis.SessionRegimeAnalyzer
 import com.locutus5382.coremetrics.analysis.V08Analytics
 import com.locutus5382.coremetrics.telemetry.ThermalTrendFilter
@@ -630,6 +632,10 @@ class MainActivity : ComponentActivity() {
             var pngRequest by rememberSaveable { mutableStateOf(null as String?) }
             var dukoRequest by rememberSaveable { mutableStateOf(null as String?) }
             var dukoBusy by remember { mutableStateOf(false) }
+            var dukoComparisonRequest by rememberSaveable {
+                mutableStateOf(null as String?)
+            }
+            var dukoComparisonBusy by remember { mutableStateOf(false) }
             val notifyPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -915,6 +921,64 @@ class MainActivity : ComponentActivity() {
             val dukoPdfDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/pdf")
             ){uri->saveDuko(uri,"pdf")}
+            // v0.9.9.2: comparison request snapshots stable numeric IDs;
+            // the same pure model is used for the PNG and PDF outputs.
+            val saveDukoComparison:(Uri?,String)->Unit={uri,format->
+                val requested=DukoComparisonRequest.decode(dukoComparisonRequest)
+                dukoComparisonRequest=null
+                if(uri!=null && requested!=null &&
+                    requested.format==format && !dukoComparisonBusy) {
+                    dukoComparisonBusy=true
+                    scope.launch {
+                        val outcome=try {
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val report=DukoComparisonLoader.build(database,
+                                        requested.ids,requested.baselineId,
+                                        requested.testedVariable)
+                                    contentResolver.openOutputStream(uri,"w")?.use{out->
+                                        if(format=="pdf")
+                                            DukoComparisonRenderer.pdf(report,out)
+                                        else DukoComparisonRenderer.png(report,out)
+                                    }?:error("Cannot open DUKO comparison destination")
+                                    report
+                                }
+                            }
+                        }catch(e:kotlin.coroutines.cancellation.CancellationException){
+                            withContext(kotlinx.coroutines.NonCancellable+Dispatchers.IO) {
+                                runCatching{contentResolver.delete(uri,null,null)}
+                            }
+                            dukoComparisonBusy=false
+                            throw e
+                        }
+                        val removed=if(outcome.isFailure)
+                            withContext(Dispatchers.IO) {
+                                runCatching{contentResolver.delete(uri,null,null)>0}
+                                    .getOrDefault(false)
+                            }else true
+                        dukoComparisonBusy=false
+                        message=outcome.fold(
+                            onSuccess={r->
+                                "DUKO Comparison "+format.uppercase()+
+                                    " saved: "+r.runs.size+" complete recordings; "+
+                                    "baseline #"+r.baselineId+
+                                    "; quality: "+r.overall.label
+                            },
+                            onFailure={err->
+                                "DUKO Comparison export failed: "+
+                                    (err.message?:err.javaClass.simpleName)+
+                                    (if(removed)"" else
+                                        " · Remove incomplete document")
+                            })
+                    }
+                }
+            }
+            val dukoComparisonPngDocument=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("image/png")
+            ){uri->saveDukoComparison(uri,"png")}
+            val dukoComparisonPdfDocument=rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/pdf")
+            ){uri->saveDukoComparison(uri,"pdf")}
             val backupFile=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/zip")
             ) { uri ->
@@ -1954,6 +2018,22 @@ class MainActivity : ComponentActivity() {
                                              }
                                              if(repeatabilityOpen)
                                                  RepeatabilityPanel(database,sessionList,skipWarmUp)
+                                             DukoComparisonPanel(
+                                                 sessions=sessionList,
+                                                 busy=dukoComparisonBusy,
+                                                 onExport={ids,baseline,variable,format->
+                                                     val request=DukoComparisonRequest(
+                                                         format,ids,baseline,variable)
+                                                     dukoComparisonRequest=request.encode()
+                                                     val fileName="DUKO_Comparison_"+
+                                                         ids.joinToString("_")+"."+
+                                                         format
+                                                     if(format=="pdf")
+                                                         dukoComparisonPdfDocument.launch(fileName)
+                                                     else
+                                                         dukoComparisonPngDocument.launch(fileName)
+                                                 }
+                                             )
                                             Row(verticalAlignment=Alignment.CenterVertically) {
                                                  Text("Default crop: skip first 30s (legacy details too)",
                                                      Modifier.weight(1f),color=coreText,

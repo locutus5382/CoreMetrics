@@ -4,11 +4,12 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.9.1 DUKO Session Insight alpha — full-recording, offline DUKO single-session reports in PDF and PNG; exact bounded sensor quantiles, time-weighted battery discharge, gap-aware charts, evidence-qualified events, a printable glossary and original-device provenance. The v0.9.9.0 hardware abstraction, 2s/5s recorder, Quick Settings and HUD remain in place.** This is an Odin test candidate, not a public release. GitHub CI and real Odin acceptance are required before merging into `main`.
+**Current development status: v0.9.9.2 DUKO Comparison Report alpha** — select 2–5 completed recordings, choose a baseline, and export an offline PNG or vector PDF evidence matrix. It reuses the v0.9.9.1 full-session analytics and source provenance without changing the recorder, HUD, Quick Settings, permissions or SQLite v9. This is a test candidate; real Odin 2 Portal validation is intentionally deferred until after this milestone.
 
-## One-app Quick Start (v0.9.9.1)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.9.1-duko-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.1-duko-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+## One-app Quick Start (v0.9.9.2)
+
+1. For fault diagnosis install `CoreMetrics-v0.9.9.2-duko-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.2-duko-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +24,16 @@
 
 ---
 
+
+## v0.9.9.2 — DUKO Comparison Report (2–5 recordings)
+
+- **How to use:** Compare → **DUKO COMPARISON REPORT** → select 2–5 recordings → pick the baseline and any declared test variable → **DUKO Comparison PNG / PDF**. The Android document picker controls where the offline output is saved.
+- **Complete source recordings:** Each comparison uses v0.9.9.1's full persisted chronological session data (maximum 250,000 source samples per recording), never the 12k-preview or a partial selection. All processing happens on demand off the main UI thread.
+- **Shared evidence matrix:** Nine source sensor metrics, P50/P95 sample percentiles, coverage and signed P50 difference from the chosen baseline. Ineligible numeric deltas are shown as unavailable, not 0 or a fake performance score.
+- **Provenance/confidence:** Unknown or different original hardware, unsupported/unvalidated GPU source, invalid discharge coverage or mismatched battery source prevent corresponding numeric comparisons. User-tagged driver, fan, ClusterTune, rendering scale and performance mode are treated as declarations, not hardware verification.
+- **Reporting:** One-page 1600×2200 PNG plus multipage native vector A4 PDF containing source metadata, complete methods and paginated warnings. These reports cannot rank gaming FPS, compare chip power, prove game-scene equivalence, or claim one driver wins.
+- **Preserved:** v0.9.9.1 single-session DUKO, legacy A/B and A/A, original scorecards, Quick Test Profiles, CSV/TXT, HUD, QS, recorder, offline/no-root design, four themes. VersionCode **45**, SQLite stays **v9**.
+- **Validation:** `docs/PORTAL_V0992_DUKO_COMPARISON_ACCEPTANCE.md`. Keep both PR #39 and the comparison PR in draft until real-device tests are accepted.
 
 ## v0.9.9.1 — DUKO Session Insight (single recording)
 
