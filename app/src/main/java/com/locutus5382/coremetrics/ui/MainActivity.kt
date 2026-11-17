@@ -875,22 +875,26 @@ class MainActivity : ComponentActivity() {
             val dukoPngDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("image/png")
             ){uri ->
-                dukoQueue.onDocumentResult("png",uri,applicationContext,database)
+                dukoQueue.onDocumentResult(
+                    DukoReportTask.Kind.SESSION,"png",uri,applicationContext,database)
             }
             val dukoPdfDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/pdf")
             ){uri ->
-                dukoQueue.onDocumentResult("pdf",uri,applicationContext,database)
+                dukoQueue.onDocumentResult(
+                    DukoReportTask.Kind.SESSION,"pdf",uri,applicationContext,database)
             }
             val dukoComparisonPngDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("image/png")
             ){uri ->
-                dukoQueue.onDocumentResult("png",uri,applicationContext,database)
+                dukoQueue.onDocumentResult(
+                    DukoReportTask.Kind.COMPARISON,"png",uri,applicationContext,database)
             }
             val dukoComparisonPdfDocument=rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/pdf")
             ){uri ->
-                dukoQueue.onDocumentResult("pdf",uri,applicationContext,database)
+                dukoQueue.onDocumentResult(
+                    DukoReportTask.Kind.COMPARISON,"pdf",uri,applicationContext,database)
             }
             LaunchedEffect(dukoQueue.current,dukoQueue.pickerLaunched) {
                 val task=dukoQueue.current
