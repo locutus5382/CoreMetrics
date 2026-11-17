@@ -668,8 +668,10 @@ class MainActivity : ComponentActivity() {
                         reportBId>0L || segmentTextRequest!=null ||
                         segmentCsvRequest!=null || abWindowExport!=null ||
                         pngRequest!=null
-                    if(!sessionUiVisible && !dukoQueue.busy &&
-                        dukoQueue.current==null && !anyLegacyExportPending) {
+                    if(UiCacheReleasePolicy.permitted(
+                            sessionUiVisible,
+                            dukoQueue.busy || dukoQueue.current!=null,
+                            anyLegacyExportPending)) {
                         detailPoints=emptyList()
                         detailReport=null
                         detailLoadedId=0L
