@@ -162,9 +162,15 @@ object DukoSessionInsight {
     ){
         private val cadence=cadenceEstimateMs.coerceIn(500L,15_000L)
         private val gapLimit=max(6_000L,min(15_000L,cadence*3L))
-        private val quantiles=Metric.entries.associateWith{Quantiles(it)}
-        private val plots=listOf(Metric.CPU_TEMP,Metric.GPU_TEMP,Metric.GPU_LOAD)
-            .associateWith{Buckets(it,bounds.firstMs,bounds.lastMs)}
+        // A stable index avoids millions of enum-keyed map lookups while
+        // analysing 250k saved rows, without changing the metric data.
+        private val metrics=Metric.entries
+        private val quantiles=metrics.map {Quantiles(it)}.toTypedArray()
+        private val plots=arrayOf(
+            Buckets(Metric.CPU_TEMP,bounds.firstMs,bounds.lastMs),
+            Buckets(Metric.GPU_TEMP,bounds.firstMs,bounds.lastMs),
+            Buckets(Metric.GPU_LOAD,bounds.firstMs,bounds.lastMs)
+        )
         private val events=ArrayList<Event>()
         private val gpuSources=LinkedHashSet<String>()
         private val batterySources=LinkedHashSet<String>()
@@ -177,7 +183,7 @@ object DukoSessionInsight {
         private var samples=0
         // Each plotted sensor has independent missing-reading boundaries.
         // A missing GPU source must not fragment a valid CPU temperature trace.
-        private val traceSegments=plots.keys.associateWith{0}.toMutableMap()
+        private val traceSegments=IntArray(3)
         private var gaps=0
         private var eventCount=0
         private var powerWms=0.0
@@ -301,7 +307,7 @@ object DukoSessionInsight {
             val dt=if(previous==null)0L else p.timeMs-previous.timeMs
             if(previous!=null && dt>gapLimit) {
                 gaps++
-                for(m in plots.keys) traceSegments[m]=traceSegments.getValue(m)+1
+                for(i in traceSegments.indices)traceSegments[i]++
                 lastWarmth=BatteryTemperatureAdvisory.State.UNAVAILABLE
                 emit(p,"Recording gap","Preceding interval "+
                     (dt/1000.0)+" s, missing behavior unknown.",Evidence.OBSERVED)
@@ -313,12 +319,19 @@ object DukoSessionInsight {
                 warmth.reset()
             }
 
-            for(m in Metric.entries) {
+            for(i in metrics.indices) {
+                val m=metrics[i]
                 val value=reading(m,p)
-                quantiles.getValue(m).add(value)
-                if(m in plots) {
-                    plots.getValue(m).add(p.timeMs,value,traceSegments.getValue(m))
-                    if(value==null)traceSegments[m]=traceSegments.getValue(m)+1
+                quantiles[i].add(value)
+                val chartIndex=when(m) {
+                    Metric.CPU_TEMP->0
+                    Metric.GPU_TEMP->1
+                    Metric.GPU_LOAD->2
+                    else -> -1
+                }
+                if(chartIndex>=0) {
+                    plots[chartIndex].add(p.timeMs,value,traceSegments[chartIndex])
+                    if(value==null)traceSegments[chartIndex]++
                 }
             }
 
@@ -408,7 +421,7 @@ object DukoSessionInsight {
             }
             val span=bounds.lastMs-bounds.firstMs
             val coverage=100.0*powerMs/span
-            val results=Metric.entries.map{quantiles.getValue(it).finish(samples)}
+            val results=quantiles.map {it.finish(samples)}
             val findings=mutableListOf<Finding>()
             if(gaps==0)findings+=Finding(
                 "No sampling gaps exceeded "+(gapLimit/1000.0)+" seconds.",
@@ -470,7 +483,7 @@ object DukoSessionInsight {
                 powerMs/1000.0,coverage,weighted,
                 warmMs/1000.0,above42Ms/1000.0,
                 maximumThermal,events.toList(),max(0,eventCount-events.size),
-                plots.values.map{it.finish()},findings.take(5),
+                plots.map{it.finish()},findings.take(5),
                 cautions,gpuSources.toList(),batterySources.toList())
         }
     }
