@@ -10,8 +10,8 @@ class DukoComparisonInsightTest {
         id:Long,device:String="Odin 2 Portal",driver:String="T30",
         cpu:Double=52.0,gpu:Double=70.0,power:Double=4.0,
         coverage:Double=98.0,dischargeCoverage:Double=98.0,
-        gpuSources:List<String>=listOf("LOAD:KGSL_PERCENT; USER_VALIDATED"),
-        batterySources:List<String>=listOf("CURRENT=BATTERY_PROPERTY_CURRENT_NOW; VOLTAGE=BATTERY_CHANGED"),
+        gpuSources:List<String> = listOf("LOAD:KGSL_PERCENT; USER_VALIDATED"),
+        batterySources:List<String> = listOf("CURRENT=BATTERY_PROPERTY_CURRENT_NOW; VOLTAGE=BATTERY_CHANGED"),
         name:String="Hades"
     ):DukoSessionInsight.Report {
         val s=SessionStore.Session(
@@ -66,7 +66,7 @@ class DukoComparisonInsightTest {
         val power=r.rows.first{it.metric==Metric.POWER}
         assertEquals(-0.5,power.cells[0].deltaP50!!,.001)
         assertFalse(r.observations.any{it.contains("winner",ignoreCase=true)})
-        assertEquals(DukoComparisonInsight.Confidence.LIMITED,r.overall)
+        assertEquals(DukoComparisonInsight.Confidence.OBSERVATIONAL,r.overall)
     }
 
     @Test fun unknownOrDifferentHardwareSuppressesAllBetweenRunDeltas() {
