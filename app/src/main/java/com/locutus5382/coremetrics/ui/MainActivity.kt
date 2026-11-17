@@ -88,6 +88,7 @@ import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.data.UiSessionStoreOwner
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.monitor.HudOptions
+import com.locutus5382.coremetrics.data.SessionIntegritySnapshot
 import com.locutus5382.coremetrics.monitor.RecorderJournal
 import com.locutus5382.coremetrics.quick.SessionTile
 import com.locutus5382.coremetrics.quick.HudTile
@@ -2583,7 +2584,9 @@ class MainActivity : ComponentActivity() {
                                                             try {
                                                                 val result=withContext(Dispatchers.IO){
                                                                     runCatching{
-                                                                        RecorderJournal.report(this@MainActivity)
+                                                                        RecorderJournal.report(this@MainActivity)+
+                                                                            "\n\n"+
+                                                                            SessionIntegritySnapshot.report(database)
                                                                     }
                                                                 }
                                                                 diagnosticReport=result.getOrElse {
@@ -2609,7 +2612,7 @@ class MainActivity : ComponentActivity() {
                                                 }) { Text("Copy report") }
                                             }
                                             if (diagnosticsLoading)
-                                                Text("Checking read-only Android and kernel capabilities…",
+                                                Text("Checking read-only device capabilities and saved-session integrity…",
                                                     color=coreSecondary,
                                                     style=MaterialTheme.typography.labelSmall)
                                             if (diagnosticReport.isNotBlank()) {
