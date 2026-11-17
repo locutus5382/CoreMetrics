@@ -41,7 +41,7 @@ import kotlin.math.roundToInt
 internal data class HudOptions(
     val opacity: Float = 0.57f,
     val size: String = "regular",
-    val layout: String = "pill",
+    val layout: String = HudLayoutPolicy.STRIKER,
     val indicatorColor: String = "red",
     val blink: Boolean = true,
     val showCpuTemp: Boolean = true,
@@ -95,7 +95,7 @@ internal data class HudOptions(
             return HudOptions(
                 opacity=f(OPACITY,.57f).coerceIn(.30f,.90f),
                 size=s(SIZE,"regular").takeIf { it in setOf("small","regular","large") } ?: "regular",
-                layout=HudLayoutPolicy.normalize(s(LAYOUT,"pill")),
+                layout=HudLayoutPolicy.normalize(s(LAYOUT,HudLayoutPolicy.STRIKER)),
                 indicatorColor=s(INDICATOR,"red").takeIf {
                     it in setOf("red","orange","cyan","violet") } ?: "red",
                 blink=b(BLINK,true),
@@ -191,6 +191,9 @@ internal class RecorderHud(private val context:Context) {
     private var dockTab:LinearLayout?=null
     private var dockVisual:View?=null
     private var mainText:TextView?=null
+    private var secondaryText:TextView?=null
+    private var tertiaryText:TextView?=null
+    private var metricsColumn:LinearLayout?=null
     private var thermalIndicator:View?=null
     private var lockedSpace:View?=null
     private var lastHeadroom:Double?=null
@@ -667,11 +670,26 @@ internal class RecorderHud(private val context:Context) {
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT))
         controlsRow=actions
-        val label=styledLabel("",12f).apply {
-            setPadding(dp(6f),dp(5f),dp(4f),dp(5f))
-        }
+        val label=styledLabel("",12f)
         mainText=label
-        readings.addView(label,LinearLayout.LayoutParams(
+        val secondary=styledLabel("",12f).apply {visibility=View.GONE}
+        val tertiary=styledLabel("",12f).apply {visibility=View.GONE}
+        secondaryText=secondary;tertiaryText=tertiary
+        val cells=LinearLayout(context).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER_VERTICAL
+        }
+        metricsColumn=cells
+        cells.addView(label,LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
+        cells.addView(secondary,LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
+        cells.addView(tertiary,LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
+        readings.addView(cells,LinearLayout.LayoutParams(
             0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
         // A dedicated, 48dp placeholder lets the independent unlock chip
         // overlay the locked HUD without leaving a touch-blocking main window.
@@ -1387,7 +1405,8 @@ internal class RecorderHud(private val context:Context) {
             params=null;pill=null;readingsRow=null;controlsRow=null
             topActionsRow=null;bottomActionsRow=null;cardHeading=null
             structuralLayout=null;drawer=null;dockTab=null
-            dockVisual=null;mainText=null;thermalIndicator=null;recText=null;recDot=null
+            dockVisual=null;mainText=null;secondaryText=null;tertiaryText=null
+            metricsColumn=null;thermalIndicator=null;recText=null;recDot=null
             recControl=null;lockControl=null;drawerControl=null
             closeControl=null;minimizeControl=null
             drawerSwitches.clear()
