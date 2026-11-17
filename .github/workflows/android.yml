@@ -51,9 +51,17 @@ jobs:
             app/build/reports/tests/testDebugUnitTest/
 
   android-instrumentation:
-    name: API 33 emulator integration and migration tests
+    name: API 33 emulator — ${{ matrix.group }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: database-integrity
+            classes: com.locutus5382.coremetrics.SessionStoreOperationsTest,com.locutus5382.coremetrics.SessionArchiveTest,com.locutus5382.coremetrics.SessionIntegritySnapshotAndroidTest
+          - group: reports-ui
+            classes: com.locutus5382.coremetrics.DukoComparisonReportTest,com.locutus5382.coremetrics.DukoSessionReportTest,com.locutus5382.coremetrics.ScorecardRuntimeTest,com.locutus5382.coremetrics.HudBatteryOptionsTest
     permissions:
       contents: read
     steps:
@@ -78,17 +86,27 @@ jobs:
           target: google_apis
           profile: pixel_4
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          # Prevent stalled on-device instrumentation from hanging until
-          # the outer job timeout. Preserve any generated XML/HTML reports.
-          script: timeout --signal=TERM --kill-after=20s 20m gradle :app:connectedDebugAndroidTest --no-daemon
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -memory 2048 -cores 2
+          # One explicit bounded test subset per fresh API 33 emulator.
+          # Collect a best-effort logcat while the emulator still exists
+          # after an instrumentation abort; no synthetic pass on crash.
+          script: |
+            mkdir -p app/build/outputs/ci-emulator
+            adb logcat -c || true
+            set +e
+            timeout --signal=TERM --kill-after=20s 20m gradle :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="${{ matrix.classes }}" --no-daemon
+            result=$?
+            timeout 12s adb logcat -d -t 3000 > app/build/outputs/ci-emulator/logcat.txt 2>&1 || true
+            adb devices -l > app/build/outputs/ci-emulator/devices.txt 2>&1 || true
+            exit "$result"
       - name: Preserve Android instrumentation reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: CoreMetrics-v0994-android-emulator-test-results
+          name: CoreMetrics-v0994-android-emulator-${{ matrix.group }}-results
           if-no-files-found: ignore
           retention-days: 14
           path: |
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
+            app/build/outputs/ci-emulator/
