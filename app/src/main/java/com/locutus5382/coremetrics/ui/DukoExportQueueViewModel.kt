@@ -74,14 +74,14 @@ internal class DukoExportQueueViewModel:ViewModel() {
     }
 
     fun markPickerLaunched(task:DukoReportTask):Boolean {
-        if(current!=task || pickerLaunched || busy)return false
+        if(current!==task || pickerLaunched || busy)return false
         pickerLaunched=true
         stage="Choose destination · "+task.title
         return true
     }
 
     private fun complete(task:DukoReportTask) {
-        if(scheduler.active!=task)return
+        if(scheduler.active!==task)return
         scheduler.complete(task)
         pickerLaunched=false
         cancelBeforeDocument=false
@@ -181,7 +181,7 @@ internal class DukoExportQueueViewModel:ViewModel() {
                         latest=v
                         sampleMemory(v)
                         viewModelScope.launch(Dispatchers.Main.immediate) {
-                            if(current==task) {
+                            if(current===task) {
                                 percent=v
                                 stage=label
                             }
