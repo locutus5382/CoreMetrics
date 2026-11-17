@@ -39,7 +39,7 @@ internal fun DukoQueueStatusPanel(queue:DukoExportQueueViewModel) {
                     progress={queue.percent.coerceIn(0,100)/100f},
                     modifier=Modifier.fillMaxWidth())
                 Text(queue.percent.toString()+"% · "+pending.size+
-                    " more report"+if(pending.size==1)"" else "s"+" queued",
+                    " more report"+(if(pending.size==1)"" else "s")+" queued",
                     color=Color(0xFFA8C4D1),
                     style=MaterialTheme.typography.labelSmall)
             }
