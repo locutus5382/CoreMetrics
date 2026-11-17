@@ -64,16 +64,20 @@ object DukoSessionInsight {
             data[length++]=v
         }
         fun finish(total:Int):Stats {
-            val values=data.copyOf(length).apply{sort()}
+            // The Accumulator is consumed once. Sort only populated values
+            // in place instead of allocating a second 250k-double array for
+            // each metric. P50/P95 remain identical exact quantiles.
+            java.util.Arrays.sort(data,0,length)
             fun pct(q:Double):Double? {
                 if(length==0)return null
                 val index=(length-1)*q
                 val i=index.toInt()
                 val j=ceil(index).toInt()
-                return values[i]+(values[j]-values[i])*(index-i)
+                return data[i]+(data[j]-data[i])*(index-i)
             }
             return Stats(metric,length,pct(.5),pct(.95),
-                values.lastOrNull(),values.firstOrNull(),
+                if(length>0)data[length-1] else null,
+                if(length>0)data[0] else null,
                 if(total==0)0.0 else length*100.0/total)
         }
     }
