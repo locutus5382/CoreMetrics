@@ -34,6 +34,11 @@ internal class HudFrameDrawable(
     private val glow=Paint(Paint.ANTI_ALIAS_FLAG).apply {style=Paint.Style.STROKE;strokeWidth=3f*density}
     private val accent=Paint(Paint.ANTI_ALIAS_FLAG).apply {style=Paint.Style.STROKE;strokeWidth=1.9f*density}
     private val marks=Paint(Paint.ANTI_ALIAS_FLAG).apply {style=Paint.Style.STROKE;strokeWidth=.7f*density}
+    private val insetHair=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style=Paint.Style.STROKE
+        strokeWidth=.65f*density
+        color=Color.argb(42,198,227,252)
+    }
     private val path=Path()
     private val inset=Path()
     private val cell=RectF()
@@ -120,10 +125,12 @@ internal class HudFrameDrawable(
             hair.color=Color.argb(205,215,230,244)
             hair.strokeWidth=1.1f*density
             val pad=5*density;val arm=11*density
-            for(x in floatArrayOf(pad,w-pad))
-                for(y in floatArrayOf(pad,h-pad)){
-                    val dx=if(x<w/2)arm else -arm
-                    val dy=if(y<h/2)arm else -arm
+            for(xIndex in 0..1)
+                for(yIndex in 0..1){
+                    val x=if(xIndex==0)pad else w-pad
+                    val y=if(yIndex==0)pad else h-pad
+                    val dx=if(xIndex==0)arm else -arm
+                    val dy=if(yIndex==0)arm else -arm
                     canvas.drawLine(x,y,x+dx,y,hair)
                     canvas.drawLine(x,y,x,y+dy,hair)
                 }
@@ -145,11 +152,7 @@ internal class HudFrameDrawable(
             canvas.drawLine(8*density,2*density,w-8*density,2*density,marks)
             canvas.restoreToCount(n);return
         }
-        canvas.drawPath(inset,Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style=Paint.Style.STROKE
-            strokeWidth=.65f*density
-            color=Color.argb(42,198,227,252)
-        })
+        canvas.drawPath(inset,insetHair)
         accent.color=cyan
         if(id==HudLayoutPolicy.STRIKER){
             // A dark, sliced control compartment with precise cyan divider.
