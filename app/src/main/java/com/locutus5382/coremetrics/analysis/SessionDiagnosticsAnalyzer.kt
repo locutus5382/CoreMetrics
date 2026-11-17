@@ -1,7 +1,6 @@
 package com.locutus5382.coremetrics.analysis
 
 import com.locutus5382.coremetrics.data.SessionStore
-import java.util.ArrayDeque
 import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.max
@@ -100,13 +99,65 @@ object SessionDiagnosticsAnalyzer {
         }
     }
 
-    private fun quantile(values: List<Double>, percentile: Double): Double? {
-        if (values.isEmpty()) return null
-        val ordered = values.sorted()
-        val index = (ordered.lastIndex * percentile).coerceIn(0.0, ordered.lastIndex.toDouble())
-        val lower = floor(index).toInt()
-        val upper = min(ordered.lastIndex, lower + 1)
-        return ordered[lower] + (ordered[upper] - ordered[lower]) * (index - lower)
+    // Sort once per metric instead of boxing values and sorting twice.
+    private fun quantileSorted(sorted:DoubleArray,p:Double):Double? {
+        if(sorted.isEmpty())return null
+        val index=((sorted.size-1)*p).coerceIn(0.0,(sorted.size-1).toDouble())
+        val lower=floor(index).toInt()
+        val upper=min(sorted.lastIndex,lower+1)
+        return sorted[lower]+(sorted[upper]-sorted[lower])*(index-lower)
+    }
+
+    /** Primitive sliding 60-second window: no Pair per sample and no sorted
+     * mapped-list allocation for every rolling median. Duplicate values and
+     * irregular sampling have identical quantile semantics to the old code.
+     */
+    private class Rolling60 {
+        private var capacity=32
+        private var times=LongArray(capacity)
+        private var queue=DoubleArray(capacity)
+        private var sorted=DoubleArray(capacity)
+        private var head=0
+        var size=0
+            private set
+        fun clear(){head=0;size=0}
+        private fun grow() {
+            val n=capacity*2
+            val t=LongArray(n)
+            val q=DoubleArray(n)
+            for(i in 0 until size) {
+                t[i]=times[(head+i)%capacity]
+                q[i]=queue[(head+i)%capacity]
+            }
+            times=t;queue=q;sorted=sorted.copyOf(n)
+            head=0;capacity=n
+        }
+        fun add(now:Long,v:Double) {
+            if(size==capacity)grow()
+            val dest=(head+size)%capacity
+            times[dest]=now;queue[dest]=v
+            val position=java.util.Arrays.binarySearch(sorted,0,size,v)
+                .let{if(it<0)-it-1 else it}
+            System.arraycopy(sorted,position,sorted,position+1,size-position)
+            sorted[position]=v
+            size++
+            while(size>0 && now-times[head]>60_000L) {
+                val removing=queue[head]
+                val index=java.util.Arrays.binarySearch(sorted,0,size,removing)
+                check(index>=0){"Rolling window index inconsistent"}
+                System.arraycopy(sorted,index+1,sorted,index,size-index-1)
+                head=(head+1)%capacity
+                size--
+            }
+        }
+        fun spanMs():Long=if(size<2)0L
+            else times[(head+size-1)%capacity]-times[head]
+        fun median():Double? {
+            if(size<4 || spanMs()<20_000L)return null
+            val upper=size/2
+            return if(size%2==1)sorted[upper]
+                else (sorted[upper-1]+sorted[upper])*.5
+        }
     }
 
     private fun medianDelta(points: List<SessionStore.Point>): Long {
@@ -118,42 +169,32 @@ object SessionDiagnosticsAnalyzer {
     private fun distribution(
         metric: Metric, points: List<SessionStore.Point>, gapLimit: Long
     ): Distribution {
-        val readings = ArrayList<Reading>()
-        val window = ArrayDeque<Pair<Long,Double>>()
-        var lastMs: Long? = null
-        var segment = 0
-        for (p in points) {
-            val prev = lastMs
-            if (prev != null && (p.timeMs <= prev || p.timeMs - prev > gapLimit)) {
+        val readings=ArrayList<Reading>(points.size)
+        val window=Rolling60()
+        var lastMs:Long?=null
+        var segment=0
+        for(p in points){
+            val prev=lastMs
+            if(prev!=null && (p.timeMs<=prev || p.timeMs-prev>gapLimit)){
                 segment++
                 window.clear()
             }
-            lastMs = p.timeMs
-            val v = value(metric, p)
-            if (v == null) {
+            lastMs=p.timeMs
+            val v=value(metric,p)
+            if(v==null){
                 segment++
                 window.clear()
                 continue
             }
-            window.addLast(p.timeMs to v)
-            while (true) {
-                val oldest=window.peekFirst() ?:break
-                if (p.timeMs-oldest.first<=60_000L)break
-                window.removeFirst()
-            }
-            val earliest=window.peekFirst()
-            val latest=window.peekLast()
-            val span=if(earliest==null || latest==null)0L
-                else latest.first-earliest.first
-            val rolling = if (window.size >= 4 && span >= 20_000L)
-                quantile(window.map { it.second }, 0.5) else null
-            readings.add(Reading(p.timeMs,v,rolling,segment))
+            window.add(p.timeMs,v)
+            readings.add(Reading(p.timeMs,v,window.median(),segment))
         }
-        val values = readings.map { it.value }
-        val highest = values.maxOrNull()
-        val peakAt = readings.firstOrNull { it.value == highest }?.timeMs
+        val sorted=DoubleArray(readings.size){readings[it].value}
+        java.util.Arrays.sort(sorted)
+        val highest=sorted.lastOrNull()
+        val peakAt=readings.firstOrNull{it.value==highest}?.timeMs
         return Distribution(metric,readings.size,points.size,
-            quantile(values,0.5),quantile(values,0.95),highest,peakAt,
+            quantileSorted(sorted,0.5),quantileSorted(sorted,0.95),highest,peakAt,
             readings.lastOrNull()?.rolling60,readings)
     }
 

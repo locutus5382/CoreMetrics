@@ -4,11 +4,11 @@
 
 **CoreMetrics** is an independent, offline-first Android gameplay telemetry and session-analysis application, complementary to [O2P Control Center](https://github.com/locutus5382/O2P-Control-Center). Its purpose is to measure and compare *what actually happens* with different CPU/GPU profiles — without modifying them.
 
-**Current development status: v0.9.9.6 Five HUD Overhaul alpha** — Five user-selectable styles replace the rejected three: Striker, Ghost, Horizontal Strip, Compact Tactical Card and DUKO Lens. The metric values still come exclusively from existing recorder samples; the recorder, foreground service, no-root permissions, database and user-requested FIFO reports are unchanged. All styles share one overlay owner. DUKO Lens uses translucent frosted fallback instead of risky global game-background blur. Full Android and Odin validation is required before release.
+**Current development status: v0.9.9.7 Reliability and Memory alpha** — Five user-selectable styles replace the rejected three: Striker, Ghost, Horizontal Strip, Compact Tactical Card and DUKO Lens. The metric values still come exclusively from existing recorder samples; the recorder, foreground service, no-root permissions, database and user-requested FIFO reports are unchanged. All styles share one overlay owner. DUKO Lens uses translucent frosted fallback instead of risky global game-background blur. Full Android and Odin validation is required before release.
 
-## One-app Quick Start (v0.9.9.6)
+## One-app Quick Start (v0.9.9.7)
 
-1. For fault diagnosis install `CoreMetrics-v0.9.9.6-five-hud-overhaul-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.6-five-hud-overhaul-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
+1. For fault diagnosis install `CoreMetrics-v0.9.9.7-stability-memory-debug` (`app-debug.apk`). For realistic optimized size/startup testing, install **instead** `CoreMetrics-v0.9.9.7-stability-memory-optimized-test` (`app-optimizedTest.apk`, R8-minified, signed with CI's temporary Android debug key). Both use package `com.locutus5382.coremetrics`; they cannot coexist. The initial in-app guide explains notification, overlay and Usage Access permissions. Back up recordings before any signing-key-related uninstall.
 2. Launch Eden/Hades, open Android Quick Settings and tap **CM HUD**. The thin outlined pulse badge becomes a bold illuminated badge in the system accent; the status reads **Ready · Tap REC**.
 3. Tap the floating HUD's **REC** button, or the separate **CM REC** tile, to start sampling. The HUD tile only shows/hides the overlay; the REC tile explicitly starts/stops the recording. Both tiles describe active recording even if the HUD is hidden.
 4. Long-press the HUD tile to open CoreMetrics' HUD Studio. After recording, open **Sessions / Compare** for local offline analysis.
@@ -23,6 +23,12 @@
 
 ---
 
+
+## v0.9.9.7 — Reliability and memory hardening (draft alpha)
+
+Follow-up to the independent Claude static review of v0.9.9.4, applied only after comparing its claims with the current branch. Recorder tick errors now support bounded recovery and honest dropped-sample journaling; permanent DB failures still terminate. User-requested DUKO report FIFO exports perform a low-memory preflight and best-effort OutOfMemoryError cleanup, without changing queue semantics. Compare benchmark analysis moves to Dispatchers.Default. Session diagnostics' rolling 60-second median and distribution quantiles use reusable primitive arrays to reduce garbage, while GPU parsing reuses its regex. The five HUD themes, recording database schema v9 and DUKO report format v0.9.9 remain unchanged. Hardware PSS and performance gains are unverified until Odin tests.
+
+Acceptance protocol: docs/PORTAL_V0997_CLAUDE_REVIEW_ACCEPTANCE.md. This is a draft until CI and device validation pass.
 
 ## v0.9.9.6 — Five-theme HUD overhaul (draft alpha)
 

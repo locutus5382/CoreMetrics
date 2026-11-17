@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.database.sqlite.SQLiteDatabaseLockedException
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -630,15 +631,53 @@ class RecordingService:Service() {
                         val detector=ForegroundAttribution(applicationContext)
                         var next=SystemClock.elapsedRealtime()
                         var lastNotice=0L
+                        var consecutiveSampleFailures=0
                         while(isActive && !stopping){
                             val tickStartNanos=SystemClock.elapsedRealtimeNanos()
                             val startLateMs=(SystemClock.elapsedRealtime()-next)
                                 .coerceAtLeast(0L).toDouble()
-                            val s=withContext(Dispatchers.IO){
-                                sampler.sample(detector.current(System.currentTimeMillis()))
+                            var collectedNanos=tickStartNanos
+                            // A dropped tick is a real gap, never a fake row.
+                            // One transient sensor or SQLite failure must not
+                            // terminate an otherwise usable recording.
+                            val s=try {
+                                val snapshot=withContext(Dispatchers.IO){
+                                    sampler.sample(detector.current(System.currentTimeMillis()))
+                                }
+                                collectedNanos=SystemClock.elapsedRealtimeNanos()
+                                withContext(Dispatchers.IO) {
+                                    var writeAttempts=0
+                                    while(true) {
+                                        try {
+                                            db.add(id,snapshot)
+                                            break
+                                        }catch(e:SQLiteDatabaseLockedException){
+                                            // Back off ONCE without blocking the main thread.
+                                            if(++writeAttempts>=2)throw e
+                                            delay(RecorderTickFailurePolicy.LOCK_RETRY_DELAY_MS)
+                                        }
+                                    }
+                                }
+                                if(consecutiveSampleFailures>0)
+                                    RecorderJournal.event(this@RecordingService,
+                                        "SAMPLE_RECOVERED",
+                                        "after="+consecutiveSampleFailures+
+                                            " missed ticks id="+id)
+                                consecutiveSampleFailures=0
+                                snapshot
+                            }catch(e:CancellationException){
+                                throw e
+                            }catch(e:Exception){
+                                consecutiveSampleFailures++
+                                val type=e.javaClass.simpleName
+                                RecorderJournal.event(this@RecordingService,
+                                    "SAMPLE_DROPPED", "id="+id+" type="+type+
+                                        " consecutive="+consecutiveSampleFailures)
+                                if(RecorderTickFailurePolicy.shouldTerminate(
+                                        type,consecutiveSampleFailures))throw e
+                                null
                             }
-                            val collectedNanos=SystemClock.elapsedRealtimeNanos()
-                            withContext(Dispatchers.IO){db.add(id,s)}
+                            if(s!=null) {
                             val writtenNanos=SystemClock.elapsedRealtimeNanos()
                             MonitorState.latest=s
                             MonitorState.sampleCount++
@@ -675,6 +714,9 @@ class RecordingService:Service() {
                                 hudMs=if(updatedHud)(hudEndNanos-writtenNanos)/1e6 else null,
                                 totalMs=(SystemClock.elapsedRealtimeNanos()-tickStartNanos)/1e6,
                                 startLateMs=startLateMs)
+                            }
+                            // Maintain cadence even after a dropped tick; no
+                            // tight retry loop and no backfilled fake samples.
                             next+=interval
                             val delayMs=next-SystemClock.elapsedRealtime()
                             if(delayMs>0L)delay(delayMs)else next=SystemClock.elapsedRealtime()

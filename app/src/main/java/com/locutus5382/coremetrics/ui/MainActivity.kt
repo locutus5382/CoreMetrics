@@ -2068,18 +2068,32 @@ class MainActivity : ComponentActivity() {
                                                 V08Analytics.afterWarmUp(secondPoints,
                                                     if(skipWarmUp)30 else 0)
                                             }
-                                            val analysisA=remember(firstPoints,firstId,sessionList,skipWarmUp) {
-                                                sessionList.firstOrNull{it.id==firstId}
-                                                    ?.takeIf{firstPoints.isNotEmpty()}
-                                                    ?.let{BenchmarkAnalyzer.analyze(it,firstPoints,if(skipWarmUp)30 else 0)}
-                                            }
-                                            val analysisB=remember(secondPoints,secondId,sessionList,skipWarmUp) {
-                                                sessionList.firstOrNull{it.id==secondId}
-                                                    ?.takeIf{secondPoints.isNotEmpty()}
-                                                    ?.let{BenchmarkAnalyzer.analyze(it,secondPoints,if(skipWarmUp)30 else 0)}
-                                            }
                                             val selectedSessionA=sessionList.firstOrNull{it.id==firstId}
                                             val selectedSessionB=sessionList.firstOrNull{it.id==secondId}
+                                            // No 12k-row benchmark pass in Compose
+                                            // composition. A refresh of an
+                                            // unrelated session no longer
+                                            // re-analyzes these selected runs.
+                                            val analysisAState=produceState<BenchmarkAnalyzer.Report?>(
+                                                null,firstPoints,firstId,selectedSessionA,skipWarmUp) {
+                                                val selected=selectedSessionA
+                                                value=if(selected!=null && firstPoints.isNotEmpty())
+                                                    withContext(Dispatchers.Default) {
+                                                        BenchmarkAnalyzer.analyze(selected,
+                                                            firstPoints,if(skipWarmUp)30 else 0)
+                                                    } else null
+                                            }
+                                            val analysisBState=produceState<BenchmarkAnalyzer.Report?>(
+                                                null,secondPoints,secondId,selectedSessionB,skipWarmUp) {
+                                                val selected=selectedSessionB
+                                                value=if(selected!=null && secondPoints.isNotEmpty())
+                                                    withContext(Dispatchers.Default) {
+                                                        BenchmarkAnalyzer.analyze(selected,
+                                                            secondPoints,if(skipWarmUp)30 else 0)
+                                                    } else null
+                                            }
+                                            val analysisA=analysisAState.value
+                                            val analysisB=analysisBState.value
                                             if(selectedSessionA!=null && selectedSessionB!=null &&
                                                 selectedSessionA.id!=selectedSessionB.id &&
                                                 firstPoints.isNotEmpty() && secondPoints.isNotEmpty()) {
