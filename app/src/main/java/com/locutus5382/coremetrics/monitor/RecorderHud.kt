@@ -1058,44 +1058,69 @@ internal class RecorderHud(private val context:Context) {
      * Called only on user configuration, service rebind or mode change.
      */
     private fun applyLayoutStructure() {
-        val layout=HudLayoutPolicy.normalize(opts.layout)
-        if(structuralLayout==layout)return
-        val line=pill ?:return
-        val readings=readingsRow ?:return
-        val actions=controlsRow ?:return
-        val top=topActionsRow ?:return
-        val bottom=bottomActionsRow ?:return
-        val card=layout==HudLayoutPolicy.GLASS_CARD
-        line.orientation=if(card)LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-        line.gravity=if(card)Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
-        readings.layoutParams=if(card)
+        val theme=HudLayoutPolicy.normalize(opts.layout)
+        if(structuralLayout==theme)return
+        val line=pill?:return
+        val readings=readingsRow?:return
+        val cells=metricsColumn?:return
+        val actions=controlsRow?:return
+        val top=topActionsRow?:return
+        val bottom=bottomActionsRow?:return
+        val striker=theme==HudLayoutPolicy.STRIKER
+        val tactical=theme==HudLayoutPolicy.TACTICAL
+        val lens=theme==HudLayoutPolicy.DUKO
+        val slim=theme==HudLayoutPolicy.GHOST ||
+            theme==HudLayoutPolicy.STRIP
+
+        // All modes reuse precisely these existing views / REC callbacks.
+        // This method is called when settings change, never by the sampler.
+        line.orientation=if(lens)LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        line.gravity=Gravity.CENTER_VERTICAL
+        readings.layoutParams=if(lens)
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT)
-            else LinearLayout.LayoutParams(
-                0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
-        actions.orientation=if(card)LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-        actions.gravity=if(card)
-            Gravity.END or Gravity.CENTER_VERTICAL else Gravity.CENTER
-        actions.layoutParams=if(card)
+        else LinearLayout.LayoutParams(
+            0,LinearLayout.LayoutParams.WRAP_CONTENT,1f)
+
+        cells.orientation=if(striker)LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        cells.gravity=Gravity.CENTER_VERTICAL
+        fun sizeOfCell(weight:Float)=if(weight>0f)
+            LinearLayout.LayoutParams(
+                0,LinearLayout.LayoutParams.WRAP_CONTENT,weight)
+        else LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT)
+        mainText?.layoutParams=sizeOfCell(if(striker)1f else 0f)
+        secondaryText?.visibility=if(striker||tactical)View.VISIBLE else View.GONE
+        secondaryText?.layoutParams=sizeOfCell(if(striker)1f else 0f)
+        tertiaryText?.visibility=if(tactical)View.VISIBLE else View.GONE
+        tertiaryText?.layoutParams=sizeOfCell(0f)
+
+        actions.orientation=if(lens||slim)LinearLayout.HORIZONTAL
+            else LinearLayout.VERTICAL
+        actions.gravity=Gravity.CENTER_VERTICAL or Gravity.END
+        actions.layoutParams=if(lens)
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin=dp(2f)
+                topMargin=dp(4f)
             }
-            else LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-        top.gravity=if(card)Gravity.START or Gravity.CENTER_VERTICAL else Gravity.CENTER
-        top.layoutParams=if(card)
-            LinearLayout.LayoutParams(0,dp(39f),1f)
-            else LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,dp(33f))
-        bottom.gravity=Gravity.END or Gravity.CENTER_VERTICAL
-        bottom.layoutParams=LinearLayout.LayoutParams(
+        else LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
-            if(card)dp(39f) else LinearLayout.LayoutParams.WRAP_CONTENT)
-        structuralLayout=layout
+            LinearLayout.LayoutParams.WRAP_CONTENT)
+        top.layoutParams=if(lens)
+            LinearLayout.LayoutParams(0,dp(35f),1f)
+        else LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,dp(if(slim)37f else 35f))
+        bottom.layoutParams=LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,dp(if(lens)35f else 39f))
+        bottom.gravity=Gravity.END or Gravity.CENTER_VERTICAL
+
+        // Ghost and Cinema Strip collapse by edge gesture; no permanently
+        // visible giant ⇥ button. Tactical/Striker keep an explicit dock.
+        minimizeControl?.visibility=if(lens||slim)View.GONE else View.VISIBLE
+        structuralLayout=theme
         invalidateLayoutCache()
     }
 
