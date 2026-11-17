@@ -877,7 +877,8 @@ class MainActivity : ComponentActivity() {
                 val request=pending?.split('|')
                 val id=request?.getOrNull(1)?.toLongOrNull()
                 if(uri!=null && id!=null && id>0L &&
-                    request?.getOrNull(0)==format && !dukoBusy) {
+                    request?.getOrNull(0)==format && !dukoBusy &&
+                    !dukoComparisonBusy) {
                     dukoBusy=true
                     scope.launch {
                         val outcome=try {
@@ -918,6 +919,15 @@ class MainActivity : ComponentActivity() {
                                 (if(removed)"" else " · Remove incomplete document")
                         })
                     }
+                }else if(uri!=null) {
+                    // ACTION_CREATE_DOCUMENT has already created this URI.
+                    // Never leave an empty file if an overlapping export,
+                    // missing source or stale Activity result prevents start.
+                    scope.launch(Dispatchers.IO) {
+                        runCatching{contentResolver.delete(uri,null,null)}
+                    }
+                    message="DUKO export not started; check selected session "+
+                        "and whether another DUKO export is running"
                 }
             }
             val dukoPngDocument=rememberLauncherForActivityResult(
@@ -932,7 +942,8 @@ class MainActivity : ComponentActivity() {
                 val requested=DukoComparisonRequest.decode(dukoComparisonRequest)
                 dukoComparisonRequest=null
                 if(uri!=null && requested!=null &&
-                    requested.format==format && !dukoComparisonBusy) {
+                    requested.format==format && !dukoComparisonBusy &&
+                    !dukoBusy) {
                     dukoComparisonBusy=true
                     scope.launch {
                         val outcome=try {
@@ -981,6 +992,12 @@ class MainActivity : ComponentActivity() {
                                         " · Remove incomplete document")
                             })
                     }
+                }else if(uri!=null) {
+                    scope.launch(Dispatchers.IO) {
+                        runCatching{contentResolver.delete(uri,null,null)}
+                    }
+                    message="DUKO comparison not started; check selection "+
+                        "and whether another DUKO export is running"
                 }
             }
             val dukoComparisonPngDocument=rememberLauncherForActivityResult(
@@ -1793,7 +1810,7 @@ class MainActivity : ComponentActivity() {
                                                     Row(horizontalArrangement=
                                                         Arrangement.spacedBy(8.dp)) {
                                                         OutlinedButton(
-                                                            enabled=!dukoBusy &&
+                                                            enabled=!dukoBusy && !dukoComparisonBusy &&
                                                                 r.session.status!="RECORDING",
                                                             onClick={
                                                                 dukoRequest="png|"+r.session.id
@@ -1803,7 +1820,7 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                         ){Text("DUKO PNG")}
                                                         OutlinedButton(
-                                                            enabled=!dukoBusy &&
+                                                            enabled=!dukoBusy && !dukoComparisonBusy &&
                                                                 r.session.status!="RECORDING",
                                                             onClick={
                                                                 dukoRequest="pdf|"+r.session.id
@@ -2030,7 +2047,7 @@ class MainActivity : ComponentActivity() {
                                                  RepeatabilityPanel(database,sessionList,skipWarmUp)
                                              DukoComparisonPanel(
                                                  sessions=sessionList,
-                                                 busy=dukoComparisonBusy,
+                                                 busy=dukoComparisonBusy || dukoBusy,
                                                  onExport={ids,baseline,variable,format->
                                                      val request=DukoComparisonRequest(
                                                          format,ids,baseline,variable)
