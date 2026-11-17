@@ -1,6 +1,7 @@
 package com.locutus5382.coremetrics.ui
 
 import android.content.Context
+import android.app.ActivityManager
 import android.net.Uri
 import android.os.Debug
 import android.os.SystemClock
@@ -121,11 +122,13 @@ internal class DukoExportQueueViewModel:ViewModel() {
         kind:DukoReportTask.Kind,format:String,uri:Uri?,
         context:Context,db:SessionStore
     ) {
+        val resolver=context.applicationContext.contentResolver
+        val appContext=context.applicationContext
         val task=current
         if(task==null || task.kind!=kind || task.format!=format ||
             !pickerLaunched) {
             if(uri!=null)viewModelScope.launch(Dispatchers.IO) {
-                runCatching { context.contentResolver.delete(uri,null,null) }
+                runCatching { resolver.delete(uri,null,null) }
             }
             return
         }
@@ -137,7 +140,7 @@ internal class DukoExportQueueViewModel:ViewModel() {
         if(cancelBeforeDocument) {
             viewModelScope.launch {
                 withContext(Dispatchers.IO) {
-                    runCatching { context.contentResolver.delete(uri,null,null) }
+                    runCatching { resolver.delete(uri,null,null) }
                 }
                 resultMessage=task.title+" cancelled."
                 complete(task)
@@ -147,7 +150,6 @@ internal class DukoExportQueueViewModel:ViewModel() {
         busy=true
         stage="Analyzing · "+task.title
         percent=0
-        val resolver=context.applicationContext.contentResolver
         // Enter try/finally synchronously before onDocumentResult returns.
         // Otherwise a rapid Cancel can cancel a not-yet-dispatched job and
         // strand the FIFO request with busy=true indefinitely.
@@ -155,6 +157,14 @@ internal class DukoExportQueueViewModel:ViewModel() {
             val startedAt=SystemClock.elapsedRealtime()
             try {
                 val metrics=withContext(Dispatchers.IO) {
+                    // Early warning only. PSS is still logged during report
+                    // construction; lowMemory can change after this check.
+                    val memory=ActivityManager.MemoryInfo()
+                    appContext.getSystemService(ActivityManager::class.java)
+                        ?.getMemoryInfo(memory)
+                    if(memory.lowMemory)
+                        error("Android reports low memory. Close the game " +
+                            "or other apps and retry the report.")
                     val worker=coroutineContext[Job]
                     var latest=-1
                     var lastMemoryBucket=-1
@@ -249,6 +259,17 @@ internal class DukoExportQueueViewModel:ViewModel() {
                 }
                 resultMessage=task.title+" cancelled"+
                     if(removed) "." else "; check destination for a partial file."
+            }catch(e:OutOfMemoryError) {
+                // Avoid an uncaught coroutine error that would kill the UI
+                // and leave a partially written SAF document.
+                val removed=withContext(NonCancellable+Dispatchers.IO) {
+                    runCatching {resolver.delete(uri,null,null)>0}
+                        .getOrDefault(false)
+                }
+                resultMessage=task.title+
+                    " stopped: insufficient available memory."+
+                    if(removed) " The partial report was removed."
+                    else " Check the destination for a partial file."
             }catch(e:Exception) {
                 val removed=withContext(NonCancellable+Dispatchers.IO) {
                     runCatching {resolver.delete(uri,null,null)>0}
