@@ -1226,13 +1226,12 @@ internal class RecorderHud(private val context:Context) {
         }
         // Tactical has three substantive, independent labelled data blocks.
         // No extra background bitmap or shader is created on sampling ticks.
-        for(view in arrayOf(mainText,secondaryText,tertiaryText)){
-            view?.background=if(tactical)GradientDrawable().apply {
-                cornerRadius=dp(4f).toFloat()
-                setColor(Color.argb(110,12,34,58))
-                setStroke(dp(.6f).coerceAtLeast(1),
-                    Color.argb(80,118,172,200))
-            } else null
+        for((channel,view) in arrayOf(mainText,secondaryText,tertiaryText)
+            .withIndex()){
+            view?.background=if(tactical)
+                HudSectionDrawable(context.resources.displayMetrics.density,
+                    channel)
+            else null
         }
         secondaryText?.setPadding(dp(6f),dp(5f),dp(5f),dp(5f))
         tertiaryText?.setPadding(dp(6f),dp(5f),dp(5f),dp(5f))
