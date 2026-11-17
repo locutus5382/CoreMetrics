@@ -57,9 +57,11 @@ object DukoSessionInsight {
     private class Quantiles(val metric:Metric) {
         private var data=DoubleArray(128)
         private var length=0
+        fun clear() { length=0 }
         fun add(v:Double?) {
             if(v==null || !v.isFinite())return
-            if(length>=data.size)data=data.copyOf(data.size*2)
+            if(length>=data.size)
+                data=data.copyOf((data.size*2).coerceAtMost(MAX_SAMPLES))
             data[length++]=v
         }
         fun finish(total:Int):Stats {
@@ -79,6 +81,22 @@ object DukoSessionInsight {
                 if(length>0)data[0] else null,
                 if(total==0)0.0 else length*100.0/total)
         }
+    }
+
+    /**
+     * Reuse exact percentile buffers across the 2–5 reports in ONE explicit
+     * comparison. No result retains these arrays: finish creates immutable
+     * Stats values, then the next report resets only logical lengths.
+     *
+     * Never share this scratch instance across concurrent Accumulators.
+     * A dedicated scratch belongs to one serial DUKO comparison request.
+     */
+    class QuantileScratch {
+        private val buffers=Metric.entries.map {Quantiles(it)}.toTypedArray()
+        fun reset() {buffers.forEach {it.clear()}}
+        internal fun add(index:Int,value:Double?)=buffers[index].add(value)
+        internal fun results(total:Int):List<Stats> =
+            buffers.map {it.finish(total)}
     }
 
     /** Retains min and max per time bucket, preserving meaningful spikes
@@ -158,14 +176,17 @@ object DukoSessionInsight {
     class Accumulator(
         private val session:SessionStore.Session,
         private val bounds:SessionStore.ReportBounds,
-        cadenceEstimateMs:Long
+        cadenceEstimateMs:Long,
+        quantileScratch:QuantileScratch?=null
     ){
         private val cadence=cadenceEstimateMs.coerceIn(500L,15_000L)
         private val gapLimit=max(6_000L,min(15_000L,cadence*3L))
         // A stable index avoids millions of enum-keyed map lookups while
         // analysing 250k saved rows, without changing the metric data.
         private val metrics=Metric.entries
-        private val quantiles=metrics.map {Quantiles(it)}.toTypedArray()
+        private val quantiles=(quantileScratch?:QuantileScratch()).also {
+            it.reset()
+        }
         private val plots=arrayOf(
             Buckets(Metric.CPU_TEMP,bounds.firstMs,bounds.lastMs),
             Buckets(Metric.GPU_TEMP,bounds.firstMs,bounds.lastMs),
@@ -322,7 +343,7 @@ object DukoSessionInsight {
             for(i in metrics.indices) {
                 val m=metrics[i]
                 val value=reading(m,p)
-                quantiles[i].add(value)
+                quantiles.add(i,value)
                 val chartIndex=when(m) {
                     Metric.CPU_TEMP->0
                     Metric.GPU_TEMP->1
@@ -421,7 +442,7 @@ object DukoSessionInsight {
             }
             val span=bounds.lastMs-bounds.firstMs
             val coverage=100.0*powerMs/span
-            val results=quantiles.map {it.finish(samples)}
+            val results=quantiles.results(samples)
             val findings=mutableListOf<Finding>()
             if(gaps==0)findings+=Finding(
                 "No sampling gaps exceeded "+(gapLimit/1000.0)+" seconds.",
