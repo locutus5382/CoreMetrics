@@ -1114,7 +1114,9 @@ internal class RecorderHud(private val context:Context) {
         // dock and unlock controls remaining fixed-size touch targets.
         mainText?.maxWidth=dp((if(card)390f else if(ribbon)700f else 460f)*scale)
         mainText?.setSingleLine(false)
-        mainText?.maxLines=if(ribbon)3 else 5
+        // A narrow ribbon may need four rows when all seven metrics are
+        // selected; NEVER silently truncate the final metric.
+        mainText?.maxLines=if(ribbon)8 else 5
         mainText?.ellipsize=null
         recText?.textSize=11f*scale
         // The unlocked main control and separate locked recovery chip share the
