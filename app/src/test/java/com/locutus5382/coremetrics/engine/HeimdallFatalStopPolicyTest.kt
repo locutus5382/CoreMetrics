@@ -13,8 +13,8 @@ class HeimdallFatalStopPolicyTest {
         assertEquals(StopReason.STORAGE_ERROR,
             HeimdallFatalStopPolicy.reason("LEASE_OWNER_CHANGED"))
     }
-    @Test fun persistedStopObservedDuringSampleIsStorageIntegrityEvent() {
-        assertEquals(StopReason.STORAGE_ERROR,
+    @Test fun persistedStopObservedDuringSampleRemainsUserStop() {
+        assertEquals(StopReason.USER,
             HeimdallFatalStopPolicy.reason("LEASE_TERMINAL_STOP_SEEN"))
     }
     @Test fun ordinaryCollectorFailureRemainsSampleFailure() {
