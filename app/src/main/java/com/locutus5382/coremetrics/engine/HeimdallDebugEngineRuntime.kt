@@ -5,10 +5,13 @@ import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.domain.CommandOrigin
 import com.locutus5382.coremetrics.domain.EngineCommand
 import com.locutus5382.coremetrics.domain.EngineController
+import com.locutus5382.coremetrics.domain.EngineEvent
 import com.locutus5382.coremetrics.domain.EngineState
 import com.locutus5382.coremetrics.domain.RecordingState
 import com.locutus5382.coremetrics.domain.LegacyGuardedEffectPort
 import com.locutus5382.coremetrics.domain.StopReason
+import com.locutus5382.coremetrics.telemetry.Snapshot
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -66,8 +69,76 @@ internal class HeimdallDebugEngineRuntime(
         return true
     }
 
+    /**
+     * Rebuilds the SAME original recording after a monitor-process restart.
+     * Never invokes IO.begin(): the native host revalidates its own lease/row.
+     *
+     * A cold STOP is made durable BEFORE any sampler can resume.
+     */
+    suspend fun recover(
+        handoff: NativeRecoveryHandoffEvidence,
+        originalSessionId: Long,
+        persistedStop: Boolean,
+        stopRequestedNow: Boolean,
+    ): Boolean {
+        check(controller == null) { "ENGINE_ALREADY_CREATED" }
+        check(handoff.originalSessionId == originalSessionId && originalSessionId > 0L) {
+            "RECOVERY_SESSION_MISMATCH"
+        }
+        val io = HeimdallAndroidSessionIo(app, db, intervalMs)
+        lateinit var engine: EngineController
+        val host = HeimdallSessionHost(
+            serviceEpoch = epoch,
+            io = io,
+            parentScope = scope,
+            intervalMs = intervalMs,
+            onFatalSampling = { _, _ ->
+                engine.submit(EngineCommand.Stop(
+                    "fatal-${UUID.randomUUID()}", CommandOrigin.RECOVERY,
+                    StopReason.SAMPLE_FAILURE))
+            },
+        )
+        if (!host.acceptNativeRecoveryHandoff(handoff)) return false
+        // Only a persisted STOP, never a mere incoming Intent, authorizes
+        // terminal reconciliation without restarting the sampler.
+        if (stopRequestedNow && !persistedStop)
+            check(io.persistStop(originalSessionId)) { "RECOVERY_STOP_NOT_DURABLE" }
+        val terminal = persistedStop || stopRequestedNow
+        if (terminal) {
+            check(host.preflightPersistedStop(originalSessionId)) {
+                "TERMINAL_RECOVERY_UNVALIDATED"
+            }
+        } else {
+            check(host.preflightRecovery(originalSessionId)) {
+                "RESUME_RECOVERY_UNVALIDATED"
+            }
+        }
+        val originalWall = db.originalStartMs(originalSessionId)
+            ?: error("ORIGINAL_START_TIME_UNAVAILABLE")
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val originalElapsed = (nowElapsed -
+            (System.currentTimeMillis() - originalWall).coerceAtLeast(0L))
+            .coerceIn(0L, nowElapsed)
+        engine = EngineController(EngineState(epoch = epoch),
+            LegacyGuardedEffectPort(epoch, host), scope)
+        controller = engine
+        scope.launch { engine.state.collect(onState) }
+        engine.post(EngineEvent.Reconcile(
+            sessionId = originalSessionId,
+            startedAtElapsedMs = originalElapsed,
+            leaseEligible = !terminal,
+            stopIntentPersisted = terminal,
+        ))
+        return true
+    }
+
     suspend fun stop(): Boolean {
         val active = controller ?: return false
+        // An unacknowledged native recovery must not be stopped before the
+        // host actually resumes its sampler. The owning service retains
+        // the STOP request and sends it once Recording is acknowledged.
+        if (active.state.value.recording is RecordingState.Recovering ||
+            active.state.value.recording is RecordingState.Idle) return false
         // Repeated notification/QS STOP must also recover a finalized-but-
         // uncommitted original row, rather than leaving a live foreground
         // service with an unresponsive STOP control.
