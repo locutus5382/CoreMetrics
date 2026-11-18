@@ -59,7 +59,7 @@ jobs:
       matrix:
         include:
           - group: database-integrity
-            classes: com.locutus5382.coremetrics.SessionStoreOperationsTest,com.locutus5382.coremetrics.SessionArchiveTest,com.locutus5382.coremetrics.SessionIntegritySnapshotAndroidTest,com.locutus5382.coremetrics.HeimdallShadowPlatformAndroidTest,com.locutus5382.coremetrics.HeimdallLeaseOwnershipAndroidTest,com.locutus5382.coremetrics.HeimdallTerminalCommitAndroidTest
+            classes: com.locutus5382.coremetrics.SessionStoreOperationsTest,com.locutus5382.coremetrics.SessionArchiveTest,com.locutus5382.coremetrics.SessionIntegritySnapshotAndroidTest,com.locutus5382.coremetrics.HeimdallShadowPlatformAndroidTest,com.locutus5382.coremetrics.HeimdallLeaseOwnershipAndroidTest,com.locutus5382.coremetrics.HeimdallTerminalCommitAndroidTest,com.locutus5382.coremetrics.HeimdallLeaseHeartbeatAndroidTest
           - group: heimdall-native-runtime
             classes: com.locutus5382.coremetrics.HeimdallDebugServiceAndroidTest
           - group: heimdall-native-restart
