@@ -43,11 +43,16 @@ class StatusProvider : ContentProvider() {
             putBoolean("running", MonitorState.running)
             putBoolean("starting", MonitorState.starting)
             putBoolean("standby", MonitorState.standby)
+            // M2-M: Trial Activity rejects missing mandatory fields. Keep
+            // the monitor->console contract explicit and instrumented.
+            putBoolean("saving", MonitorState.saving)
+            putBoolean("hudAttached", MonitorState.hudAttached)
             putLong("id", MonitorState.sessionId)
             putLong("started", MonitorState.startedAt)
             putLong("count", MonitorState.sampleCount)
             putString("message", MonitorState.message)
             if (BuildConfig.DEBUG) {
+                putInt("heimdallStatusContractVersion", 1)
                 // Diagnostic presentation only: never a recorder authority token.
                 putString("heimdallRecorderPhase",
                     MonitorState.heimdallRecorderPhase)
