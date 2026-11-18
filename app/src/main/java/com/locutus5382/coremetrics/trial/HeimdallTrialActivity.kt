@@ -44,7 +44,10 @@ class HeimdallTrialActivity : ComponentActivity() {
     private lateinit var stop: Button
     private lateinit var copy: Button
     private lateinit var verify: Button
+    private lateinit var verifyStop: Button
     private var growthCheckInFlight = false
+    private var finalizationCheckInFlight = false
+    private var finalizationReport = "STOP completion: NOT VERIFIED"
     private var growthReport = "Sample growth: NOT VERIFIED"
     private val handler = Handler(Looper.getMainLooper())
     private var lastSnapshot: TrialSnapshot? = null
@@ -90,6 +93,23 @@ class HeimdallTrialActivity : ComponentActivity() {
                 phase == "RECORDING" && rawOwner == "HEIMDALL_DEBUG" &&
                 persistedRowStatus == "RECORDING" &&
                 !rawLeaseUnresolved && !repairNeeded && sessionId > 0L
+        val mayVerifyFinalization: Boolean
+            get() = monitorStatusVerified && sessionId > 0L &&
+                !running && !starting && !saving
+        val finalizationEvidence: TrialFinalizationEvidence
+            get() = TrialFinalizationEvidence(
+                statusVerified = monitorStatusVerified,
+                originalSessionId = sessionId,
+                sqliteStatus = persistedRowStatus,
+                persistedSamples = samples,
+                rawRecoveryOwner = rawOwner,
+                rawLeaseUnresolved = rawLeaseUnresolved,
+                unfinishedRecordingExists = unfinishedRow,
+                monitorRecording = running,
+                monitorStarting = starting,
+                monitorSaving = saving,
+                enginePhase = phase,
+            )
         val sampleEvidence: TrialSampleEvidence
             get() = TrialSampleEvidence(
                 statusVerified = monitorStatusVerified,
@@ -148,6 +168,10 @@ class HeimdallTrialActivity : ComponentActivity() {
             verifySampleGrowth()
         }
         verify.isEnabled = false
+        verifyStop = action("Verify saved session after STOP", amber) {
+            verifySavedSession()
+        }
+        verifyStop.isEnabled = false
         copy = action("Copy diagnostic summary", cobalt) {
             getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
                 ClipData.newPlainText("Heimdall trial status", lastReport))
@@ -225,6 +249,7 @@ class HeimdallTrialActivity : ComponentActivity() {
         start.isEnabled = false
         stop.isEnabled = false
         verify.isEnabled = false
+        verifyStop.isEnabled = false
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { readVerified() }
@@ -246,11 +271,14 @@ class HeimdallTrialActivity : ComponentActivity() {
                     appendLine("Issue: ${s.issueCode ?: "NONE"}")
                     appendLine("Message: ${s.statusMessage}")
                     appendLine(growthReport)
+                    appendLine(finalizationReport)
                 }
                 details.text = lastReport
                 start.isEnabled = s.mayRequestStart
                 stop.isEnabled = s.mayRequestStop
                 verify.isEnabled = s.mayVerifySamples && !growthCheckInFlight
+                verifyStop.isEnabled = s.mayVerifyFinalization &&
+                    !finalizationCheckInFlight
             }.onFailure {
                 lastSnapshot = null
                 lastReport = "Monitor status unavailable: " +
@@ -260,7 +288,38 @@ class HeimdallTrialActivity : ComponentActivity() {
                 start.isEnabled = false
                 stop.isEnabled = false
                 verify.isEnabled = false
+                verifyStop.isEnabled = false
             }
+        }
+    }
+
+    /** Inspect the actual original SQLite row and recovery lease. No writes. */
+    private fun verifySavedSession() {
+        if (finalizationCheckInFlight || (lastSnapshot?.sessionId ?: 0L) <= 0L) {
+            refresh()
+            return
+        }
+        finalizationCheckInFlight = true
+        verifyStop.isEnabled = false
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { readVerified() }
+            }
+            finalizationReport = result.fold(
+                onSuccess = { s ->
+                    val verified = HeimdallTrialFinalizationProof.evaluate(
+                        s.finalizationEvidence)
+                    "STOP completion: ${verified.result.name}; original ID " +
+                        "${verified.sessionId}; persisted samples " +
+                        "${verified.samples}"
+                },
+                onFailure = { error ->
+                    "STOP completion: NOT VERIFIED — " +
+                        error.javaClass.simpleName
+                }
+            )
+            finalizationCheckInFlight = false
+            refresh()
         }
     }
 
