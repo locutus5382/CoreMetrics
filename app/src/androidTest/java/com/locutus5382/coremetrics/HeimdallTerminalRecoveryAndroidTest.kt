@@ -30,9 +30,11 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class HeimdallTerminalRecoveryAndroidTest {
     private fun emulatorOnly(): Boolean =
-        Build.HARDWARE.contains("ranchu", true) ||
-            Build.HARDWARE.contains("goldfish", true) ||
-            Build.FINGERPRINT.contains("generic", true)
+        (Build.HARDWARE.contains("ranchu", true) ||
+            Build.HARDWARE.contains("goldfish", true)) &&
+        (Build.FINGERPRINT.contains("generic", true) ||
+            Build.PRODUCT.contains("sdk", true) ||
+            Build.MODEL.contains("emulator", true))
 
     private fun waitFor(ms: Long, condition: () -> Boolean) {
         val deadline=SystemClock.elapsedRealtime()+ms
