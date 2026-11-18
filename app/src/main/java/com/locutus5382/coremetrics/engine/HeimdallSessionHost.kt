@@ -168,7 +168,9 @@ internal class HeimdallSessionHost<S>(
 
     override suspend fun pauseAndJoinSampler(sessionId: Long) = lock.withLock {
         owner()
-        check(activeId == sessionId && durableStopId == sessionId) { "STOP_NOT_DURABLE" }
+        // A STOP must quiesce sampling even when the durable lease write failed.
+        // Finalization remains blocked until both proofs are confirmed.
+        check(activeId == sessionId) { "SESSION_NOT_OWNED" }
         if (pausedId != sessionId) {
             val job = samplerJob ?: error("SAMPLER_NOT_OWNED")
             job.cancelAndJoin() // actual quiescence, not merely cancel request
