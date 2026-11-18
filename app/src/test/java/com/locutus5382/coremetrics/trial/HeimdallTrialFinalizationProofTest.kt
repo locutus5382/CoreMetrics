@@ -11,6 +11,7 @@ class HeimdallTrialFinalizationProofTest {
         persistedSamples = 8L,
         rawRecoveryOwner = null,
         rawLeaseUnresolved = false,
+        repairRequired = false,
         unfinishedRecordingExists = false,
         monitorRecording = false,
         monitorStarting = false,
@@ -61,6 +62,11 @@ class HeimdallTrialFinalizationProofTest {
         assertEquals(TrialFinalizationResult.RECOVERY_LEASE_UNRESOLVED,
             HeimdallTrialFinalizationProof.evaluate(
                 completed().copy(rawLeaseUnresolved = true)).result)
+    }
+    @Test fun monitorRepairRequiredCannotBeVerifiedAsSuccessful() {
+        assertEquals(TrialFinalizationResult.RECOVERY_LEASE_UNRESOLVED,
+            HeimdallTrialFinalizationProof.evaluate(
+                completed().copy(repairRequired = true)).result)
     }
     @Test fun anotherUnfinishedRowBlocksCompletionProof() {
         assertEquals(TrialFinalizationResult.UNFINISHED_RECORDING_REMAINS,
