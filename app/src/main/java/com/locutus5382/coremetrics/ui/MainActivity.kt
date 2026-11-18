@@ -42,6 +42,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.ui.res.painterResource
 import com.locutus5382.coremetrics.R
+import com.locutus5382.coremetrics.BuildConfig
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -2749,6 +2750,80 @@ class MainActivity : ComponentActivity() {
                                             Text("Battery power shows battery-terminal flow, not whole-device or wall power. Charging/bypass sessions cannot be compared as power efficiency.",
                                                 style = MaterialTheme.typography.bodySmall,color=muted)
                                             HorizontalDivider(color=coreBorder)
+                                            if (BuildConfig.DEBUG) {
+                                                HorizontalDivider(color=coreBorder)
+                                                Text("HEIMDALL · DEBUG ENGINE TEST",
+                                                    color=coreCyan,
+                                                    style=MaterialTheme.typography.titleSmall)
+                                                Text("Experimental recording engine. Only use with " +
+                                                    "backed-up data. This does NOT change the default " +
+                                                    "recording engine or delete any sessions. " +
+                                                    "The service refuses a conflicting legacy recording, " +
+                                                    "HUD or unfinished recovery lease.",
+                                                    color=solarOrange,
+                                                    style=MaterialTheme.typography.bodySmall)
+                                                var nativeDebugConfirmed by remember {
+                                                    mutableStateOf(false)
+                                                }
+                                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                                    Checkbox(
+                                                        checked=nativeDebugConfirmed,
+                                                        onCheckedChange={nativeDebugConfirmed=it})
+                                                    Text("I have backed up my sessions and am " +
+                                                        "testing the debug engine only",
+                                                        color=coreSecondary,
+                                                        style=MaterialTheme.typography.bodySmall)
+                                                }
+                                                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    Button(
+                                                        enabled=nativeDebugConfirmed &&
+                                                            notificationsGranted &&
+                                                            status.known &&
+                                                            !status.running &&
+                                                            !status.starting &&
+                                                            !status.standby &&
+                                                            !status.pendingRecovery,
+                                                        onClick={
+                                                            runCatching {
+                                                                startForegroundService(Intent(
+                                                                    this@MainActivity,
+                                                                    RecordingService::class.java)
+                                                                    .setAction(
+                                                                        RecordingService.HEIMDALL_DEBUG_START))
+                                                                message="Heimdall debug START requested; " +
+                                                                    "check status before gameplay"
+                                                            }.onFailure {
+                                                                message="Heimdall debug START refused: " +
+                                                                    it.javaClass.simpleName
+                                                            }
+                                                        }
+                                                    ) { Text("Start test recording") }
+                                                    OutlinedButton(
+                                                        enabled=status.known &&
+                                                            (status.running || status.starting ||
+                                                                status.message.startsWith("Heimdall")),
+                                                        onClick={
+                                                            runCatching {
+                                                                startService(Intent(
+                                                                    this@MainActivity,
+                                                                    RecordingService::class.java)
+                                                                    .setAction(RecordingService.STOP))
+                                                                message="STOP/retry sent to current recorder owner"
+                                                            }.onFailure {
+                                                                message="STOP request failed: " +
+                                                                    it.javaClass.simpleName
+                                                            }
+                                                        }
+                                                    ) { Text("STOP / Retry") }
+                                                }
+                                                Text("The standard Record tile and HUD continue " +
+                                                    "using the existing product workflow. This debug " +
+                                                    "entry starts the new native recorder WITHOUT a HUD. " +
+                                                    "Inspect process-exit and session diagnostics below " +
+                                                    "after testing.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.labelSmall)
+                                            }
                                             Text("RECORDER DIAGNOSTICS",color=coreCyan)
                                             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                                 OutlinedButton(
