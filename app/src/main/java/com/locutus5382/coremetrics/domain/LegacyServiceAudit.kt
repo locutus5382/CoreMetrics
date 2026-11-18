@@ -17,6 +17,7 @@ internal data class LegacyAuditSnapshot(
     val sessionId: Long? = null,
     val stop: LegacyAuditStop = LegacyAuditStop.NONE,
     val samplerExited: Boolean = false,
+    val recoveredTerminal: Boolean = false,
     val finish: LegacyAuditFinish = LegacyAuditFinish.NONE,
     val serviceDestroyed: Boolean = false,
     val findings: Set<LegacyAuditFinding> = emptySet(),
@@ -28,6 +29,8 @@ internal sealed interface LegacyAuditObservation {
     data class TerminalIntent(val sessionId: Long, val persisted: Boolean) : LegacyAuditObservation
     /** Posted only after the sampling loop exits, at the start of its finally block. */
     data class SamplerExited(val sessionId: Long) : LegacyAuditObservation
+    /** After process death, a persisted STOP is finalized without local sampling. */
+    data class RecoveredTerminal(val sessionId: Long) : LegacyAuditObservation
     /** The bool is the result of SessionStore.finish() on the original session ID. */
     data class Finalized(val sessionId: Long, val succeeded: Boolean) : LegacyAuditObservation
     data object ServiceDestroyed : LegacyAuditObservation
@@ -50,10 +53,17 @@ internal object LegacyServiceAudit {
                     val overlap = s.sessionId != null && s.sessionId != observation.sessionId &&
                         s.finish != LegacyAuditFinish.CONFIRMED
                     s.copy(sessionId = observation.sessionId, stop = LegacyAuditStop.NONE,
-                        samplerExited = false, finish = LegacyAuditFinish.NONE,
+                        samplerExited = false, recoveredTerminal = false,
+                        finish = LegacyAuditFinish.NONE,
                         findings = if (overlap) s.findings + LegacyAuditFinding.OVERLAPPING_SESSIONS
                             else s.findings)
                 }
+            }
+            is LegacyAuditObservation.RecoveredTerminal -> {
+                if (observation.sessionId <= 0L) return s
+                s.copy(sessionId = observation.sessionId, stop = LegacyAuditStop.PERSISTED,
+                    samplerExited = false, recoveredTerminal = true,
+                    finish = LegacyAuditFinish.NONE)
             }
             is LegacyAuditObservation.TerminalIntent -> {
                 if (observation.sessionId != s.sessionId) wrongSession(s)
@@ -71,7 +81,8 @@ internal object LegacyServiceAudit {
                 else {
                     val findings = buildSet {
                         addAll(s.findings)
-                        if (!s.samplerExited) add(LegacyAuditFinding.FINALIZED_BEFORE_SAMPLER_EXIT)
+                        if (!s.samplerExited && !s.recoveredTerminal)
+                            add(LegacyAuditFinding.FINALIZED_BEFORE_SAMPLER_EXIT)
                         if (!observation.succeeded) add(LegacyAuditFinding.FINALIZATION_FAILED)
                     }
                     s.copy(finish = if (observation.succeeded) LegacyAuditFinish.CONFIRMED
