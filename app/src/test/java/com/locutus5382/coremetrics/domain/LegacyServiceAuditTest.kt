@@ -92,6 +92,22 @@ class LegacyServiceAuditTest {
         assertEquals(1L, a.sequence)
         assertEquals(a, step(a, LegacyAuditObservation.SessionAcquired(42)))
     }
+    @Test fun terminalRecoveryDoesNotPretendLocalSamplerJoined() {
+        var s = step(initial(), LegacyAuditObservation.RecoveredTerminal(42))
+        assertEquals(42L, s.sessionId)
+        assertEquals(LegacyAuditStop.PERSISTED, s.stop)
+        assertTrue(s.recoveredTerminal)
+        assertFalse(s.samplerExited)
+        s = step(s, LegacyAuditObservation.Finalized(42, true))
+        assertEquals(LegacyAuditFinish.CONFIRMED, s.finish)
+        assertTrue(s.findings.isEmpty())
+    }
+    @Test fun recoveredTerminalIsASeparateAuditOrigin() {
+        val s = step(initial(), LegacyAuditObservation.RecoveredTerminal(42))
+        assertEquals(1L, s.sequence)
+        assertEquals(false, s.samplerExited)
+        assertTrue(s.recoveredTerminal)
+    }
     @Test fun requiresExplicitNonEmptyEpoch() {
         try { LegacyServiceAudit.begin(""); throw AssertionError("Expected empty epoch rejection") }
         catch (e: IllegalArgumentException) { assertTrue(e.message != null) }
