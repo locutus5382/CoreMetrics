@@ -1,6 +1,7 @@
 package com.locutus5382.coremetrics.quick
 
 import android.content.Context
+import com.locutus5382.coremetrics.BuildConfig
 import com.locutus5382.coremetrics.monitor.MonitorState
 import com.locutus5382.coremetrics.monitor.RecorderLease
 
@@ -26,7 +27,9 @@ internal data class QuickTileSnapshot(
                 RecorderLease.rawSession(context) else null
             val unresolved = raw?.active == true &&
                 (pendingLease == null ||
-                    pendingLease.owner == RecorderLease.Owner.UNKNOWN)
+                    pendingLease.owner == RecorderLease.Owner.UNKNOWN ||
+                    (raw.owner == RecorderLease.Owner.HEIMDALL_DEBUG &&
+                        !BuildConfig.DEBUG))
             // Native phase comes from the service reducer; an unavailable
             // lease must NEVER turn into permission to create a new session.
             val phaseMode = if(alive) when(MonitorState.heimdallRecorderPhase) {
