@@ -15,12 +15,14 @@ internal data class DebugEngineAdmissionEvidence(
     val legacySaving: Boolean,
     val legacyOverlayAttached: Boolean,
     val unresolvedRawLease: Boolean,
+    val unfinishedSqliteSession: Boolean,
     val debugSlotOccupied: Boolean,
 )
 internal enum class DebugEngineDenial {
     NOT_DEBUG_BUILD, NO_EXPLICIT_REQUEST, NOTIFICATIONS_DENIED,
     LEGACY_TASK_PRESENT, LEGACY_ACTIVE, LEGACY_STANDBY,
     LEGACY_SAVING, LEGACY_OVERLAY_ATTACHED, UNRESOLVED_LEASE,
+    UNFINISHED_SQLITE_SESSION,
     DEBUG_ALREADY_RESERVED,
 }
 
@@ -36,6 +38,7 @@ internal object HeimdallDebugOwnershipPolicy {
         e.legacySaving -> DebugEngineDenial.LEGACY_SAVING
         e.legacyOverlayAttached -> DebugEngineDenial.LEGACY_OVERLAY_ATTACHED
         e.unresolvedRawLease -> DebugEngineDenial.UNRESOLVED_LEASE
+        e.unfinishedSqliteSession -> DebugEngineDenial.UNFINISHED_SQLITE_SESSION
         else -> null
     }
 
