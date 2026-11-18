@@ -100,11 +100,22 @@ class HeimdallLeaseHeartbeatAndroidTest {
             assertTrue(start(ctx))
             val previous = prefs.getLong("heartbeat_uptime", -1L)
             val failedPrefs = object : SharedPreferences by prefs {
-                override fun edit(): SharedPreferences.Editor =
-                    object : SharedPreferences.Editor by prefs.edit() {
-                        // Simulate fsync/persistence failure without writing.
+                override fun edit(): SharedPreferences.Editor {
+                    val delegate = prefs.edit()
+                    return object : SharedPreferences.Editor by delegate {
+                        // Android Editor.putLong() returns the editor itself.
+                        // Preserve THIS wrapper throughout chained calls or
+                        // .commit() would run on the underlying real editor.
+                        override fun putLong(
+                            key: String?, value: Long
+                        ): SharedPreferences.Editor {
+                            delegate.putLong(key, value)
+                            return this
+                        }
+                        // Deterministic fsync/commit failure: nothing is saved.
                         override fun commit(): Boolean = false
                     }
+                }
             }
             val failedCtx = object : ContextWrapper(ctx) {
                 override fun getSharedPreferences(name: String?, mode: Int) =
