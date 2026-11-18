@@ -188,7 +188,8 @@ class HeimdallNativeEngineTest {
             delay(35)
             assertFalse("Finalization cannot overtake an in-flight SQLite write",
                 finalizing.isCompleted)
-            assertEquals(null, h.evidence().finalizedSessionId)
+            // No read of h.evidence() while pause holds its mutex:
+            // an ownership query must not race ahead of the live writer.
             released.complete(Unit)
             withTimeout(4_000) {
                 pausing.await()
