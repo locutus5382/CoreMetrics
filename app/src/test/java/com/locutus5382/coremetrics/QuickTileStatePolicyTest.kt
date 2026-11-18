@@ -37,6 +37,18 @@ class QuickTileStatePolicyTest {
         assertEquals(P.RecordAction.WAIT,P.recorder(saving))
         assertEquals(P.HudAction.WAIT,P.hud(saving,true))
     }
+    @Test fun retryModesSendStopToOwningHeimdallInsteadOfFreshStart(){
+        assertEquals(P.RecordAction.STOP,P.recorder(P.Mode.STOP_RETRY))
+        assertEquals(P.RecordAction.STOP,P.recorder(P.Mode.SAVE_RETRY))
+        assertEquals(P.HudAction.WAIT,P.hud(P.Mode.STOP_RETRY,false))
+        assertEquals(P.HudAction.WAIT,P.hud(P.Mode.SAVE_RETRY,true))
+    }
+    @Test fun unresolvedRawLeaseForbidsBothNewRecorderAndHud(){
+        assertEquals(P.RecordAction.WAIT,P.recorder(P.Mode.REPAIR_REQUIRED))
+        assertEquals(P.HudAction.WAIT,P.hud(P.Mode.REPAIR_REQUIRED,false))
+        assertNotEquals(P.RecordAction.START,P.recorder(P.Mode.REPAIR_REQUIRED))
+    }
+
     @Test fun pausedHudStaysIntentionalAndCanBeHidden(){
         assertEquals(P.HudAction.HIDE,P.hud(P.Mode.RECORDING,false,true,true))
         assertEquals(P.HudAction.CLOSE,P.hud(P.Mode.STANDBY,false,true,true))
