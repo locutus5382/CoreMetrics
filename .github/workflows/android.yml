@@ -59,7 +59,7 @@ jobs:
       matrix:
         include:
           - group: database-integrity
-            classes: com.locutus5382.coremetrics.SessionStoreOperationsTest,com.locutus5382.coremetrics.SessionArchiveTest,com.locutus5382.coremetrics.SessionIntegritySnapshotAndroidTest
+            classes: com.locutus5382.coremetrics.SessionStoreOperationsTest,com.locutus5382.coremetrics.SessionArchiveTest,com.locutus5382.coremetrics.SessionIntegritySnapshotAndroidTest,com.locutus5382.coremetrics.HeimdallShadowPlatformAndroidTest
           - group: reports-ui
             classes: com.locutus5382.coremetrics.DukoComparisonReportTest,com.locutus5382.coremetrics.DukoSessionReportTest,com.locutus5382.coremetrics.ScorecardRuntimeTest,com.locutus5382.coremetrics.HudBatteryOptionsTest
     permissions:
