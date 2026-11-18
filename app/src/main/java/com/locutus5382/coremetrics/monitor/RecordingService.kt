@@ -23,6 +23,10 @@ import com.locutus5382.coremetrics.engine.DebugEngineAdmissionEvidence
 import com.locutus5382.coremetrics.engine.DebugEngineDenial
 import com.locutus5382.coremetrics.engine.HeimdallDebugOwnershipPolicy
 import com.locutus5382.coremetrics.engine.HeimdallDebugEngineRuntime
+import com.locutus5382.coremetrics.engine.HeimdallNativeRecoveryPolicy
+import com.locutus5382.coremetrics.engine.NativeRecoveryEvidence
+import com.locutus5382.coremetrics.engine.NativeRecoveryDecision
+import com.locutus5382.coremetrics.engine.NativeRecoveryHandoffEvidence
 import com.locutus5382.coremetrics.engine.HeimdallLeaseRestartGuard
 import com.locutus5382.coremetrics.engine.LeaseOwnerRoute
 import com.locutus5382.coremetrics.engine.LegacyHandoffEvidence
@@ -349,7 +353,9 @@ class RecordingService:Service() {
     private fun requestHeimdallDebugStop() {
         heimdallDebugStopPending=true
         heimdallDebugRuntime?.let { runtime ->
-            scope.launch { runtime.stop() }
+            scope.launch {
+                if (runtime.stop()) heimdallDebugStopPending=false
+            }
         }
     }
 
@@ -377,6 +383,14 @@ class RecordingService:Service() {
         }
         MonitorState.latest=null // no synthetic or idle telemetry
         MonitorState.message="Heimdall DEBUG · "+recording.javaClass.simpleName
+        if(heimdallDebugStopPending &&
+            (recording is RecordingState.Recording ||
+             recording is RecordingState.Starting)) {
+            heimdallDebugStopPending=false
+            heimdallDebugRuntime?.let { runtime ->
+                scope.launch { runtime.stop() }
+            }
+        }
         if(recording is RecordingState.Recording) {
             foreground("Heimdall · DEBUG recording",
                 "Experimental engine · original SQLite session "+recording.sessionId,false)
@@ -396,6 +410,114 @@ class RecordingService:Service() {
         }
     }
 
+    /**
+     * M2-I native restart. One :monitor foreground service is promoted
+     * before this method touches preferences or SQLite. Invalid evidence
+     * is preserved and quarantined, never handed to the legacy sampler.
+     */
+    private fun requestHeimdallNativeRecovery(
+        startId:Int, stopRequestedNow:Boolean
+    ):Int {
+        if (!BuildConfig.DEBUG || heimdallDebugReserved || task!=null ||
+            armed || MonitorState.running || MonitorState.starting ||
+            MonitorState.standby || MonitorState.saving || hud.attached()) {
+            RecorderJournal.event(this,"HEIMDALL_RECOVERY_DENIED",
+                "service owner not clean")
+            if(!heimdallDebugReserved) stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        // Reserve on the main thread BEFORE async validation so no
+        // later legacy START/ARM/RECOVER can slip through during IO.
+        heimdallDebugReserved=true
+        MonitorState.starting=true
+        MonitorState.message="Heimdall DEBUG · validating original session"
+        scope.launch(Dispatchers.IO) {
+            try {
+                val rawOwner=RecorderLease.rawOwner(this@RecordingService)
+                val saved=RecorderLease.recover(this@RecordingService)
+                val rowStatus=saved?.takeIf { it.id>0L && it.recording &&
+                    it.owner==RecorderLease.Owner.HEIMDALL_DEBUG }
+                    ?.let { db.sessionById(it.id)?.status }
+                val plan=HeimdallNativeRecoveryPolicy.decide(NativeRecoveryEvidence(
+                    rawOwner=rawOwner?.name,
+                    leaseEligible=saved!=null &&
+                        saved.owner==RecorderLease.Owner.HEIMDALL_DEBUG,
+                    originalSessionId=saved?.id,
+                    recordingLease=saved?.recording==true,
+                    persistedStop=saved?.stopRequested==true,
+                    originalRowStatus=rowStatus,
+                    intervalMs=saved?.intervalMs,
+                    userRequestedStop=stopRequestedNow,
+                ))
+                RecorderJournal.event(this@RecordingService,"HEIMDALL_RECOVERY_PLAN",
+                    plan.name+" id="+(saved?.id ?: 0L))
+                if(plan==NativeRecoveryDecision.QUARANTINE) {
+                    error("NATIVE_RECOVERY_EVIDENCE_INVALID")
+                }
+                if(plan==NativeRecoveryDecision.RELEASE_ALREADY_FINALIZED_LEASE) {
+                    check(saved!=null &&
+                        RecorderLease.rawOwner(this@RecordingService)==
+                        RecorderLease.Owner.HEIMDALL_DEBUG &&
+                        db.sessionById(saved.id)?.status==rowStatus &&
+                        rowStatus!="RECORDING") { "FINALIZED_LEASE_RECHECK_FAILED" }
+                    check(RecorderLease.clear(this@RecordingService)) {
+                        "FINALIZED_LEASE_CLEAR_FAILED"
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        RecorderJournal.event(this@RecordingService,
+                            "HEIMDALL_RECOVERY_COMPLETED_LEASE", "same id")
+                        MonitorState.clear("Previous Heimdall session already finalized")
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf(startId)
+                    }
+                    return@launch
+                }
+                val recoveredId=saved?.id ?: error("MISSING_ORIGINAL_SESSION")
+                val runtime=HeimdallDebugEngineRuntime(
+                    application,db,scope,saved.intervalMs,
+                    onState={ state ->
+                        withContext(Dispatchers.Main.immediate) {
+                            observeHeimdallDebugState(state)
+                        }
+                    })
+                val handoff=NativeRecoveryHandoffEvidence(
+                    serviceEpoch=runtime.epoch,
+                    originalSessionId=recoveredId,
+                    legacyTaskAbsent=true,
+                    legacySessionInactive=true,
+                    legacyOverlayDetached=true,
+                )
+                val accepted=runtime.recover(
+                    handoff=handoff,
+                    originalSessionId=recoveredId,
+                    persistedStop=saved.stopRequested,
+                    stopRequestedNow=plan==NativeRecoveryDecision.PERSIST_STOP_AND_FINALIZE,
+                )
+                check(accepted) { "NATIVE_RECOVERY_HANDOFF_REFUSED" }
+                withContext(Dispatchers.Main.immediate) {
+                    heimdallDebugRuntime=runtime
+                    RecorderJournal.event(this@RecordingService,
+                        "HEIMDALL_RECOVERY_ACCEPTED",
+                        plan.name+" id="+recoveredId)
+                    if(heimdallDebugStopPending) requestHeimdallDebugStop()
+                }
+            } catch (cancel:CancellationException) {
+                throw cancel
+            } catch (error:Exception) {
+                withContext(Dispatchers.Main.immediate) {
+                    RecorderJournal.event(this@RecordingService,
+                        "HEIMDALL_RECOVERY_QUARANTINED",
+                        error.javaClass.simpleName)
+                    MonitorState.clear("Heimdall recovery evidence requires repair")
+                    MonitorState.saving=true // original persisted row may remain
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf(startId)
+                }
+            }
+        }
+        return START_STICKY
+    }
+
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
         // START / ARM / RECOVER and Android null restarts must satisfy the FGS
         // deadline BEFORE recovery-lease, SQLite settings or journal disk I/O.
@@ -404,7 +526,9 @@ class RecordingService:Service() {
         val requestedAction=intent?.action
         val startupRequest=intent==null || requestedAction==START ||
             requestedAction==ARM || requestedAction==RECOVER ||
-            (BuildConfig.DEBUG && requestedAction==HEIMDALL_DEBUG_START)
+            (BuildConfig.DEBUG && (requestedAction==HEIMDALL_DEBUG_START ||
+                requestedAction==HEIMDALL_DEBUG_STOP ||
+                requestedAction==STOP || requestedAction==DISARM))
         val alreadyForeground=armed || MonitorState.running ||
             MonitorState.starting || MonitorState.standby || task?.isActive==true ||
             heimdallDebugReserved
@@ -424,6 +548,8 @@ class RecordingService:Service() {
         }
         if(BuildConfig.DEBUG && requestedAction==HEIMDALL_DEBUG_START) {
             if(heimdallDebugReserved) return START_STICKY // idempotent duplicate
+            if(RecorderLease.rawOwner(this)==RecorderLease.Owner.HEIMDALL_DEBUG)
+                return requestHeimdallNativeRecovery(startId,false)
             return requestHeimdallDebugStart(startId)
         }
         if(heimdallDebugReserved) {
@@ -436,7 +562,13 @@ class RecordingService:Service() {
                 (requestedAction?:"NULL_RESTART").take(64))
             return START_STICKY
         }
-        if(requestedAction==HEIMDALL_DEBUG_STOP) {
+        // An explicit STOP after monitor process death must be persisted
+        // before the new engine may resume the original sampler.
+        val coldNativeStop=BuildConfig.DEBUG &&
+            (requestedAction==STOP || requestedAction==DISARM ||
+             requestedAction==HEIMDALL_DEBUG_STOP)
+        if(requestedAction==HEIMDALL_DEBUG_STOP &&
+            RecorderLease.rawOwner(this)!=RecorderLease.Owner.HEIMDALL_DEBUG) {
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -447,6 +579,9 @@ class RecordingService:Service() {
         val rawOwner=RecorderLease.rawOwner(this)
         val recoveryRoute=HeimdallLeaseRestartGuard.route(
             rawOwner!=null,rawOwner?.name)
+        if(recoveryRoute==LeaseOwnerRoute.NATIVE_RECOVERY_REQUIRED &&
+            BuildConfig.DEBUG)
+            return requestHeimdallNativeRecovery(startId,coldNativeStop)
         if(recoveryRoute!=LeaseOwnerRoute.LEGACY_ALLOWED) {
             RecorderJournal.event(this,"HEIMDALL_RECOVERY_QUARANTINED",
                 recoveryRoute.name)
