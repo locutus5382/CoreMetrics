@@ -35,6 +35,9 @@ internal sealed interface RecordingState {
         val stopId: String,
         val reason: StopReason,
         val persistError: String? = null,
+        val durableStop: Boolean = false,
+        val samplingPaused: Boolean = false,
+        val pauseError: String? = null,
     ) : RecordingState
     /** STOP is durable; session finalization may safely be retried. */
     data class Finalizing(
@@ -126,6 +129,8 @@ internal sealed interface EngineEvent {
     ) : EngineEvent
     data class SessionOpenFailed(val startId: String, val reason: String) : EngineEvent
     data class StopIntentPersisted(val sessionId: Long, val stopId: String) : EngineEvent
+    data class SamplingPaused(val sessionId: Long, val stopId: String) : EngineEvent
+    data class SamplingPauseFailed(val sessionId: Long, val stopId: String, val reason: String) : EngineEvent
     data class StopIntentFailed(val sessionId: Long, val stopId: String, val reason: String) : EngineEvent
     data class SessionFinalized(val sessionId: Long, val stopId: String) : EngineEvent
     data class SessionFinalizeFailed(val sessionId: Long, val stopId: String, val reason: String) : EngineEvent
@@ -143,13 +148,15 @@ internal sealed interface EngineEvent {
         val stopIntentPersisted: Boolean = false,
     ) : EngineEvent
     data class SessionResumed(val sessionId: Long) : EngineEvent
+    data class SessionResumeFailed(val sessionId: Long, val reason: String) : EngineEvent
     data class InterruptedSessionClosed(val sessionId: Long) : EngineEvent
+    data class InterruptedCloseFailed(val sessionId: Long, val reason: String) : EngineEvent
 }
 
 internal sealed interface EngineEffect {
     data class OpenSession(val startId: String, val profileId: Long?) : EngineEffect
     /** Pause the live sample loop promptly; does not claim STOP durability. */
-    data class PauseSampling(val sessionId: Long) : EngineEffect
+    data class PauseSampling(val sessionId: Long, val stopId: String) : EngineEffect
     /** The platform must persist STOP *before* acknowledging it or finalizing. */
     data class PersistStopIntent(val sessionId: Long, val stopId: String) : EngineEffect
     data class FinalizeSession(val sessionId: Long, val stopId: String, val reason: StopReason) : EngineEffect
