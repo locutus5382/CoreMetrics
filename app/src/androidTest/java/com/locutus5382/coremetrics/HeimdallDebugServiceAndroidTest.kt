@@ -67,8 +67,11 @@ class HeimdallDebugServiceAndroidTest {
                 send(ctx, RecordingService.HEIMDALL_DEBUG_START)
                 id=waitFor(30_000) {
                     val state=status(ctx)
+                    // Display copy can change. Engine phase and sampled
+                    // status, not a localized message prefix, are the
+                    // authoritative recording assertions.
                     if(state?.getBoolean("running")==true &&
-                        state.getString("message","").startsWith("Heimdall DEBUG")) {
+                        state.getString("heimdallRecorderPhase")=="RECORDING") {
                         state.getLong("id").takeIf { sid -> sid>0L }
                     } else null
                 }

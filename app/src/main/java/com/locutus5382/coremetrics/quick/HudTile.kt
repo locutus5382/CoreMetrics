@@ -97,6 +97,9 @@ class HudTile:TileService(){
             QuickTileStatePolicy.Mode.RECOVERABLE->"Recover"
             QuickTileStatePolicy.Mode.STARTING->"Starting…"
             QuickTileStatePolicy.Mode.SAVING->"Saving…"
+            QuickTileStatePolicy.Mode.STOP_RETRY->"STOP needs retry"
+            QuickTileStatePolicy.Mode.SAVE_RETRY->"Save needs retry"
+            QuickTileStatePolicy.Mode.REPAIR_REQUIRED->"Repair required"
             QuickTileStatePolicy.Mode.STOP_PENDING->"Finish Stop"
             QuickTileStatePolicy.Mode.RECORDING->when {
                 !current.hudRequested->"REC · Off"

@@ -39,7 +39,10 @@ class SessionTile:TileService(){
     private fun toggle(){
         val action=QuickTileStatePolicy.recorder(status())
         if(action==QuickTileStatePolicy.RecordAction.WAIT){
-            Toast.makeText(this,"Recorder is starting or status unavailable; no new session",
+            Toast.makeText(this,
+                if(status()==QuickTileStatePolicy.Mode.REPAIR_REQUIRED)
+                    "Recovery lease needs review; no new recording was started"
+                else "Recorder is starting or status unavailable; no new session",
                 Toast.LENGTH_LONG).show()
             refresh();return
         }
@@ -82,6 +85,9 @@ class SessionTile:TileService(){
             QuickTileStatePolicy.Mode.RECORDING->"REC · Tap Stop"
             QuickTileStatePolicy.Mode.STARTING->"Starting…"
             QuickTileStatePolicy.Mode.SAVING->"Saving…"
+            QuickTileStatePolicy.Mode.STOP_RETRY->"Retry STOP"
+            QuickTileStatePolicy.Mode.SAVE_RETRY->"Retry Save"
+            QuickTileStatePolicy.Mode.REPAIR_REQUIRED->"Repair required"
             QuickTileStatePolicy.Mode.STOP_PENDING->"Finish Stop"
             QuickTileStatePolicy.Mode.RECOVERABLE->"Recover"
             QuickTileStatePolicy.Mode.STANDBY->"Ready"

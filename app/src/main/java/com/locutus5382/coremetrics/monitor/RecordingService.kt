@@ -23,6 +23,7 @@ import com.locutus5382.coremetrics.engine.DebugEngineAdmissionEvidence
 import com.locutus5382.coremetrics.engine.DebugEngineDenial
 import com.locutus5382.coremetrics.engine.HeimdallDebugOwnershipPolicy
 import com.locutus5382.coremetrics.engine.HeimdallDebugEngineRuntime
+import com.locutus5382.coremetrics.engine.HeimdallRecorderStatusPolicy
 import com.locutus5382.coremetrics.engine.HeimdallNativeRecoveryPolicy
 import com.locutus5382.coremetrics.engine.NativeRecoveryEvidence
 import com.locutus5382.coremetrics.engine.NativeRecoveryDecision
@@ -363,16 +364,16 @@ class RecordingService:Service() {
         if(!heimdallDebugReserved || destroying) return
         val recording=state.recording
         if(recording !is RecordingState.Idle) heimdallDebugStarted=true
-        MonitorState.starting=recording is RecordingState.Starting
-        MonitorState.running=when(recording) {
-            is RecordingState.Recording,is RecordingState.Recovering,
-            is RecordingState.StopRequested,is RecordingState.Finalizing,
-            is RecordingState.FinalizeFailed -> true
-            else -> false
-        }
-        MonitorState.saving=recording is RecordingState.StopRequested ||
-            recording is RecordingState.Finalizing ||
-            recording is RecordingState.FinalizeFailed
+        val presented = HeimdallRecorderStatusPolicy.present(state)
+        MonitorState.starting = presented.preparing
+        // A durable STOP / failed finalizer is NOT active sample collection.
+        MonitorState.running = presented.recording
+        MonitorState.saving = presented.saving
+        MonitorState.heimdallRecorderPhase = presented.phase.name
+        MonitorState.heimdallNeedsRetry = presented.retryAvailable
+        MonitorState.heimdallNeedsRepair = presented.repairRequired
+        MonitorState.heimdallOriginalSessionId = presented.sessionId ?: 0L
+        MonitorState.heimdallIssueCode = presented.issueCode
         MonitorState.sessionId=when(recording) {
             is RecordingState.Recording -> recording.sessionId
             is RecordingState.StopRequested -> recording.sessionId
@@ -396,7 +397,7 @@ class RecordingService:Service() {
                 .coerceAtLeast(0L)
         }
         MonitorState.latest=null // no synthetic or idle telemetry
-        MonitorState.message="Heimdall DEBUG · "+recording.javaClass.simpleName
+        MonitorState.message = presented.message
         if(heimdallDebugStopPending &&
             (recording is RecordingState.Recording ||
              recording is RecordingState.Starting)) {
