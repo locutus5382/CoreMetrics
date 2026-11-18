@@ -47,6 +47,7 @@ class HeimdallTrialActivity : ComponentActivity() {
     private var lastReport = "Not checked yet"
 
     private data class TrialSnapshot(
+        val monitorStatusVerified: Boolean,
         val serviceAlive: Boolean,
         val phase: String?,
         val rawOwner: String?,
@@ -65,16 +66,21 @@ class HeimdallTrialActivity : ComponentActivity() {
         val persistedRowStatus: String?,
         val issueCode: String?,
     ) {
+        private val admission: HeimdallTrialAdmissionEvidence
+            get() = HeimdallTrialAdmissionEvidence(
+                monitorStatusVerified = monitorStatusVerified,
+                rawOwner = rawOwner,
+                unfinishedRow = unfinishedRow,
+                rawLeaseUnresolved = rawLeaseUnresolved,
+                repairNeeded = repairNeeded,
+                running = running, starting = starting,
+                standby = standby, saving = saving,
+                hudAttached = hudAttached, phase = phase,
+            )
         val mayRequestStart: Boolean
-            get() = rawOwner == null && !unfinishedRow &&
-                !running && !starting && !standby && !saving &&
-                !hudAttached && phase !in setOf(
-                    "RETRY_STOP", "RETRY_SAVE", "NEEDS_REPAIR")
+            get() = HeimdallTrialAdmission.mayRequestStart(admission)
         val mayRequestStop: Boolean
-            get() = rawOwner == "HEIMDALL_DEBUG" ||
-                (serviceAlive && phase in setOf(
-                    "RECORDING", "STOPPING", "RETRY_STOP",
-                    "FINALIZING", "RETRY_SAVE"))
+            get() = HeimdallTrialAdmission.mayRequestStop(admission)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -171,7 +177,8 @@ class HeimdallTrialActivity : ComponentActivity() {
         val persisted = if (rowId > 0L) store.recordingStatus(rowId) else null
         val sampleCount = if (rowId > 0L) store.storedSampleCount(rowId) else 0L
         return TrialSnapshot(
-            serviceAlive = provider?.getBoolean("serviceAlive") ?: false,
+            monitorStatusVerified = true,
+            serviceAlive = provider.getBoolean("serviceAlive"),
             phase = provider?.getString("heimdallRecorderPhase"),
             rawOwner = provider?.getString("heimdallRawRecoveryOwner"),
             sessionId = rowId,
