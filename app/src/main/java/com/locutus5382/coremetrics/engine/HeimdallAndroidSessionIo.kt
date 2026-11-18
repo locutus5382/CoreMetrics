@@ -89,15 +89,31 @@ internal class HeimdallAndroidSessionIo(
 
     override suspend fun finish(sessionId: Long, reason: StopReason): Boolean =
         withContext(Dispatchers.IO) {
-            val status = when (reason) {
-                StopReason.USER -> "COMPLETED"
-                StopReason.SAMPLE_FAILURE, StopReason.STORAGE_ERROR -> "FAILED"
-                StopReason.INTERRUPTED -> "INTERRUPTED"
-            }
-            // Durable row finalization BEFORE removal of the recovery lease.
-            if (!store.finish(sessionId, System.currentTimeMillis(), status))
-                return@withContext false
-            RecorderLease.clear(application)
+            HeimdallTerminalFinalizer.finalizeOriginal(
+                sessionId, reason, object : TerminalCommitPort {
+                    override suspend fun lease(sessionId: Long): TerminalLeaseProof {
+                        val raw = RecorderLease.rawSession(application)
+                        return TerminalLeaseProof(
+                            active = raw.active,
+                            matchesHeimdallSession = raw.recording &&
+                                raw.sessionId == sessionId &&
+                                raw.owner == RecorderLease.Owner.HEIMDALL_DEBUG,
+                            persistedStop = raw.stopPersisted,
+                        )
+                    }
+                    override suspend fun status(sessionId: Long): String? =
+                        store.recordingStatus(sessionId)
+
+                    override suspend fun commitIfRecording(
+                        sessionId: Long, terminalStatus: String
+                    ): Boolean = store.finishRecordingOnce(
+                        sessionId, System.currentTimeMillis(), terminalStatus)
+
+                    override suspend fun clearMatchingLease(sessionId: Long): Boolean =
+                        RecorderLease.clearHeimdallStoppedSession(
+                            application, sessionId)
+                }
+            )
         }
 
     override suspend fun validatedRecovery(sessionId: Long): Boolean =
