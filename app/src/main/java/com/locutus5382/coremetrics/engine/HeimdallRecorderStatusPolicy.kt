@@ -21,6 +21,7 @@ internal data class HeimdallRecorderPresentation(
     val saving: Boolean = false,
     val retryAvailable: Boolean = false,
     val repairRequired: Boolean = false,
+    val issueCode: String? = null,
 )
 
 /** Do not expose raw exception strings, or pretend a halted sampler is live. */
@@ -46,7 +47,14 @@ internal object HeimdallRecorderStatusPolicy {
                     r.sessionId,
                     if (failed) "Heimdall · STOP needs retry"
                         else "Heimdall · Stopping",
-                    saving = true, retryAvailable = failed)
+                    saving = true, retryAvailable = failed,
+                    issueCode = when {
+                        r.persistError != null && r.pauseError != null ->
+                            "STOP_AND_SAMPLER_UNCONFIRMED"
+                        r.persistError != null -> "STOP_NOT_DURABLE"
+                        r.pauseError != null -> "SAMPLER_NOT_QUIESCED"
+                        else -> null
+                    })
             }
             is RecordingState.Finalizing -> HeimdallRecorderPresentation(
                 HeimdallRecorderPhase.FINALIZING, r.sessionId,
@@ -54,9 +62,10 @@ internal object HeimdallRecorderStatusPolicy {
             is RecordingState.FinalizeFailed -> HeimdallRecorderPresentation(
                 HeimdallRecorderPhase.RETRY_SAVE, r.sessionId,
                 "Heimdall · Save needs retry", saving = true,
-                retryAvailable = true)
+                retryAvailable = true, issueCode = "FINALIZATION_UNCONFIRMED")
             is RecordingState.Failed -> HeimdallRecorderPresentation(
                 HeimdallRecorderPhase.NEEDS_REPAIR, r.sessionId,
-                "Heimdall · Recording unavailable", repairRequired = true)
+                "Heimdall · Recording unavailable", repairRequired = true,
+                issueCode = "OWNER_REVIEW_REQUIRED")
         }
 }
