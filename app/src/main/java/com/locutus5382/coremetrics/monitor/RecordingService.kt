@@ -23,6 +23,8 @@ import com.locutus5382.coremetrics.engine.DebugEngineAdmissionEvidence
 import com.locutus5382.coremetrics.engine.DebugEngineDenial
 import com.locutus5382.coremetrics.engine.HeimdallDebugOwnershipPolicy
 import com.locutus5382.coremetrics.engine.HeimdallDebugEngineRuntime
+import com.locutus5382.coremetrics.engine.HeimdallLeaseRestartGuard
+import com.locutus5382.coremetrics.engine.LeaseOwnerRoute
 import com.locutus5382.coremetrics.engine.LegacyHandoffEvidence
 import com.locutus5382.coremetrics.engine.ReservedCommandRoute
 import com.locutus5382.coremetrics.data.SessionStore
@@ -435,6 +437,22 @@ class RecordingService:Service() {
             return START_STICKY
         }
         if(requestedAction==HEIMDALL_DEBUG_STOP) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        // M2-H: an in-progress Heimdall recording is tagged in the SAME
+        // durable lease commit as its session ID. Never hand that session to
+        // legacy RECOVER, START or ARM after Android restarts the service.
+        // Even an expired/unknown lease cannot authorize SessionStore.begin().
+        val rawOwner=RecorderLease.rawOwner(this)
+        val recoveryRoute=HeimdallLeaseRestartGuard.route(
+            rawOwner!=null,rawOwner?.name)
+        if(recoveryRoute!=LeaseOwnerRoute.LEGACY_ALLOWED) {
+            RecorderJournal.event(this,"HEIMDALL_RECOVERY_QUARANTINED",
+                recoveryRoute.name)
+            MonitorState.clear("Heimdall debug recovery requires native owner")
+            MonitorState.saving=true // a persisted original row may need repair
+            refreshTile()
             stopSelf(startId)
             return START_NOT_STICKY
         }
