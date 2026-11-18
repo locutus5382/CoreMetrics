@@ -54,11 +54,9 @@ internal class HeimdallDebugEngineRuntime(
             intervalMs = intervalMs,
             onFatalSampling = { _, _ ->
                 // Only the coordinator may decide STOP. Never finalize here.
-                // A lost/failed lease is a durable-storage/ownership issue,
-                // not a missing sensor reading. Never reclassify it as a
-                // routine optional telemetry/HUD failure.
-                val reason = if (errorType.startsWith("LEASE_"))
-                    StopReason.STORAGE_ERROR else StopReason.SAMPLE_FAILURE
+                // The only coordinator decides STOP. Lease integrity
+                // faults must not be misreported as sensor sample noise.
+                val reason = HeimdallFatalStopPolicy.reason(errorType)
                 engine.submit(EngineCommand.Stop(
                     "fatal-${UUID.randomUUID()}", CommandOrigin.RECOVERY,
                     reason))
@@ -98,11 +96,9 @@ internal class HeimdallDebugEngineRuntime(
             parentScope = scope,
             intervalMs = intervalMs,
             onFatalSampling = { _, _ ->
-                // A lost/failed lease is a durable-storage/ownership issue,
-                // not a missing sensor reading. Never reclassify it as a
-                // routine optional telemetry/HUD failure.
-                val reason = if (errorType.startsWith("LEASE_"))
-                    StopReason.STORAGE_ERROR else StopReason.SAMPLE_FAILURE
+                // The only coordinator decides STOP. Lease integrity
+                // faults must not be misreported as sensor sample noise.
+                val reason = HeimdallFatalStopPolicy.reason(errorType)
                 engine.submit(EngineCommand.Stop(
                     "fatal-${UUID.randomUUID()}", CommandOrigin.RECOVERY,
                     reason))
