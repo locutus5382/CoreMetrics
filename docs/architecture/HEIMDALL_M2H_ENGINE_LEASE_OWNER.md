@@ -14,7 +14,9 @@ The new Heimdall sampling engine could start under a debug-only ownership reserv
 - `HeimdallLeaseRestartGuard` provides a deterministic pure-Kotlin restart decision. A raw active debug/unknown lease blocks legacy commands before legacy RECOVER/START/ARM can reach the old loop. This check applies even if the lease is too old for `RecorderLease.recover()` to authorize sampling.
 - On a detected foreign-owner lease, the debug startup service returns **START_NOT_STICKY**, logs `HEIMDALL_RECOVERY_QUARANTINED`, preserves the original SQLite row and raw lease, and refuses to create a replacement row. It does not claim completion, resumed sampling or a successful recovery.
 - `RecorderLease.clear()` clears the owner tag on successful normal lease cleanup. No schema/version migration or new SQLite metadata is required.
-- Added 10 JVM routing-policy tests and 4 Android instrumentation tests of lease atomicity, old-lease compatibility, unknown-owner rejection and STOP/clear transitions. Instrumentation uses isolated test-only SharedPreferences (never user session data), and is included in the existing API 33 database-integrity group.
+- Added 10 JVM routing-policy tests and 4 Android instrumentation tests of lease atomicity, old-lease compatibility, unknown-owner rejection and STOP/clear transitions. These use isolated test-only SharedPreferences, included in the API 33 database-integrity group.
+- Added a separate API 33 `heimdall-native-runtime` instrumentation group. Its **emulator-only** test actually launches the debug `RecordingService`, waits for an original SQLite session to store genuine samples, sends a competing legacy START (which must be blocked), then requests STOP and verifies the original row is finalized and the recovery lease is cleared. The test uses a fresh disposable emulator, skips on physical hardware and does not silently clean up any failed session evidence.
+- The existing private `StatusProvider` exposes additional debug lease-owner/ID evidence read from the **monitor process**. This avoids treating stale UI-process SharedPreferences caches as authoritative cross-process lease status.
 
 ## IMPORTANT: this is an intentional quarantine, not native automatic recovery
 
@@ -25,5 +27,6 @@ M2-I must implement the single-owner native recovery path using the persisted `H
 ## Verification gate
 
 - All current legacy instrumentation and JVM suites must pass in GitHub Actions; an M2-G run failed because Maven Central returned HTTP 429 during Gradle dependency resolution, while a second run for that same commit passed. That was infrastructure, not a failed test assertion.
-- New isolated Android lease tests run only inside a test-specific prefs wrapper. They do not start a service or sample hardware.
+- The isolated Android lease-compatibility tests run only inside a test-specific prefs wrapper. They do not start a service or sample hardware.
+- The new separate emulator-only service integration test DOES start a debug recorder and collect real samples in a fresh disposable emulator. It is not an Odin device test and does not test process-death native resumption.
 - Do not claim this stage has demonstrated Odin process-death recovery or a complete Android end-to-end recording. Only the ownership-tag behavior and fail-closed policy are covered here.
