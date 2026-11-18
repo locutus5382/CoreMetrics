@@ -711,6 +711,13 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             arrayOf(id.toString())
         ).use { c -> if(c.moveToFirst() && !c.isNull(0))c.getLong(0) else null }
 
+    /** Debug-only engine handoff must not call begin() while ANY original
+     * recording row remains unfinished; begin() intentionally closes old rows. */
+    @Synchronized fun hasUnfinishedRecording():Boolean =
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM sessions WHERE status='RECORDING' LIMIT 1", null
+        ).use { it.moveToFirst() }
+
     /** Verify the old ID is an unfinished user-started recording. */
     @Synchronized fun canResume(id:Long):Boolean =
         readableDatabase.rawQuery(
