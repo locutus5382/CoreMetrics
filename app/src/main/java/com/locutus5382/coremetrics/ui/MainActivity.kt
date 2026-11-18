@@ -88,6 +88,8 @@ import com.locutus5382.coremetrics.telemetry.ForegroundAttribution
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.data.UiSessionStoreOwner
 import com.locutus5382.coremetrics.monitor.RecordingService
+import com.locutus5382.coremetrics.BuildConfig
+import com.locutus5382.coremetrics.trial.HeimdallTrialActivity
 import com.locutus5382.coremetrics.monitor.HudOptions
 import com.locutus5382.coremetrics.data.SessionIntegritySnapshot
 import com.locutus5382.coremetrics.monitor.RecorderJournal
@@ -2563,6 +2565,23 @@ class MainActivity : ComponentActivity() {
                                         GlassPanel {
                                             Text("Settings & privacy",color=iceBlue,
                                                 style = MaterialTheme.typography.titleMedium)
+                                            if(BuildConfig.HEIMDALL_TRIAL) {
+                                                Text("HEIMDALL LAB · SEPARATE TEST INSTALL",
+                                                    color=Color(0xFFF2A900),
+                                                    style=MaterialTheme.typography.titleSmall)
+                                                Text("Separate test sessions and app data. "+
+                                                    "Normal CoreMetrics is not modified.",
+                                                    color=coreSecondary,
+                                                    style=MaterialTheme.typography.bodySmall)
+                                                OutlinedButton(onClick={
+                                                    startActivity(Intent(
+                                                        this@MainActivity,
+                                                        HeimdallTrialActivity::class.java))
+                                                }) {
+                                                    Text("Open Heimdall device test console")
+                                                }
+                                                HorizontalDivider(color=coreBorder)
+                                            }
                                             DeviceCompatibilityPanel()
                                             HorizontalDivider(color=coreBorder)
                                              Text("CONTROLLER · L1/R1 (or L2/R2) switches tabs; "+
