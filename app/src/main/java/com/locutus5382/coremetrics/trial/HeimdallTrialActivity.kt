@@ -145,6 +145,16 @@ class HeimdallTrialActivity : ComponentActivity() {
         val provider = contentResolver.call(
             Uri.parse("content://$packageName.monitor.status"),
             "status", null, null)
+            ?: error("MONITOR_STATUS_UNAVAILABLE")
+        // A missing data contract cannot be interpreted as idle. Only the
+        // local, app-private :monitor process may publish these fields.
+        check(provider.containsKey("heimdallRawRecoveryOwner") &&
+            provider.containsKey("serviceAlive") &&
+            provider.containsKey("running") &&
+            provider.containsKey("starting") &&
+            provider.containsKey("saving")) {
+                "MONITOR_STATUS_INCOMPLETE"
+            }
         val store = UiSessionStoreOwner.get(applicationContext)
         val unfinished = store.hasUnfinishedRecording()
         // A completed STOP clears the live lease. Retain only the most recent
@@ -236,15 +246,42 @@ class HeimdallTrialActivity : ComponentActivity() {
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS), 19)
             return
         }
-        runCatching {
-            startForegroundService(Intent(this, RecordingService::class.java)
-                .setAction(RecordingService.HEIMDALL_DEBUG_START))
-        }.onFailure {
-            details.text = "Start request rejected: " + it.javaClass.simpleName
-        }
+        // A displayed snapshot is advisory and can become stale after
+        // service death or a Quick Settings command. Re-read BOTH monitor
+        // status and the real SQLite row before requesting a native START.
+        // This is a UI defense; RecordingService independently revalidates.
         lastSnapshot = null
         start.isEnabled = false
-        handler.postDelayed({ refresh() }, 650L)
+        stop.isEnabled = false
+        details.text = "Rechecking exclusive recording ownership…"
+        lifecycleScope.launch {
+            val checked = withContext(Dispatchers.IO) {
+                runCatching { readVerified() }
+            }
+            checked.onSuccess { fresh ->
+                if (!fresh.mayRequestStart) {
+                    lastReport = "Native START blocked: recording owner, " +
+                        "recovery lease, or unfinished session needs review."
+                    details.text = lastReport
+                    refresh()
+                    return@onSuccess
+                }
+                runCatching {
+                    startForegroundService(Intent(
+                        this@HeimdallTrialActivity, RecordingService::class.java)
+                        .setAction(RecordingService.HEIMDALL_DEBUG_START))
+                }.onFailure {
+                    details.text = "Start request rejected: " + it.javaClass.simpleName
+                }
+                handler.postDelayed({ refresh() }, 650L)
+            }.onFailure {
+                lastReport = "Could not verify recorder status: " +
+                    it.javaClass.simpleName + ". Native START was not requested."
+                details.text = lastReport
+                start.isEnabled = false
+                stop.isEnabled = false
+            }
+        }
     }
 
     private fun submitStop() {
