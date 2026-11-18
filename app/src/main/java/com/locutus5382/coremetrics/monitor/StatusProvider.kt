@@ -31,13 +31,15 @@ class StatusProvider : ContentProvider() {
             putBoolean("serviceAlive",MonitorState.serviceCreated)
             putBoolean("pendingRecovery",lease!=null)
             putBoolean("recoveringRecording",lease?.recording==true)
-            if (BuildConfig.DEBUG && !MonitorState.serviceCreated) {
-                // An expired or foreign-owner raw lease is not permission to
-                // start another recording. Surface the repair requirement.
+            if (BuildConfig.DEBUG) {
+                // This key MUST exist whether the service is alive or not.
+                // A missing key previously triggered the trial's fail-closed
+                // monitor-contract exception and disabled its controls.
                 val raw = context?.let { RecorderLease.rawSession(it) }
-                putBoolean("heimdallUnresolvedRawLease",
-                    raw?.active == true &&
-                    (lease == null || lease.owner == RecorderLease.Owner.UNKNOWN))
+                val unresolved = raw?.active == true && (
+                    raw.owner == RecorderLease.Owner.UNKNOWN ||
+                        (!MonitorState.serviceCreated && lease == null))
+                putBoolean("heimdallUnresolvedRawLease", unresolved)
             }
             putLong("recoverySessionId",lease?.id?:0L)
             putBoolean("running", MonitorState.running)
