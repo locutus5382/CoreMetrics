@@ -104,6 +104,7 @@ class HeimdallTrialActivity : ComponentActivity() {
                 persistedSamples = samples,
                 rawRecoveryOwner = rawOwner,
                 rawLeaseUnresolved = rawLeaseUnresolved,
+                repairRequired = repairNeeded,
                 unfinishedRecordingExists = unfinishedRow,
                 monitorRecording = running,
                 monitorStarting = starting,
