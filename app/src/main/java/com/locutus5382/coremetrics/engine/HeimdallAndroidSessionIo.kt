@@ -77,13 +77,36 @@ internal class HeimdallAndroidSessionIo(
             }
         }
 
-    /** Preserve recovery heartbeat across sessions longer than 90 seconds. */
-    override suspend fun committed(sessionId: Long, sample: Snapshot) =
+    /**
+     * Lease owner/STOP evidence is mandatory, not an optional HUD callback.
+     * Check EVERY committed sample. Only the synchronous timestamp write is
+     * rate-limited; a failed write cannot advance lastHeartbeatElapsed.
+     */
+    override suspend fun afterPersist(sessionId: Long) =
         withContext(Dispatchers.IO) {
             val now = android.os.SystemClock.elapsedRealtime()
-            if (now - lastHeartbeatElapsed >= 12_000L) {
-                RecorderLease.heartbeat(application)
-                lastHeartbeatElapsed = now
+            val renew = lastHeartbeatElapsed == 0L ||
+                now - lastHeartbeatElapsed >= 12_000L
+            val result = try {
+                RecorderLease.heartbeatHeimdall(application, sessionId, renew)
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                throw HeimdallLeaseHealthException(
+                    HeimdallLeaseHealthIssue.COMMIT_FAILED)
+            }
+            when (result) {
+                RecorderLease.HeimdallHeartbeat.HEALTHY -> Unit
+                RecorderLease.HeimdallHeartbeat.RENEWED -> lastHeartbeatElapsed = now
+                RecorderLease.HeimdallHeartbeat.OWNER_CHANGED ->
+                    throw HeimdallLeaseHealthException(
+                        HeimdallLeaseHealthIssue.OWNER_CHANGED)
+                RecorderLease.HeimdallHeartbeat.STOP_ALREADY_PERSISTED ->
+                    throw HeimdallLeaseHealthException(
+                        HeimdallLeaseHealthIssue.TERMINAL_STOP_SEEN)
+                RecorderLease.HeimdallHeartbeat.COMMIT_FAILED ->
+                    throw HeimdallLeaseHealthException(
+                        HeimdallLeaseHealthIssue.COMMIT_FAILED)
             }
         }
 

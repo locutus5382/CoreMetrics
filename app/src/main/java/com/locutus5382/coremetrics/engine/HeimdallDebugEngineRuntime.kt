@@ -52,11 +52,14 @@ internal class HeimdallDebugEngineRuntime(
             io = io,
             parentScope = scope,
             intervalMs = intervalMs,
-            onFatalSampling = { _, _ ->
+            onFatalSampling = { _, errorType ->
                 // Only the coordinator may decide STOP. Never finalize here.
+                // The only coordinator decides STOP. Lease integrity
+                // faults must not be misreported as sensor sample noise.
+                val reason = HeimdallFatalStopPolicy.reason(errorType)
                 engine.submit(EngineCommand.Stop(
                     "fatal-${UUID.randomUUID()}", CommandOrigin.RECOVERY,
-                    StopReason.SAMPLE_FAILURE))
+                    reason))
             },
         )
         if (!host.acceptExclusiveHandoff(handoff)) return false
@@ -92,10 +95,13 @@ internal class HeimdallDebugEngineRuntime(
             io = io,
             parentScope = scope,
             intervalMs = intervalMs,
-            onFatalSampling = { _, _ ->
+            onFatalSampling = { _, errorType ->
+                // The only coordinator decides STOP. Lease integrity
+                // faults must not be misreported as sensor sample noise.
+                val reason = HeimdallFatalStopPolicy.reason(errorType)
                 engine.submit(EngineCommand.Stop(
                     "fatal-${UUID.randomUUID()}", CommandOrigin.RECOVERY,
-                    StopReason.SAMPLE_FAILURE))
+                    reason))
             },
         )
         if (!host.acceptNativeRecoveryHandoff(handoff)) return false

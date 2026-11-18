@@ -19,7 +19,13 @@ internal object CoroutineSamplingClock : SamplingClock {
 internal interface SamplingChannel<S> {
     suspend fun collect(): S
     suspend fun persist(sessionId: Long, sample: S)
-    /** UI/HUD is best-effort, and cannot change data integrity. */
+    /**
+     * Mandatory post-commit session health check (e.g. recovery-lease
+     * ownership/heartbeat). Unlike optional HUD callbacks, failure is fatal
+     * and must be surfaced to the single recording coordinator.
+     */
+    suspend fun afterPersist(sessionId: Long) {}
+    /** Optional UI/HUD telemetry; failure never discards stored samples. */
     suspend fun committed(sessionId: Long, sample: S) {}
 }
 
@@ -59,6 +65,17 @@ internal class HeimdallSamplingLoop<S>(
                 channel.persist(sessionId, sample)
                 stored++
                 consecutiveFailures = 0
+                // This checkpoint protects original-session recoverability,
+                // not the presentation layer. If it fails, stop sampling now.
+                // The sample was ALREADY saved: never count it as missing.
+                try { channel.afterPersist(sessionId) }
+                catch (cancel: CancellationException) { throw cancel }
+                catch (failure: Exception) {
+                    fatal = if (failure is HeimdallLeaseHealthException)
+                        "LEASE_" + failure.issue.name
+                    else failure.javaClass.simpleName.ifBlank { "SESSION_HEALTH_FAILED" }
+                    break
+                }
                 // A broken renderer must not discard an already-persisted sample.
                 try { channel.committed(sessionId, sample) }
                 catch (cancel: CancellationException) { throw cancel }

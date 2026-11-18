@@ -104,6 +104,35 @@ internal object RecorderLease {
                 .putLong("heartbeat_wall",System.currentTimeMillis()).commit()
         }
     }
+    /**
+     * Native Heimdall only. Called after a successfully persisted sample.
+     * A matching lease/STOP check is required on EVERY sample; the synchronous
+     * heartbeat write happens at most every 12 seconds (plus first sample).
+     * This result cannot be masked by optional HUD/telemetry callbacks.
+     *
+     * The recorder executes in one :monitor process. A heartbeat update only
+     * touches timestamps, never the durable STOP flag or owner/session ID.
+     */
+    enum class HeimdallHeartbeat {
+        HEALTHY, RENEWED, OWNER_CHANGED, STOP_ALREADY_PERSISTED, COMMIT_FAILED
+    }
+
+    @Synchronized fun heartbeatHeimdall(
+        context:Context, sessionId:Long, renew:Boolean
+    ):HeimdallHeartbeat {
+        if(sessionId<=0L) return HeimdallHeartbeat.OWNER_CHANGED
+        val current=rawSession(context)
+        if(!current.active || !current.recording ||
+            current.sessionId!=sessionId || current.owner!=Owner.HEIMDALL_DEBUG)
+            return HeimdallHeartbeat.OWNER_CHANGED
+        if(current.stopPersisted) return HeimdallHeartbeat.STOP_ALREADY_PERSISTED
+        if(!renew) return HeimdallHeartbeat.HEALTHY
+        val ok=prefs(context).edit()
+            .putLong("heartbeat_uptime",SystemClock.elapsedRealtime())
+            .putLong("heartbeat_wall",System.currentTimeMillis()).commit()
+        return if(ok) HeimdallHeartbeat.RENEWED else HeimdallHeartbeat.COMMIT_FAILED
+    }
+
     /** Raw on-disk flag, not a freshness check. A stale unresolved lease must
      * block explicit debug ownership, even if recover() rejects its age. */
     fun hasRawActiveLease(context:Context):Boolean =
