@@ -31,6 +31,16 @@ class StatusProvider : ContentProvider() {
             putBoolean("serviceAlive",MonitorState.serviceCreated)
             putBoolean("pendingRecovery",lease!=null)
             putBoolean("recoveringRecording",lease?.recording==true)
+            if (BuildConfig.DEBUG && !MonitorState.serviceCreated) {
+                // An expired or foreign-owner raw lease is not permission to
+                // start another recording. Surface the repair requirement.
+                val raw = context?.let { RecorderLease.rawSession(it) }
+                putBoolean("heimdallUnresolvedRawLease",
+                    raw?.active == true &&
+                    (lease == null || lease.owner == RecorderLease.Owner.UNKNOWN ||
+                        lease.owner == RecorderLease.Owner.HEIMDALL_DEBUG &&
+                        !BuildConfig.DEBUG))
+            }
             putLong("recoverySessionId",lease?.id?:0L)
             putBoolean("running", MonitorState.running)
             putBoolean("starting", MonitorState.starting)
@@ -39,6 +49,19 @@ class StatusProvider : ContentProvider() {
             putLong("started", MonitorState.startedAt)
             putLong("count", MonitorState.sampleCount)
             putString("message", MonitorState.message)
+            if (BuildConfig.DEBUG) {
+                // Diagnostic presentation only: never a recorder authority token.
+                putString("heimdallRecorderPhase",
+                    MonitorState.heimdallRecorderPhase)
+                putBoolean("heimdallStopOrSaveRetry",
+                    MonitorState.heimdallNeedsRetry)
+                putBoolean("heimdallRecorderNeedsRepair",
+                    MonitorState.heimdallNeedsRepair)
+                putLong("heimdallRecorderOriginalId",
+                    MonitorState.heimdallOriginalSessionId)
+                putString("heimdallRecorderIssueCode",
+                    MonitorState.heimdallIssueCode)
+            }
             putString("hudStatus", MonitorState.hudState)
             putBoolean("hudVisible",MonitorState.hudVisible)
             putBoolean("hudLocked", MonitorState.hudLocked)
