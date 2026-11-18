@@ -151,6 +151,11 @@ class HeimdallNativeEngineTest {
             val p = LegacyGuardedEffectPort("epoch", h)
             p.openSession("s", null)
             failContaining("STOP_NOT_DURABLE") { p.persistStopIntent(42, "stop") }
+            // STOP persistence can fail, but the sampling coroutine must still stop.
+            p.pauseSampling(42)
+            val stoppedAt = io.writes
+            delay(15)
+            assertEquals(stoppedAt, io.writes)
             failContaining("STOP_NOT_DURABLE") {
                 p.finalizeSession(42, "stop", StopReason.USER)
             }
@@ -166,9 +171,12 @@ class HeimdallNativeEngineTest {
             h.acceptExclusiveHandoff(clean)
             val p = LegacyGuardedEffectPort("epoch", h)
             p.openSession("s", null)
-            failContaining("STOP_NOT_DURABLE") { p.pauseSampling(42) }
-            p.persistStopIntent(42, "stop")
+            // Even an unpersisted STOP must stop additional sensor/SQLite work.
             p.pauseSampling(42)
+            failContaining("STOP_NOT_DURABLE") {
+                p.finalizeSession(42, "stop", StopReason.USER)
+            }
+            p.persistStopIntent(42, "stop")
             val n = io.writes
             delay(20)
             assertEquals(n, io.writes)
