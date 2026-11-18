@@ -39,6 +39,16 @@ internal data class LegacyHandoffEvidence(
     val legacyOverlayDetached: Boolean,
 )
 
+/** A native restart retains its original lease: unlike a fresh START,
+ * it must NOT require the recovery lease to be absent. */
+internal data class NativeRecoveryHandoffEvidence(
+    val serviceEpoch: String,
+    val originalSessionId: Long,
+    val legacyTaskAbsent: Boolean,
+    val legacySessionInactive: Boolean,
+    val legacyOverlayDetached: Boolean,
+)
+
 /**
  * HEIMDALL's own session/sampler owner, reusing the existing guarded port.
  * No legacy service constructs this host in M2-F. It may become active only
@@ -79,6 +89,23 @@ internal class HeimdallSessionHost<S>(
         transferred = true
         true
     }
+
+    /** Explicit native-only transfer. The session host itself verifies the
+     * existing original row + matching HEIMDALL_DEBUG lease via IO before
+     * issuing its ownership token. UI/provider evidence cannot authorize it. */
+    suspend fun acceptNativeRecoveryHandoff(e: NativeRecoveryHandoffEvidence): Boolean =
+        lock.withLock {
+            if (transferred || e.serviceEpoch != serviceEpoch ||
+                e.originalSessionId <= 0L || !e.legacyTaskAbsent ||
+                !e.legacySessionInactive || !e.legacyOverlayDetached ||
+                samplerJob != null || activeId != null)
+                return@withLock false
+            if (!io.validatedRecovery(e.originalSessionId) &&
+                !io.terminalRecovery(e.originalSessionId))
+                return@withLock false
+            transferred = true
+            true
+        }
 
     override suspend fun evidence(): LegacyServiceEffectEvidence = lock.withLock {
         LegacyServiceEffectEvidence(serviceEpoch, transferred, activeId, durableStopId,
