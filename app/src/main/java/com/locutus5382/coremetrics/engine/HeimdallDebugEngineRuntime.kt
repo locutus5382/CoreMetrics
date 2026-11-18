@@ -52,7 +52,7 @@ internal class HeimdallDebugEngineRuntime(
             io = io,
             parentScope = scope,
             intervalMs = intervalMs,
-            onFatalSampling = { _, _ ->
+            onFatalSampling = { _, errorType ->
                 // Only the coordinator may decide STOP. Never finalize here.
                 // The only coordinator decides STOP. Lease integrity
                 // faults must not be misreported as sensor sample noise.
@@ -95,7 +95,7 @@ internal class HeimdallDebugEngineRuntime(
             io = io,
             parentScope = scope,
             intervalMs = intervalMs,
-            onFatalSampling = { _, _ ->
+            onFatalSampling = { _, errorType ->
                 // The only coordinator decides STOP. Lease integrity
                 // faults must not be misreported as sensor sample noise.
                 val reason = HeimdallFatalStopPolicy.reason(errorType)
