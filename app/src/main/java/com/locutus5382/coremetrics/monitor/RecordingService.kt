@@ -15,6 +15,8 @@ import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.service.quicksettings.TileService
+import com.locutus5382.coremetrics.BuildConfig
+import com.locutus5382.coremetrics.domain.LegacyAuditObservation
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.data.ProcessSessionStoreOwner
 import com.locutus5382.coremetrics.quick.SessionTile
@@ -83,8 +85,14 @@ class RecordingService:Service() {
     private var armedConfig="Stock"
     private var armedInterval=5000L
 
+    /** Debug-only, read-only observation; never authorizes an effect. */
+    private fun shadow(event: LegacyAuditObservation) {
+        if (BuildConfig.DEBUG) HeimdallServiceShadowAudit.observe(event)
+    }
+
     override fun onCreate() {
         super.onCreate()
+        if (BuildConfig.DEBUG) HeimdallServiceShadowAudit.onServiceCreated()
         db=ProcessSessionStoreOwner.get(applicationContext)
         hud=MonitorHudOwner.get(applicationContext)
         // HudOptions.from opens the shared SQLite settings database.
@@ -204,14 +212,15 @@ class RecordingService:Service() {
     /** STOP must not silently ignore a failed SharedPreferences.commit.
      * Clearing the old lease on failure prevents unintended re-recording;
      * the original SQLite row is still finalized by the cancellation handler. */
-    private fun persistTerminalIntent(command:String) {
-        if(RecorderLease.requestStop(this))return
+    private fun persistTerminalIntent(command:String):Boolean {
+        if(RecorderLease.requestStop(this))return true
         val cleared=RecorderLease.clear(this)
         RecorderJournal.event(this,"STOP_INTENT_WRITE_FAILED",
             "command="+command+" lease_cleared="+cleared)
         MonitorState.message=if(cleared)
             "Stopping; recovery disabled (lease storage failed)"
         else "Stopping; persistent storage unavailable"
+        return false
     }
     private fun hudClick(){
         val i=Intent(this,RecordingService::class.java)
@@ -292,6 +301,10 @@ class RecordingService:Service() {
                 return START_NOT_STICKY
             }
             if(old.stopRequested) {
+                // This process did not own the old sampler; retain its
+                // terminal-recovery provenance separately from loop exit.
+                if (BuildConfig.DEBUG && old.recording)
+                    shadow(LegacyAuditObservation.RecoveredTerminal(old.id))
                 RecorderJournal.event(this,"STOP_RECOVERY_FINALIZE",
                     "id="+old.id+" same-session terminal reconciliation")
                 val finalized=if(old.recording)runCatching {
@@ -301,6 +314,8 @@ class RecordingService:Service() {
                 }.onFailure { RecorderJournal.event(this,
                     "STOP_RECOVERY_DB_ERROR",it.javaClass.simpleName) }
                     .getOrDefault(false) else true
+                if (BuildConfig.DEBUG && old.recording)
+                    shadow(LegacyAuditObservation.Finalized(old.id, finalized))
                 if(finalized)RecorderLease.clear(this)
                 // Failure retains the stop_requested lease. No sampling can
                 // start; the next explicit recovery may retry finalization.
@@ -508,7 +523,10 @@ class RecordingService:Service() {
                 if(current!=null && !current.isCompleted || MonitorState.starting){
                     // Do not clear a fresh recovery lease until the recorder
                     // actually persisted its final database status.
-                    persistTerminalIntent("DISARM")
+                    val stopDurable = persistTerminalIntent("DISARM")
+                    if (MonitorState.sessionId > 0L)
+                        shadow(LegacyAuditObservation.TerminalIntent(
+                            MonitorState.sessionId, stopDurable))
                     MonitorState.saving=true
                     explicitUserStop=true
                     stopping=true
@@ -533,7 +551,10 @@ class RecordingService:Service() {
                     if(armed && userWantsHud)standby(recoverable=false)
                     else disarmNow()
                 }else {
-                    persistTerminalIntent("STOP")
+                    val stopDurable = persistTerminalIntent("STOP")
+                    if (MonitorState.sessionId > 0L)
+                        shadow(LegacyAuditObservation.TerminalIntent(
+                            MonitorState.sessionId, stopDurable))
                     MonitorState.saving=true
                     current.cancel()
                 }
@@ -640,6 +661,7 @@ class RecordingService:Service() {
                         else 0L
                         MonitorState.starting=false
                         MonitorState.running=true
+                        shadow(LegacyAuditObservation.SessionAcquired(id))
                         MonitorState.message=label+" · "+config
                         RecorderJournal.event(this@RecordingService,
                             if(restoredId>0L)"SESSION_RESUMED" else "SESSION_PERSISTED",
@@ -750,6 +772,8 @@ class RecordingService:Service() {
                         RecorderJournal.event(this@RecordingService,"SAMPLING_FAILED",
                             e.javaClass.simpleName+":"+(e.message?:""))
                     }finally{
+                        // The sampling loop has exited before the DB finalizer runs.
+                        if (id > 0L) shadow(LegacyAuditObservation.SamplerExited(id))
                         withContext(NonCancellable){
                             if(timings.count>0L)RecorderJournal.event(
                                 this@RecordingService,"RECORDER_TIMING",
@@ -768,8 +792,13 @@ class RecordingService:Service() {
                                         "SESSION_FINISH_DB_ERROR",it.javaClass.simpleName)
                                 }.getOrDefault(false)
                             }
+                            if (id > 0L) shadow(LegacyAuditObservation.Finalized(id, finalized))
                             if(finalized)RecorderLease.clear(this@RecordingService)
-                            else persistTerminalIntent("FINISH_FAILED")
+                            else {
+                                val stopDurable = persistTerminalIntent("FINISH_FAILED")
+                                if (id > 0L) shadow(LegacyAuditObservation.TerminalIntent(
+                                    id, stopDurable))
+                            }
                             // On failure a STOP-pending lease survives for a
                             // later explicit retry; never resume sampling.
                             RecorderJournal.event(this@RecordingService,
@@ -858,7 +887,13 @@ class RecordingService:Service() {
         task?.cancel()
         scope.cancel()
         val active=task
-        if(active!=null)active.invokeOnCompletion{db.close()}else db.close()
+        if(active!=null)active.invokeOnCompletion {
+            db.close()
+            shadow(LegacyAuditObservation.ServiceDestroyed)
+        } else {
+            db.close()
+            shadow(LegacyAuditObservation.ServiceDestroyed)
+        }
         super.onDestroy()
     }
 }

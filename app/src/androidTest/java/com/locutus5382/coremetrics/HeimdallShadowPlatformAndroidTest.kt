@@ -20,6 +20,25 @@ class HeimdallShadowPlatformAndroidTest {
             result is HeimdallLegacyStatusProbe.Result.Observed)
     }
 
+    @Test fun privateShadowAuditIsOptionalAndNeverARecordingCommand() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val uri = android.net.Uri.parse("content://" +
+            context.packageName + ".monitor.status")
+        val bundle = context.contentResolver.call(uri, "status", null, null)
+        assertTrue("Private status provider must return a Bundle", bundle != null)
+        // Reading an idle provider may create only the monitor process, not
+        // RecordingService. The audit is absent until the service is created.
+        if (bundle!!.containsKey("heimdallShadowEpoch")) {
+            assertTrue(bundle.getString("heimdallShadowEpoch")?.isNotBlank() == true)
+            assertTrue(bundle.getLong("heimdallShadowSequence") >= 0L)
+            assertTrue(bundle.getLong("heimdallShadowSessionId") >= 0L)
+            assertTrue(bundle.getString("heimdallShadowStop") in
+                setOf("NONE", "PERSISTED", "FAILED"))
+            assertTrue(bundle.getString("heimdallShadowFinish") in
+                setOf("NONE", "CONFIRMED", "FAILED"))
+        }
+    }
+
     @Test fun recoveryEvidenceReadNeverRequiresANewSession() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val candidate = HeimdallLegacyRecoveryProbe(context).inspect()
