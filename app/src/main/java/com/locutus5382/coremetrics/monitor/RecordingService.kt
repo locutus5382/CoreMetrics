@@ -301,13 +301,10 @@ class RecordingService:Service() {
                 return START_NOT_STICKY
             }
             if(old.stopRequested) {
-                // This process did not run the old sampler; only the durable
-                // original-session terminal evidence is observed here.
-                if (BuildConfig.DEBUG && old.recording) {
-                    shadow(LegacyAuditObservation.SessionAcquired(old.id))
-                    shadow(LegacyAuditObservation.TerminalIntent(old.id, true))
-                    shadow(LegacyAuditObservation.SamplerExited(old.id))
-                }
+                // This process did not own the old sampler; retain its
+                // terminal-recovery provenance separately from loop exit.
+                if (BuildConfig.DEBUG && old.recording)
+                    shadow(LegacyAuditObservation.RecoveredTerminal(old.id))
                 RecorderJournal.event(this,"STOP_RECOVERY_FINALIZE",
                     "id="+old.id+" same-session terminal reconciliation")
                 val finalized=if(old.recording)runCatching {
@@ -890,8 +887,13 @@ class RecordingService:Service() {
         task?.cancel()
         scope.cancel()
         val active=task
-        if(active!=null)active.invokeOnCompletion{db.close()}else db.close()
-        shadow(LegacyAuditObservation.ServiceDestroyed)
+        if(active!=null)active.invokeOnCompletion {
+            db.close()
+            shadow(LegacyAuditObservation.ServiceDestroyed)
+        } else {
+            db.close()
+            shadow(LegacyAuditObservation.ServiceDestroyed)
+        }
         super.onDestroy()
     }
 }
