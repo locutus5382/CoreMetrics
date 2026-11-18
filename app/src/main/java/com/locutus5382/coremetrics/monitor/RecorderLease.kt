@@ -17,20 +17,32 @@ internal object RecorderLease {
     // Terminal-only reconciliation may be requested long after STOP. This
     // window never authorizes sampling or resurrects an abandoned recording.
     private const val MAX_STOP_AGE_MS=24*60*60_000L
+    /** Missing owner field means a pre-Heimdall legacy lease. Unknown fails closed. */
+    enum class Owner { LEGACY, HEIMDALL_DEBUG, UNKNOWN }
+    private fun ownerOf(value:String?):Owner =
+        when(value) {
+            null, Owner.LEGACY.name -> Owner.LEGACY
+            Owner.HEIMDALL_DEBUG.name -> Owner.HEIMDALL_DEBUG
+            else -> Owner.UNKNOWN
+        }
+
     data class Saved(val recording:Boolean,val id:Long,val label:String,
         val configuration:String,val intervalMs:Long,
         val hudEnabled:Boolean,val hudLocked:Boolean,
-        val stopRequested:Boolean,val standbyRecoveryEnabled:Boolean)
+        val stopRequested:Boolean,val standbyRecoveryEnabled:Boolean,
+        val owner:Owner)
 
     private fun prefs(context:Context)=
         context.getSharedPreferences(FILE,Context.MODE_PRIVATE)
     private fun save(context:Context,recording:Boolean,id:Long,label:String,
         config:String,interval:Long,hud:Boolean,restored:Boolean,
-        standbyRecovery:Boolean=true):Boolean {
+        standbyRecovery:Boolean=true,owner:Owner=Owner.LEGACY):Boolean {
+        require(owner != Owner.UNKNOWN) { "UNKNOWN_LEASE_OWNER" }
         val p=prefs(context)
         return p.edit()
             .putBoolean("active",true).putBoolean("recording",recording)
             .putBoolean("stop_requested",false)
+            .putString("engine_owner",owner.name)
             .putBoolean("standby_recovery",if(recording)false else
                 RecorderContinuation.standbyAutoRecoverable(restored,standbyRecovery))
             .putLong("id",id).putString("label",label.take(64))
@@ -49,8 +61,10 @@ internal object RecorderLease {
         restored:Boolean=false,recoverable:Boolean=true)=
         save(context,false,0L,label,config,intervalMs,true,restored,recoverable)
     fun start(context:Context,id:Long,label:String,config:String,
-        intervalMs:Long,hud:Boolean,restored:Boolean=false)=
-        if(id>0L) save(context,true,id,label,config,intervalMs,hud,restored) else false
+        intervalMs:Long,hud:Boolean,restored:Boolean=false,
+        owner:Owner=Owner.LEGACY)=
+        if(id>0L) save(context,true,id,label,config,intervalMs,hud,restored,
+            owner=owner) else false
     fun markRecovery(context:Context):Boolean {
         val p=prefs(context)
         // Pending user STOP is terminal reconciliation, not another attempt
@@ -95,10 +109,19 @@ internal object RecorderLease {
     fun hasRawActiveLease(context:Context):Boolean =
         prefs(context).getBoolean("active",false)
 
+    /** Read owner even when the heartbeat is expired. Never interpret UNKNOWN
+     * or a debug-owned recording as a legacy recovery lease. */
+    fun rawOwner(context:Context):Owner? =
+        prefs(context).let { p ->
+            if(p.getBoolean("active",false))
+                ownerOf(p.getString("engine_owner",null)) else null
+        }
+
     fun clear(context:Context):Boolean = prefs(context).edit()
         .putBoolean("active",false).putBoolean("recording",false)
         .remove("id").remove("recoveries").remove("hud_locked")
-        .remove("stop_requested").remove("standby_recovery").commit()
+        .remove("stop_requested").remove("standby_recovery")
+        .remove("engine_owner").commit()
 
     /**
      * A process killed during an explicit recording has a fresh lease;
@@ -133,6 +156,7 @@ internal object RecorderLease {
             p.getString("config","Unknown")?:"Unknown",
             p.getLong("interval",5000L),
             p.getBoolean("hud_enabled",false),
-            p.getBoolean("hud_locked",false),stopRequested,standbyRecovery)
+            p.getBoolean("hud_locked",false),stopRequested,standbyRecovery,
+            ownerOf(p.getString("engine_owner",null)))
     }
 }
