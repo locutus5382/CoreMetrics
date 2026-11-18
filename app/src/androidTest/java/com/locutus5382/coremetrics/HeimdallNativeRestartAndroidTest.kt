@@ -31,6 +31,10 @@ class HeimdallNativeRestartAndroidTest {
             Build.HARDWARE.contains("goldfish",true) ||
             Build.FINGERPRINT.contains("generic",true)
 
+    private fun rowCount(db:SessionStore):Long =
+        db.readableDatabase.rawQuery("SELECT COUNT(*) FROM sessions",null)
+            .use { cursor -> if(cursor.moveToFirst()) cursor.getLong(0) else 0L }
+
     private fun send(ctx:Context,action:String) {
         ctx.startForegroundService(Intent(ctx,RecordingService::class.java)
             .setAction(action))
@@ -56,6 +60,7 @@ class HeimdallNativeRestartAndroidTest {
             .grantRuntimePermission(ctx.packageName,Manifest.permission.POST_NOTIFICATIONS)
         val db=SessionStore(ctx)
         var originalId=0L
+        val initialRows=rowCount(db)
         try {
             assertFalse("A fresh CI emulator must not contain unfinished recordings",
                 db.hasUnfinishedRecording())
@@ -76,6 +81,8 @@ class HeimdallNativeRestartAndroidTest {
                         ?.takeIf { pid -> pid>0 && pid!=Process.myPid() }
                 }
                 assertTrue(db.canResume(originalId))
+                assertEquals("A debug START must create exactly one original row",
+                    initialRows+1,rowCount(db))
                 waitFor(35_000) {
                     if(db.storedSampleCount(originalId)>0L) true else null
                 }
@@ -101,6 +108,8 @@ class HeimdallNativeRestartAndroidTest {
                 }
                 assertEquals("Recovery must preserve the original SQLite ID",
                     originalId,status(ctx)?.getLong("id"))
+                assertEquals("Recovery must not create a replacement row",
+                    initialRows+1,rowCount(db))
                 send(ctx,RecordingService.STOP)
                 waitFor(40_000) {
                     if(db.sessionById(originalId)?.status=="COMPLETED")
