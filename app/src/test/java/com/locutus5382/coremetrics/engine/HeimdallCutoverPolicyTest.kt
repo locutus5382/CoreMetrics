@@ -7,6 +7,8 @@ class HeimdallCutoverPolicyTest {
     private fun approved() = HeimdallCutoverEvidence(
         nativeDefaultCompiled = true,
         odinDeviceValidated = true,
+        nativeProcessDeathAndStopValidated = true,
+        sessionAndExportRegressionPassed = true,
         allCriticalCiPassed = true,
         userApprovedDefault = true,
         priorSessionsBackedUp = true,
@@ -31,6 +33,14 @@ class HeimdallCutoverPolicyTest {
     @Test fun noOdinTestMeansNoCutover() {
         assertEquals(HeimdallCutoverDecision.HOLD_FOR_TESTS,
             decision(approved().copy(odinDeviceValidated = false)))
+    }
+    @Test fun emulatorProcessDeathAloneDoesNotApproveDeviceCrashRecovery() {
+        assertEquals(HeimdallCutoverDecision.HOLD_FOR_TESTS,
+            decision(approved().copy(nativeProcessDeathAndStopValidated = false)))
+    }
+    @Test fun brokenDukoOrExportCompatibilityBlocksDefaultCutover() {
+        assertEquals(HeimdallCutoverDecision.HOLD_FOR_TESTS,
+            decision(approved().copy(sessionAndExportRegressionPassed = false)))
     }
     @Test fun incompleteCiMeansNoCutover() {
         assertEquals(HeimdallCutoverDecision.HOLD_FOR_TESTS,
