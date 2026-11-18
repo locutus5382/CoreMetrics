@@ -117,6 +117,36 @@ internal object RecorderLease {
                 ownerOf(p.getString("engine_owner",null)) else null
         }
 
+    /** Exact raw evidence, independent of expiry/recovery-count eligibility.
+     * Terminal cleanup must not confuse "too old to resume" with absent data.
+     * Only :monitor can act on these values; UI snapshots grant no authority. */
+    data class RawSession(
+        val active:Boolean,
+        val recording:Boolean,
+        val sessionId:Long,
+        val owner:Owner?,
+        val stopPersisted:Boolean,
+    )
+    fun rawSession(context:Context):RawSession = prefs(context).let { p ->
+        val active=p.getBoolean("active",false)
+        RawSession(active,p.getBoolean("recording",false),
+            p.getLong("id",0L),
+            if(active)ownerOf(p.getString("engine_owner",null)) else null,
+            p.getBoolean("stop_requested",false))
+    }
+
+    /** Same-process conditional cleanup; never erase a lease belonging to a
+     * new/other owner. The service must prohibit simultaneous legacy writes. */
+    @Synchronized fun clearHeimdallStoppedSession(
+        context:Context, sessionId:Long
+    ):Boolean {
+        val raw=rawSession(context)
+        if(sessionId<=0L || !raw.active || !raw.recording ||
+            raw.sessionId!=sessionId || raw.owner!=Owner.HEIMDALL_DEBUG ||
+            !raw.stopPersisted) return false
+        return clear(context)
+    }
+
     fun clear(context:Context):Boolean = prefs(context).edit()
         .putBoolean("active",false).putBoolean("recording",false)
         .remove("id").remove("recoveries").remove("hud_locked")
