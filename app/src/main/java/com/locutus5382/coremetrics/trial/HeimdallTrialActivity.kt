@@ -62,6 +62,7 @@ class HeimdallTrialActivity : ComponentActivity() {
         val saving: Boolean,
         val hudAttached: Boolean,
         val unfinishedRow: Boolean,
+        val persistedRowStatus: String?,
         val issueCode: String?,
     ) {
         val mayRequestStart: Boolean
@@ -144,16 +145,27 @@ class HeimdallTrialActivity : ComponentActivity() {
         val provider = contentResolver.call(
             Uri.parse("content://$packageName.monitor.status"),
             "status", null, null)
-        val unfinished = UiSessionStoreOwner.get(applicationContext)
-            .hasUnfinishedRecording()
+        val store = UiSessionStoreOwner.get(applicationContext)
+        val unfinished = store.hasUnfinishedRecording()
+        // A completed STOP clears the live lease. Retain only the most recent
+        // displayed ID in trial UI prefs to inspect its ORIGINAL persisted row.
+        // This display hint cannot resume or authorize any session.
+        val seen = provider?.getLong("heimdallRecorderOriginalId", 0L)
+            ?.takeIf { it > 0L }
+            ?: provider?.getLong("heimdallRecoveryLeaseId", 0L)
+                ?.takeIf { it > 0L }
+        val prefs = getSharedPreferences("heimdall_trial_ui", MODE_PRIVATE)
+        if (seen != null) prefs.edit().putLong(
+            "last_seen_session_id", seen).apply()
+        val rowId = seen ?: prefs.getLong("last_seen_session_id", 0L)
+        val persisted = if (rowId > 0L) store.recordingStatus(rowId) else null
+        val sampleCount = if (rowId > 0L) store.storedSampleCount(rowId) else 0L
         return TrialSnapshot(
             serviceAlive = provider?.getBoolean("serviceAlive") ?: false,
             phase = provider?.getString("heimdallRecorderPhase"),
             rawOwner = provider?.getString("heimdallRawRecoveryOwner"),
-            sessionId = provider?.getLong("heimdallRecorderOriginalId")?.takeIf {
-                it > 0L
-            } ?: provider?.getLong("heimdallRecoveryLeaseId") ?: 0L,
-            samples = provider?.getLong("count") ?: 0L,
+            sessionId = rowId,
+            samples = sampleCount,
             statusMessage = provider?.getString("message") ?: "Status unavailable",
             retryNeeded = provider?.getBoolean("heimdallStopOrSaveRetry") ?: false,
             repairNeeded = provider?.getBoolean("heimdallRecorderNeedsRepair") ?: false,
@@ -165,6 +177,7 @@ class HeimdallTrialActivity : ComponentActivity() {
             saving = provider?.getBoolean("saving") ?: false,
             hudAttached = provider?.getBoolean("hudAttached") ?: false,
             unfinishedRow = unfinished,
+            persistedRowStatus = persisted,
             issueCode = provider?.getString("heimdallRecorderIssueCode"),
         )
     }
@@ -186,7 +199,8 @@ class HeimdallTrialActivity : ComponentActivity() {
                     appendLine("Original session ID: ${s.sessionId}")
                     appendLine("Lease owner: ${s.rawOwner ?: "NONE"}")
                     appendLine("Unfinished SQLite row: ${s.unfinishedRow}")
-                    appendLine("Samples (status): ${s.samples}")
+                    appendLine("Persisted SQLite row: ${s.persistedRowStatus ?: "NONE"}")
+                    appendLine("Persisted samples: ${s.samples}")
                     appendLine("Recording: ${s.running}; saving: ${s.saving}")
                     appendLine("Retry: ${s.retryNeeded}; repair: ${s.repairNeeded}")
                     appendLine("Unresolved lease: ${s.rawLeaseUnresolved}")
