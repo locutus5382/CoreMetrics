@@ -29,6 +29,9 @@ private class FakeIo : HeimdallSessionIo<Int> {
     var pendingRow = true
     var collectFails = false
     var storeFails = false
+    @Volatile var persistedWrites = 0
+    var blockingPersistEntered: CompletableDeferred<Unit>? = null
+    var releaseBlockingPersist: CompletableDeferred<Unit>? = null
     var attached: Long? = null
     val actions = mutableListOf<String>()
     override suspend fun begin(profileId: Long?): EngineEffectPort.Opened {
@@ -47,7 +50,20 @@ private class FakeIo : HeimdallSessionIo<Int> {
     }
     override suspend fun persist(sessionId: Long, sample: Int) {
         if (storeFails) throw IOException("db error")
-        writes++
+        val gate = releaseBlockingPersist
+        if (gate != null) {
+            // SQLite's synchronous commit may finish despite coroutine
+            // cancellation. STOP must join that real write, not cancel only.
+            withContext(NonCancellable) {
+                blockingPersistEntered?.complete(Unit)
+                gate.await()
+                writes++
+                persistedWrites++
+            }
+        } else {
+            writes++
+            persistedWrites++
+        }
     }
     override suspend fun persistStop(sessionId: Long): Boolean {
         actions += "stop"
@@ -144,6 +160,78 @@ class HeimdallNativeEngineTest {
             assertTrue(io.actions.indexOf("stop") < io.actions.indexOf("finish"))
             assertEquals(1, io.begins)
             c.cancel()
+        } finally { scope.cancel() }
+    }
+
+    @Test fun stopWaitsForNonCancellableSqliteWriteBeforeFinalizing() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val entered = CompletableDeferred<Unit>()
+        val released = CompletableDeferred<Unit>()
+        try {
+            val io = FakeIo().apply {
+                blockingPersistEntered = entered
+                releaseBlockingPersist = released
+            }
+            val h = host(io, scope)
+            assertTrue(h.acceptExclusiveHandoff(clean))
+            val port = LegacyGuardedEffectPort("epoch", h)
+            port.openSession("s", null)
+            withTimeout(3_000) { entered.await() }
+            port.persistStopIntent(42, "stop")
+            val pausing = async(Dispatchers.Default) { port.pauseSampling(42) }
+            delay(35)
+            assertFalse("A cancel request is NOT proof the DB write stopped",
+                pausing.isCompleted)
+            val finalizing = async(Dispatchers.Default) {
+                port.finalizeSession(42, "stop", StopReason.USER)
+            }
+            delay(35)
+            assertFalse("Finalization cannot overtake an in-flight SQLite write",
+                finalizing.isCompleted)
+            // No read of h.evidence() while pause holds its mutex:
+            // an ownership query must not race ahead of the live writer.
+            released.complete(Unit)
+            withTimeout(4_000) {
+                pausing.await()
+                finalizing.await()
+            }
+            assertEquals(42L, h.evidence().finalizedSessionId)
+            assertEquals(1, io.persistedWrites)
+            val storedAfter = io.persistedWrites
+            delay(35)
+            assertEquals(storedAfter, io.persistedWrites)
+            assertEquals(listOf("begin", "lease", "stop", "finish"),
+                io.actions.filter { it in listOf("begin", "lease", "stop", "finish") })
+        } finally {
+            released.complete(Unit)
+            scope.cancel()
+        }
+    }
+
+    @Test fun fatalStorageFailuresUseEngineStopNotAnIndependentFinalizer() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val io = FakeIo().apply { storeFails = true }
+            lateinit var controller: EngineController
+            val h = host(io, scope) { _, _ ->
+                controller.submit(EngineCommand.Stop(
+                    "fatal-storage", CommandOrigin.RECOVERY,
+                    StopReason.SAMPLE_FAILURE))
+            }
+            assertTrue(h.acceptExclusiveHandoff(clean))
+            controller = EngineController(EngineState(epoch = "epoch"),
+                LegacyGuardedEffectPort("epoch", h), scope)
+            controller.submit(EngineCommand.Start("fresh", CommandOrigin.APP))
+            withTimeout(4_000) {
+                while (controller.state.value.recording !is RecordingState.Idle ||
+                    io.actions.none { it == "finish" }) delay(3)
+            }
+            assertEquals(0, io.writes)
+            assertEquals(1, io.begins)
+            assertEquals(1, io.actions.count { it == "finish" })
+            assertEquals(1, io.actions.count { it == "stop" })
+            assertTrue(io.collected >= 5)
+            controller.cancel()
         } finally { scope.cancel() }
     }
 

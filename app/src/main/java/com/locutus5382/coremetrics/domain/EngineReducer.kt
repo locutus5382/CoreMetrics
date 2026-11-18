@@ -67,15 +67,20 @@ internal object EngineReducer {
         is RecordingState.Recording -> stopRequested(s, r.sessionId, c.id, c.reason)
         is RecordingState.Recovering -> stopRequested(s, r.sessionId, c.id, c.reason)
         is RecordingState.StopRequested -> {
-            // Explicit retry is allowed only after the prior persistence attempt failed.
-            if (r.persistError != null) EngineTransition(s.copy(
-                recording = r.copy(persistError = null),
+            // Retry ALL independently failed proofs in their safe order.
+            // A prior durable-STOP failure can coexist with a failed sampler
+            // pause. One repeated STOP must not require a third user action.
+            val retryStop = !r.durableStop && r.persistError != null
+            val retryPause = !r.samplingPaused && r.pauseError != null
+            if (retryStop || retryPause) EngineTransition(s.copy(
+                recording = r.copy(
+                    persistError = if (retryStop) null else r.persistError,
+                    pauseError = if (retryPause) null else r.pauseError),
                 lastAck = ack(c.id, CommandOutcome.ACCEPTED)),
-                listOf(EngineEffect.PersistStopIntent(r.sessionId, r.stopId)))
-            else if (r.pauseError != null && r.durableStop) EngineTransition(s.copy(
-                recording = r.copy(pauseError = null),
-                lastAck = ack(c.id, CommandOutcome.ACCEPTED)),
-                listOf(EngineEffect.PauseSampling(r.sessionId, r.stopId)))
+                buildList {
+                    if (retryStop) add(EngineEffect.PersistStopIntent(r.sessionId, r.stopId))
+                    if (retryPause) add(EngineEffect.PauseSampling(r.sessionId, r.stopId))
+                })
             else EngineTransition(s.copy(lastAck = ack(c.id, CommandOutcome.IGNORED, "STOP_PENDING")))
         }
         else -> EngineTransition(s.copy(lastAck = ack(c.id, CommandOutcome.IGNORED, "NOT_RECORDING")))

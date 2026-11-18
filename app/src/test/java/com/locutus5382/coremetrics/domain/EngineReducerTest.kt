@@ -86,6 +86,69 @@ class EngineReducerTest {
         assertEquals(listOf(EngineEffect.PersistStopIntent(42, "stop-1")), retry.effects)
     }
 
+    @Test fun stopRetryRestoresBothFailedProofsWithOneCommand() {
+        val pending = reduce(recording(), stop()).state
+        val stopFailed = reduce(pending,
+            EngineEvent.StopIntentFailed(42, "stop-1", "LEASE_WRITE_FAILED")).state
+        val bothFailed = reduce(stopFailed,
+            EngineEvent.SamplingPauseFailed(42, "stop-1", "SAMPLER_JOIN_FAILED")).state
+        val retry = reduce(bothFailed, stop("retry-both"))
+        assertEquals(listOf(
+            EngineEffect.PersistStopIntent(42, "stop-1"),
+            EngineEffect.PauseSampling(42, "stop-1")
+        ), retry.effects)
+        val retried = retry.state.recording as RecordingState.StopRequested
+        assertEquals(null, retried.persistError)
+        assertEquals(null, retried.pauseError)
+        assertFalse(retried.durableStop)
+        assertFalse(retried.samplingPaused)
+        val stopConfirmed = reduce(retry.state,
+            EngineEvent.StopIntentPersisted(42, "stop-1"))
+        assertTrue(stopConfirmed.effects.isEmpty())
+        val pausedConfirmed = reduce(stopConfirmed.state,
+            EngineEvent.SamplingPaused(42, "stop-1"))
+        assertEquals(listOf(
+            EngineEffect.FinalizeSession(42, "stop-1", StopReason.USER)
+        ), pausedConfirmed.effects)
+    }
+
+    @Test fun retryBothProofsCannotBeRepeatedBeforeTheyAcknowledge() {
+        val pending = reduce(recording(), stop()).state
+        val both = reduce(reduce(pending,
+            EngineEvent.StopIntentFailed(42, "stop-1", "DISK")).state,
+            EngineEvent.SamplingPauseFailed(42, "stop-1", "JOIN")).state
+        val retry = reduce(both, stop("retry-both"))
+        val repeated = reduce(retry.state, stop("retry-again"))
+        assertTrue(repeated.effects.isEmpty())
+        assertEquals(CommandOutcome.IGNORED, repeated.state.lastAck?.outcome)
+    }
+
+    @Test fun persistedStopWithPauseFailureDoesNotRewriteStop() {
+        val pending = reduce(recording(), stop()).state
+        val stopConfirmed = reduce(pending,
+            EngineEvent.StopIntentPersisted(42, "stop-1")).state
+        val pausedFailed = reduce(stopConfirmed,
+            EngineEvent.SamplingPauseFailed(42, "stop-1", "JOIN")).state
+        assertEquals(listOf(EngineEffect.PauseSampling(42, "stop-1")),
+            reduce(pausedFailed, stop("retry-join")).effects)
+    }
+
+    @Test fun pausedSamplerWithFailedStopRetriesOnlyDurability() {
+        val pending = reduce(recording(), stop()).state
+        val paused = reduce(pending,
+            EngineEvent.SamplingPaused(42, "stop-1")).state
+        val stopFailed = reduce(paused,
+            EngineEvent.StopIntentFailed(42, "stop-1", "DISK")).state
+        val retry = reduce(stopFailed, stop("retry-lease"))
+        assertEquals(listOf(EngineEffect.PersistStopIntent(42, "stop-1")),
+            retry.effects)
+        val finalizing = reduce(retry.state,
+            EngineEvent.StopIntentPersisted(42, "stop-1"))
+        assertEquals(listOf(
+            EngineEffect.FinalizeSession(42, "stop-1", StopReason.USER)),
+            finalizing.effects)
+    }
+
     @Test fun startWhileStopPendingCannotCreateNewSession() {
         val pending = reduce(recording(), stop()).state
         assertTrue(reduce(pending, start("other-start")).effects.isEmpty())

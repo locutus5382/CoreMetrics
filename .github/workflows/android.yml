@@ -64,6 +64,8 @@ jobs:
             classes: com.locutus5382.coremetrics.HeimdallDebugServiceAndroidTest
           - group: heimdall-native-restart
             classes: com.locutus5382.coremetrics.HeimdallNativeRestartAndroidTest
+          - group: heimdall-terminal-recovery
+            classes: com.locutus5382.coremetrics.HeimdallTerminalRecoveryAndroidTest
           - group: reports-ui
             classes: com.locutus5382.coremetrics.DukoComparisonReportTest,com.locutus5382.coremetrics.DukoSessionReportTest,com.locutus5382.coremetrics.ScorecardRuntimeTest,com.locutus5382.coremetrics.HudBatteryOptionsTest
     permissions:
