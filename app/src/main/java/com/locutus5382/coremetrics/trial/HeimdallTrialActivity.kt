@@ -194,15 +194,9 @@ class HeimdallTrialActivity : ComponentActivity() {
             Uri.parse("content://$packageName.monitor.status"),
             "status", null, null)
             ?: error("MONITOR_STATUS_UNAVAILABLE")
-        // A missing data contract cannot be interpreted as idle. Only the
-        // local, app-private :monitor process may publish these fields.
-        check(provider.containsKey("heimdallRawRecoveryOwner") &&
-            provider.containsKey("serviceAlive") &&
-            provider.containsKey("running") &&
-            provider.containsKey("starting") &&
-            provider.containsKey("saving")) {
-                "MONITOR_STATUS_INCOMPLETE"
-            }
+        // Versioned, explicit fields. Fail closed and report exactly which
+        // field is absent, rather than showing only IllegalStateException.
+        HeimdallTrialStatusContract.verify(provider)
         val store = UiSessionStoreOwner.get(applicationContext)
         val unfinished = store.hasUnfinishedRecording()
         // A completed STOP clears the live lease. Retain only the most recent
@@ -287,9 +281,10 @@ class HeimdallTrialActivity : ComponentActivity() {
                 verifySave.isEnabled = stopBaseline != null && !savedCheckInFlight
             }.onFailure {
                 lastSnapshot = null
-                lastReport = "Monitor status unavailable: " +
-                    it.javaClass.simpleName +
-                    ". Do not open a new recording until status is verified."
+                val reason = (it.message ?: it.javaClass.simpleName)
+                    .take(220)
+                lastReport = "Monitor check failed: " + reason +
+                    ". No recording requested. Preserve existing sessions."
                 details.text = lastReport
                 start.isEnabled = false
                 stop.isEnabled = false
