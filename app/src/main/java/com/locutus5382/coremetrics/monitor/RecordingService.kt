@@ -483,13 +483,19 @@ class RecordingService:Service() {
                             observeHeimdallDebugState(state)
                         }
                     })
-                val handoff=NativeRecoveryHandoffEvidence(
-                    serviceEpoch=runtime.epoch,
-                    originalSessionId=recoveredId,
-                    legacyTaskAbsent=true,
-                    legacySessionInactive=true,
-                    legacyOverlayDetached=true,
-                )
+                val handoff=withContext(Dispatchers.Main.immediate) {
+                    // Recheck actual live service state, not caller-supplied
+                    // ownership booleans. The only active "starting" flag is
+                    // our own main-thread debug reservation.
+                    NativeRecoveryHandoffEvidence(
+                        serviceEpoch=runtime.epoch,
+                        originalSessionId=recoveredId,
+                        legacyTaskAbsent=task==null,
+                        legacySessionInactive=!armed && !MonitorState.running &&
+                            !MonitorState.standby && !stopping,
+                        legacyOverlayDetached=!hud.attached(),
+                    )
+                }
                 val accepted=runtime.recover(
                     handoff=handoff,
                     originalSessionId=recoveredId,
