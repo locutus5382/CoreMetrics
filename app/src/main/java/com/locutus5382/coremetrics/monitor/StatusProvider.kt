@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Binder
 import android.os.Process
+import com.locutus5382.coremetrics.BuildConfig
 import com.locutus5382.coremetrics.telemetry.Snapshot
 
 /**
@@ -81,6 +82,19 @@ class StatusProvider : ContentProvider() {
             putString("fpsStatus", s?.surfaceFpsStatus)
             putString("app", s?.appPackage)
             putLong("lastSampleAt", s?.timeMs ?: 0L)
+            // Debug-only service-owned diagnostic observations. This is not
+            // recording truth and never authorizes resume, STOP or overlay work.
+            if (BuildConfig.DEBUG) HeimdallServiceShadowAudit.snapshot()?.let { audit ->
+                putString("heimdallShadowEpoch", audit.epoch)
+                putLong("heimdallShadowSequence", audit.sequence)
+                putLong("heimdallShadowSessionId", audit.sessionId ?: 0L)
+                putString("heimdallShadowStop", audit.stop.name)
+                putBoolean("heimdallShadowSamplerExited", audit.samplerExited)
+                putString("heimdallShadowFinish", audit.finish.name)
+                putBoolean("heimdallShadowServiceDestroyed", audit.serviceDestroyed)
+                putStringArrayList("heimdallShadowFindings",
+                    ArrayList(audit.findings.map { it.name }.sorted()))
+            }
         }
     }
     override fun query(uri: Uri, projection: Array<String>?, selection: String?,
