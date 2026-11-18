@@ -381,6 +381,20 @@ class RecordingService:Service() {
             is RecordingState.Recovering -> recording.sessionId
             else -> 0L
         }
+        // The domain owns monotonic session elapsed time. The legacy private
+        // StatusProvider exposes a wall-clock start, so convert without
+        // blocking the service main thread on a SQLite query.
+        val originalElapsed=when(recording) {
+            is RecordingState.Recording -> recording.startedAtElapsedMs
+            is RecordingState.Recovering -> recording.startedAtElapsedMs
+            else -> null
+        }
+        if(originalElapsed!=null) {
+            val since=(SystemClock.elapsedRealtime()-originalElapsed)
+                .coerceAtLeast(0L)
+            MonitorState.startedAt=(System.currentTimeMillis()-since)
+                .coerceAtLeast(0L)
+        }
         MonitorState.latest=null // no synthetic or idle telemetry
         MonitorState.message="Heimdall DEBUG · "+recording.javaClass.simpleName
         if(heimdallDebugStopPending &&
