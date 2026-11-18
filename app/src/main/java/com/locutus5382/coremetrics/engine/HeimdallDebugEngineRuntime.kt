@@ -6,6 +6,7 @@ import com.locutus5382.coremetrics.domain.CommandOrigin
 import com.locutus5382.coremetrics.domain.EngineCommand
 import com.locutus5382.coremetrics.domain.EngineController
 import com.locutus5382.coremetrics.domain.EngineState
+import com.locutus5382.coremetrics.domain.RecordingState
 import com.locutus5382.coremetrics.domain.LegacyGuardedEffectPort
 import com.locutus5382.coremetrics.domain.StopReason
 import kotlinx.coroutines.CoroutineScope
@@ -67,7 +68,13 @@ internal class HeimdallDebugEngineRuntime(
 
     suspend fun stop(): Boolean {
         val active = controller ?: return false
-        active.submit(EngineCommand.Stop(
+        // Repeated notification/QS STOP must also recover a finalized-but-
+        // uncommitted original row, rather than leaving a live foreground
+        // service with an unresponsive STOP control.
+        if (active.state.value.recording is RecordingState.FinalizeFailed)
+            active.submit(EngineCommand.RetryFinalization(
+                "debug-finalize-retry-${UUID.randomUUID()}", CommandOrigin.APP))
+        else active.submit(EngineCommand.Stop(
             "debug-stop-${UUID.randomUUID()}", CommandOrigin.APP))
         return true
     }
