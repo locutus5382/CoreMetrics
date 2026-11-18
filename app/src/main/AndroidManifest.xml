@@ -22,6 +22,9 @@
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
+        <!-- Internal-only. In non-trial variants onCreate finishes immediately. -->
+        <activity android:name=".trial.HeimdallTrialActivity"
+            android:exported="false" android:screenOrientation="sensorLandscape"/>
         <service android:name=".monitor.RecordingService"
             android:process=":monitor" android:exported="false"
             android:foregroundServiceType="specialUse">
