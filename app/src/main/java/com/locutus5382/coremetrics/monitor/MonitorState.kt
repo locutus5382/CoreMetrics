@@ -31,11 +31,13 @@ internal object MonitorState {
     @Volatile var heimdallNeedsRetry = false
     @Volatile var heimdallNeedsRepair = false
     @Volatile var heimdallOriginalSessionId = 0L
+    @Volatile var heimdallIssueCode: String? = null
     fun clear(messageText: String) {
         heimdallRecorderPhase = null
         heimdallNeedsRetry = false
         heimdallNeedsRepair = false
         heimdallOriginalSessionId = 0L
+        heimdallIssueCode = null
         running = false; starting = false; sessionId = 0L
         startedAt = 0L; latest = null; message = messageText
     }
