@@ -45,13 +45,15 @@ internal class HeimdallAndroidSessionIo(
         withContext(Dispatchers.IO) {
             val defaults = store.recordingDefaults()
             RecorderLease.start(application, sessionId, defaults.label,
-                defaults.configuration, intervalMs, false, false)
+                defaults.configuration, intervalMs, false, false,
+                owner = RecorderLease.Owner.HEIMDALL_DEBUG)
         }
 
     override suspend fun persistStop(sessionId: Long): Boolean =
         withContext(Dispatchers.IO) {
             val lease = RecorderLease.recover(application)
-            if (lease?.recording != true || lease.id != sessionId)
+            if (lease?.recording != true || lease.id != sessionId ||
+                lease.owner != RecorderLease.Owner.HEIMDALL_DEBUG)
                 return@withContext false
             if (lease.stopRequested) true else RecorderLease.requestStop(application)
         }
@@ -102,6 +104,7 @@ internal class HeimdallAndroidSessionIo(
         withContext(Dispatchers.IO) {
             val lease = RecorderLease.recover(application)
             lease?.recording == true && lease.id == sessionId &&
+                lease.owner == RecorderLease.Owner.HEIMDALL_DEBUG &&
                 !lease.stopRequested && store.canResume(sessionId)
         }
 
@@ -109,6 +112,7 @@ internal class HeimdallAndroidSessionIo(
         withContext(Dispatchers.IO) {
             val lease = RecorderLease.recover(application)
             lease?.recording == true && lease.id == sessionId &&
+                lease.owner == RecorderLease.Owner.HEIMDALL_DEBUG &&
                 lease.stopRequested && store.canResume(sessionId)
         }
 
@@ -116,11 +120,13 @@ internal class HeimdallAndroidSessionIo(
         withContext(Dispatchers.IO) {
             val lease = RecorderLease.recover(application)
             if (lease?.recording != true || lease.id != sessionId ||
+                lease.owner != RecorderLease.Owner.HEIMDALL_DEBUG ||
                 lease.stopRequested || !store.canResume(sessionId))
                 return@withContext false
             if (!RecorderLease.markRecovery(application)) return@withContext false
             RecorderLease.start(application, sessionId, lease.label,
-                lease.configuration, lease.intervalMs, false, restored = true)
+                lease.configuration, lease.intervalMs, false, restored = true,
+                owner = RecorderLease.Owner.HEIMDALL_DEBUG)
         }
 
     override suspend fun unfinishedRow(sessionId: Long): Boolean =
@@ -134,7 +140,8 @@ internal class HeimdallAndroidSessionIo(
                     "INTERRUPTED_RECOVERED"))
                 return@withContext false
             val lease = RecorderLease.recover(application)
-            if (lease?.recording == true && lease.id == sessionId)
+            if (lease?.recording == true && lease.id == sessionId &&
+                lease.owner == RecorderLease.Owner.HEIMDALL_DEBUG)
                 RecorderLease.clear(application)
             else true
         }

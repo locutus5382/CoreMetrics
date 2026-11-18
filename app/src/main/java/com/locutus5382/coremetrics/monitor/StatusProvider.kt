@@ -84,6 +84,16 @@ class StatusProvider : ContentProvider() {
             putLong("lastSampleAt", s?.timeMs ?: 0L)
             // Debug-only service-owned diagnostic observations. This is not
             // recording truth and never authorizes resume, STOP or overlay work.
+            if (BuildConfig.DEBUG) context?.let { ctx ->
+                // Read from the actual :monitor owner process. The UI process
+                // must NOT use its own SharedPreferences cache as lease truth.
+                val owner = RecorderLease.rawOwner(ctx)
+                val saved = RecorderLease.recover(ctx)
+                putString("heimdallRawRecoveryOwner", owner?.name)
+                putLong("heimdallRecoveryLeaseId", saved?.id ?: 0L)
+                putBoolean("heimdallRecoveryStopPersisted",
+                    saved?.stopRequested == true)
+            }
             if (BuildConfig.DEBUG) HeimdallServiceShadowAudit.snapshot()?.let { audit ->
                 putString("heimdallShadowEpoch", audit.epoch)
                 putLong("heimdallShadowSequence", audit.sequence)
