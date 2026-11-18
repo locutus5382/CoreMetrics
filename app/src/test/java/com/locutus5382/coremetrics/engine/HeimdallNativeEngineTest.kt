@@ -209,6 +209,58 @@ class HeimdallNativeEngineTest {
         } finally { scope.cancel() }
     }
 
+    @Test fun nativeHandoffRequiresRealMatchingLeaseAndRow() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val io = FakeIo().apply { resumeOk = false; terminalOk = false }
+            val h = host(io, scope)
+            val valid = NativeRecoveryHandoffEvidence(
+                "epoch", 73L, legacyTaskAbsent = true,
+                legacySessionInactive = true, legacyOverlayDetached = true)
+            assertFalse(h.acceptNativeRecoveryHandoff(valid))
+            io.resumeOk = true
+            assertFalse(h.acceptNativeRecoveryHandoff(valid.copy(serviceEpoch = "wrong")))
+            assertFalse(h.acceptNativeRecoveryHandoff(valid.copy(legacyTaskAbsent = false)))
+            assertFalse(h.acceptNativeRecoveryHandoff(valid.copy(legacyOverlayDetached = false)))
+            assertTrue(h.acceptNativeRecoveryHandoff(valid))
+            assertFalse(h.acceptNativeRecoveryHandoff(valid))
+            assertTrue(h.preflightRecovery(73L))
+            LegacyGuardedEffectPort("epoch", h).resumeSession(73L)
+            assertEquals(73L, h.evidence().activeSessionId)
+            assertEquals(0, io.begins)
+        } finally { scope.cancel() }
+    }
+
+    @Test fun nativeTerminalRecoveryFinalizesWithoutSamplingOrNewRow() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val io = FakeIo().apply { resumeOk = false; terminalOk = true }
+            val h = host(io, scope)
+            assertTrue(h.acceptNativeRecoveryHandoff(
+                NativeRecoveryHandoffEvidence("epoch", 91L, true, true, true)))
+            assertTrue(h.preflightPersistedStop(91L))
+            val port = LegacyGuardedEffectPort("epoch", h)
+            port.finalizeSession(91L, "recovery-stop-91", StopReason.USER)
+            assertEquals(91L, h.evidence().finalizedSessionId)
+            assertEquals(0, io.begins)
+            assertEquals(0, io.collected)
+        } finally { scope.cancel() }
+    }
+
+    @Test fun nativeRecoveryCannotClaimUnverifiedRow() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val io = FakeIo().apply { resumeOk = false; terminalOk = false }
+            val h = host(io, scope)
+            assertFalse(h.acceptNativeRecoveryHandoff(
+                NativeRecoveryHandoffEvidence("epoch", 92L, true, true, true)))
+            failContaining("OWNERSHIP_NOT_TRANSFERRED") {
+                h.preflightRecovery(92L)
+            }
+            assertEquals(0, io.begins)
+        } finally { scope.cancel() }
+    }
+
     @Test fun restoreOriginalIdNeverStartsNewSession() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {

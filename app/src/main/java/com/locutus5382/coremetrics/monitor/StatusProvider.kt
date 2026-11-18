@@ -84,6 +84,7 @@ class StatusProvider : ContentProvider() {
             putLong("lastSampleAt", s?.timeMs ?: 0L)
             // Debug-only service-owned diagnostic observations. This is not
             // recording truth and never authorizes resume, STOP or overlay work.
+            if (BuildConfig.DEBUG) putInt("heimdallMonitorPid", Process.myPid())
             if (BuildConfig.DEBUG) context?.let { ctx ->
                 // Read from the actual :monitor owner process. The UI process
                 // must NOT use its own SharedPreferences cache as lease truth.
