@@ -22,7 +22,7 @@ The `Legacy` prefix on the guarded port describes the migration boundary, not wh
 
 1. Native engine loop runs at the validated 2s or 5s cadence, does not burst to catch up and never creates fake samples after a dropped tick.
 2. The native session host begins a session only after exclusive handoff. The recovery lease must be persisted before the sampling job starts.
-3. STOP is durable before sampler cancellation; `cancelAndJoin` confirms the sampling job has finished before SQL finalization.
+3. The normal STOP path persists terminal intent before cancellation. If persistence fails, sampling is still stopped promptly; SQL finalization remains blocked until both durable STOP and `cancelAndJoin` quiescence are confirmed.
 4. A successful SQLite finish precedes lease clearing. Finalization failures remain retryable against the **original session ID**.
 5. A process-restart path validates the original row and lease. Valid resumptions renew the lease. Persisted terminal STOP finalizes without resampling. Invalid leases can close the existing unfinished row.
 6. Overlay functions deliberately fail closed until the new Canvas/WindowManager owner is implemented. There is no route for the new engine to start another old HUD.
