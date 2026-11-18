@@ -37,9 +37,7 @@ class StatusProvider : ContentProvider() {
                 val raw = context?.let { RecorderLease.rawSession(it) }
                 putBoolean("heimdallUnresolvedRawLease",
                     raw?.active == true &&
-                    (lease == null || lease.owner == RecorderLease.Owner.UNKNOWN ||
-                        lease.owner == RecorderLease.Owner.HEIMDALL_DEBUG &&
-                        !BuildConfig.DEBUG))
+                    (lease == null || lease.owner == RecorderLease.Owner.UNKNOWN))
             }
             putLong("recoverySessionId",lease?.id?:0L)
             putBoolean("running", MonitorState.running)
