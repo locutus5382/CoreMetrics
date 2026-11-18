@@ -1,7 +1,7 @@
 package com.locutus5382.coremetrics.trial
 
 import android.Manifest
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
  * This Activity is not exported. Service admission always revalidates both
  * the lease and the SQLite row; these button rules are presentation only.
  */
-class HeimdallTrialActivity : Activity() {
+class HeimdallTrialActivity : ComponentActivity() {
     private val midnight = Color.rgb(12, 21, 38)
     private val white = Color.rgb(238, 242, 247)
     private val grey = Color.rgb(165, 175, 190)
