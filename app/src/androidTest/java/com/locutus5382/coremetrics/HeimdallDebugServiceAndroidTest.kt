@@ -12,6 +12,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.monitor.RecordingService
+import com.locutus5382.coremetrics.trial.HeimdallTrialSavedSession
+import com.locutus5382.coremetrics.trial.TrialSavedSessionEvidence
+import com.locutus5382.coremetrics.trial.TrialSavedSessionResult
 import com.locutus5382.coremetrics.ui.MainActivity
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -41,6 +44,31 @@ class HeimdallDebugServiceAndroidTest {
         ctx.contentResolver.call(
             Uri.parse("content://${ctx.packageName}.monitor.status"),
             "status", null, null)
+
+    private fun savedEvidence(ctx: Context, db: SessionStore, id: Long):
+        TrialSavedSessionEvidence {
+        val state=status(ctx)
+        val row=db.sessionById(id)
+        val total=db.readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM sessions", null
+        ).use { c -> if(c.moveToFirst()) c.getLong(0) else 0L }
+        return TrialSavedSessionEvidence(
+            statusVerified = state != null &&
+                state.containsKey("heimdallRawRecoveryOwner"),
+            enginePhase = state?.getString("heimdallRecorderPhase"),
+            rawOwner = state?.getString("heimdallRawRecoveryOwner"),
+            originalSessionId = id,
+            rowStatus = row?.status,
+            endedAtMs = row?.endedAt,
+            persistedSamples = db.storedSampleCount(id),
+            totalSessionRows = total,
+            unfinishedRowExists = db.hasUnfinishedRecording(),
+            rawLeaseUnresolved =
+                state?.getBoolean("heimdallUnresolvedRawLease") ?: true,
+            repairNeeded =
+                state?.getBoolean("heimdallRecorderNeedsRepair") ?: true,
+        )
+    }
 
     private fun <T> waitFor(maxMs: Long, read: () -> T?): T {
         val until=SystemClock.elapsedRealtime()+maxMs
@@ -88,6 +116,9 @@ class HeimdallDebugServiceAndroidTest {
                 waitFor(35_000) {
                     if(db.storedSampleCount(id)>0L) true else null
                 }
+                val beforeStop=savedEvidence(ctx, db, id)
+                assertEquals("RECORDING", beforeStop.rowStatus)
+                assertEquals("HEIMDALL_DEBUG", beforeStop.rawOwner)
                 send(ctx, RecordingService.STOP)
                 waitFor(30_000) {
                     db.sessionById(id)?.takeIf { row ->
@@ -101,6 +132,17 @@ class HeimdallDebugServiceAndroidTest {
                     if(status(ctx)?.getString("heimdallRawRecoveryOwner")==null)
                         true else null
                 }
+                val persisted=waitFor(10_000) {
+                    savedEvidence(ctx, db, id).let { candidate ->
+                        val check=HeimdallTrialSavedSession.evaluate(
+                            beforeStop, candidate)
+                        if(check.passed) check else null
+                    }
+                }
+                assertEquals(TrialSavedSessionResult.VERIFIED_SAVED,
+                    persisted.result)
+                assertEquals(id, persisted.originalSessionId)
+                assertTrue(persisted.preservedSamples >= beforeStop.persistedSamples)
             }
         } finally {
             // Do not clear the lease or database on a failed test: the

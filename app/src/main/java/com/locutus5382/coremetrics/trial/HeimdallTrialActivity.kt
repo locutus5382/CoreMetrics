@@ -44,8 +44,12 @@ class HeimdallTrialActivity : ComponentActivity() {
     private lateinit var stop: Button
     private lateinit var copy: Button
     private lateinit var verify: Button
+    private lateinit var verifySave: Button
     private var growthCheckInFlight = false
+    private var savedCheckInFlight = false
     private var growthReport = "Sample growth: NOT VERIFIED"
+    private var savedReport = "Saved session: NOT VERIFIED"
+    private var stopBaseline: TrialSavedSessionEvidence? = null
     private val handler = Handler(Looper.getMainLooper())
     private var lastSnapshot: TrialSnapshot? = null
     private var lastReport = "Not checked yet"
@@ -57,6 +61,8 @@ class HeimdallTrialActivity : ComponentActivity() {
         val rawOwner: String?,
         val sessionId: Long,
         val samples: Long,
+        val endedAtMs: Long?,
+        val totalSessionRows: Long,
         val statusMessage: String,
         val retryNeeded: Boolean,
         val repairNeeded: Boolean,
@@ -97,6 +103,17 @@ class HeimdallTrialActivity : ComponentActivity() {
                 sessionId = sessionId, persistedSamples = samples,
                 rowStatus = persistedRowStatus,
                 unresolvedLease = rawLeaseUnresolved,
+            )
+        val savedEvidence: TrialSavedSessionEvidence
+            get() = TrialSavedSessionEvidence(
+                statusVerified = monitorStatusVerified,
+                enginePhase = phase, rawOwner = rawOwner,
+                originalSessionId = sessionId,
+                rowStatus = persistedRowStatus, endedAtMs = endedAtMs,
+                persistedSamples = samples, totalSessionRows = totalSessionRows,
+                unfinishedRowExists = unfinishedRow,
+                rawLeaseUnresolved = rawLeaseUnresolved,
+                repairNeeded = repairNeeded,
             )
     }
 
@@ -148,6 +165,10 @@ class HeimdallTrialActivity : ComponentActivity() {
             verifySampleGrowth()
         }
         verify.isEnabled = false
+        verifySave = action("Verify completed STOP and saved session", amber) {
+            verifySavedSession()
+        }
+        verifySave.isEnabled = false
         copy = action("Copy diagnostic summary", cobalt) {
             getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
                 ClipData.newPlainText("Heimdall trial status", lastReport))
@@ -195,8 +216,14 @@ class HeimdallTrialActivity : ComponentActivity() {
         if (seen != null) prefs.edit().putLong(
             "last_seen_session_id", seen).apply()
         val rowId = seen ?: prefs.getLong("last_seen_session_id", 0L)
-        val persisted = if (rowId > 0L) store.recordingStatus(rowId) else null
+        val originalRow = if (rowId > 0L) store.sessionById(rowId) else null
+        val persisted = originalRow?.status
         val sampleCount = if (rowId > 0L) store.storedSampleCount(rowId) else 0L
+        val totalRows = store.readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM sessions", null
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+        }
         return TrialSnapshot(
             monitorStatusVerified = true,
             serviceAlive = provider.getBoolean("serviceAlive"),
@@ -204,6 +231,8 @@ class HeimdallTrialActivity : ComponentActivity() {
             rawOwner = provider?.getString("heimdallRawRecoveryOwner"),
             sessionId = rowId,
             samples = sampleCount,
+            endedAtMs = originalRow?.endedAt,
+            totalSessionRows = totalRows,
             statusMessage = provider?.getString("message") ?: "Status unavailable",
             retryNeeded = provider?.getBoolean("heimdallStopOrSaveRetry") ?: false,
             repairNeeded = provider?.getBoolean("heimdallRecorderNeedsRepair") ?: false,
@@ -225,6 +254,7 @@ class HeimdallTrialActivity : ComponentActivity() {
         start.isEnabled = false
         stop.isEnabled = false
         verify.isEnabled = false
+        verifySave.isEnabled = false
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { readVerified() }
@@ -240,17 +270,21 @@ class HeimdallTrialActivity : ComponentActivity() {
                     appendLine("Unfinished SQLite row: ${s.unfinishedRow}")
                     appendLine("Persisted SQLite row: ${s.persistedRowStatus ?: "NONE"}")
                     appendLine("Persisted samples: ${s.samples}")
+                    appendLine("SQLite sessions: ${s.totalSessionRows}")
+                    appendLine("Original session endedAt: ${s.endedAtMs ?: "NONE"}")
                     appendLine("Recording: ${s.running}; saving: ${s.saving}")
                     appendLine("Retry: ${s.retryNeeded}; repair: ${s.repairNeeded}")
                     appendLine("Unresolved lease: ${s.rawLeaseUnresolved}")
                     appendLine("Issue: ${s.issueCode ?: "NONE"}")
                     appendLine("Message: ${s.statusMessage}")
                     appendLine(growthReport)
+                    appendLine(savedReport)
                 }
                 details.text = lastReport
                 start.isEnabled = s.mayRequestStart
                 stop.isEnabled = s.mayRequestStop
                 verify.isEnabled = s.mayVerifySamples && !growthCheckInFlight
+                verifySave.isEnabled = stopBaseline != null && !savedCheckInFlight
             }.onFailure {
                 lastSnapshot = null
                 lastReport = "Monitor status unavailable: " +
@@ -260,6 +294,7 @@ class HeimdallTrialActivity : ComponentActivity() {
                 start.isEnabled = false
                 stop.isEnabled = false
                 verify.isEnabled = false
+                verifySave.isEnabled = false
             }
         }
     }
@@ -304,6 +339,30 @@ class HeimdallTrialActivity : ComponentActivity() {
         }
     }
 
+    private fun verifySavedSession() {
+        val baseline = stopBaseline ?: return
+        if (savedCheckInFlight) return
+        savedCheckInFlight = true
+        verifySave.isEnabled = false
+        details.text = "Checking original session finalization and durable samples…"
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { readVerified() }
+            }
+            savedReport = if (result.isFailure) {
+                "Saved session: STATUS_UNAVAILABLE; original ID " +
+                    baseline.originalSessionId
+            } else {
+                val check = HeimdallTrialSavedSession.evaluate(
+                    baseline, result.getOrThrow().savedEvidence)
+                "Saved session: ${check.result.name}; original ID " +
+                    "${check.originalSessionId}; retained samples ${check.preservedSamples}"
+            }
+            savedCheckInFlight = false
+            refresh()
+        }
+    }
+
     private fun submitStart() {
         val s = lastSnapshot ?: return
         if (!s.mayRequestStart) {
@@ -338,6 +397,10 @@ class HeimdallTrialActivity : ComponentActivity() {
                     refresh()
                     return@onSuccess
                 }
+                // This proof belongs to a previous STOP only. Never reuse it
+                // to validate a later newly created session.
+                stopBaseline = null
+                savedReport = "Saved session: NOT VERIFIED"
                 runCatching {
                     startForegroundService(Intent(
                         this@HeimdallTrialActivity, RecordingService::class.java)
@@ -357,20 +420,56 @@ class HeimdallTrialActivity : ComponentActivity() {
     }
 
     private fun submitStop() {
-        val s = lastSnapshot ?: return
-        if (!s.mayRequestStop) {
+        val snapshot = lastSnapshot ?: return
+        if (!snapshot.mayRequestStop) {
             refresh()
             return
         }
-        runCatching {
-            startForegroundService(Intent(this, RecordingService::class.java)
-                .setAction(RecordingService.HEIMDALL_DEBUG_STOP))
-        }.onFailure {
-            details.text = "STOP request rejected: " + it.javaClass.simpleName
-        }
+        // Recheck the authoritative owner on the IO dispatcher. A stale
+        // display phase must not send STOP to a different session/engine.
         lastSnapshot = null
         stop.isEnabled = false
-        handler.postDelayed({ refresh() }, 650L)
+        start.isEnabled = false
+        verify.isEnabled = false
+        verifySave.isEnabled = false
+        details.text = "Confirming original recording owner before STOP…"
+        lifecycleScope.launch {
+            val checked = withContext(Dispatchers.IO) {
+                runCatching { readVerified() }
+            }
+            checked.onSuccess { fresh ->
+                if (!fresh.mayRequestStop) {
+                    details.text = "STOP not sent: the original owner could " +
+                        "not be verified. Refresh and inspect diagnostics."
+                    refresh()
+                    return@onSuccess
+                }
+                if (fresh.rawOwner == "HEIMDALL_DEBUG" &&
+                    fresh.persistedRowStatus == "RECORDING" &&
+                    fresh.sessionId > 0L &&
+                    (stopBaseline == null ||
+                        stopBaseline?.originalSessionId != fresh.sessionId)) {
+                    stopBaseline = fresh.savedEvidence
+                    savedReport = "Saved session: STOP issued; verify after saving"
+                }
+                runCatching {
+                    startForegroundService(Intent(
+                        this@HeimdallTrialActivity, RecordingService::class.java)
+                        .setAction(RecordingService.HEIMDALL_DEBUG_STOP))
+                }.onFailure {
+                    details.text = "STOP request rejected: " +
+                        it.javaClass.simpleName
+                }
+                handler.postDelayed({ refresh() }, 650L)
+            }.onFailure {
+                details.text = "STOP not sent: monitor status unavailable (" +
+                    it.javaClass.simpleName + "). Use the existing recorder " +
+                    "notification if the monitoring service is still active."
+                stop.isEnabled = false
+                start.isEnabled = false
+                verifySave.isEnabled = false
+            }
+        }
     }
 
     override fun onDestroy() {
