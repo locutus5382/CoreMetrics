@@ -49,8 +49,8 @@ class EngineReducerTest {
         assertTrue(stopped.effects.isEmpty()) // no row to journal STOP against yet
         val opened = reduce(stopped.state, EngineEvent.SessionOpened("start-1", 42L, 500L))
         assertTrue(opened.state.recording is RecordingState.StopRequested)
-        assertEquals(listOf(EngineEffect.PauseSampling(42),
-            EngineEffect.PersistStopIntent(42, "stop-1")), opened.effects)
+        assertEquals(listOf(EngineEffect.PersistStopIntent(42, "stop-1"),
+            EngineEffect.PauseSampling(42, "stop-1")), opened.effects)
     }
 
     @Test fun durableStopIsRequiredBeforeFinalization() {
@@ -58,10 +58,12 @@ class EngineReducerTest {
         assertEquals(RecordingState.StopRequested(42L, "stop-1", StopReason.USER),
             pending.state.recording)
         assertTrue(pending.effects.none { it is EngineEffect.FinalizeSession })
-        val confirmed = reduce(pending.state, EngineEvent.StopIntentPersisted(42, "stop-1"))
+        val persisted = reduce(pending.state, EngineEvent.StopIntentPersisted(42, "stop-1"))
+        assertTrue(persisted.state.recording is RecordingState.StopRequested)
+        assertTrue(persisted.effects.isEmpty())
+        val confirmed = reduce(persisted.state, EngineEvent.SamplingPaused(42, "stop-1"))
         assertTrue(confirmed.state.recording is RecordingState.Finalizing)
-        assertEquals(listOf(EngineEffect.FinalizeSession(42, "stop-1", StopReason.USER)),
-            confirmed.effects)
+        assertEquals(listOf(EngineEffect.FinalizeSession(42, "stop-1", StopReason.USER)), confirmed.effects)
         val saved = reduce(confirmed.state, EngineEvent.SessionFinalized(42, "stop-1"))
         assertEquals(RecordingState.Idle, saved.state.recording)
     }
@@ -201,7 +203,8 @@ class EngineReducerTest {
     @Test fun failedFinalizationCanOnlyRetryFinalizingOriginalSession() {
         val request = reduce(recording(), stop()).state
         val durable = reduce(request, EngineEvent.StopIntentPersisted(42, "stop-1")).state
-        val failed = reduce(durable, EngineEvent.SessionFinalizeFailed(42, "stop-1", "DISK_IO"))
+        val paused = reduce(durable, EngineEvent.SamplingPaused(42, "stop-1")).state
+        val failed = reduce(paused, EngineEvent.SessionFinalizeFailed(42, "stop-1", "DISK_IO"))
         assertEquals(RecordingState.FinalizeFailed(42L, "stop-1", StopReason.USER, "DISK_IO"),
             failed.state.recording)
         assertTrue(reduce(failed.state, start("retry-as-new")).effects.isEmpty())
@@ -244,4 +247,45 @@ class EngineReducerTest {
         assertEquals(32, s.recentCommandIds.size)
         assertEquals("layout-48", s.recentCommandIds.first())
     }
+    @Test fun samplingPauseAcknowledgmentIsMandatoryEvenWhenStopIsDurable() {
+        val pending = reduce(recording(), stop()).state
+        val persisted = reduce(pending, EngineEvent.StopIntentPersisted(42, "stop-1"))
+        assertTrue(persisted.effects.isEmpty())
+        assertTrue(persisted.state.recording is RecordingState.StopRequested)
+        val pauseFailed = reduce(persisted.state,
+            EngineEvent.SamplingPauseFailed(42, "stop-1", "PAUSE_FAILED"))
+        assertTrue(pauseFailed.state.recording is RecordingState.StopRequested)
+        val retry = reduce(pauseFailed.state, stop("pause-retry"))
+        assertEquals(listOf(EngineEffect.PauseSampling(42, "stop-1")), retry.effects)
+        val acknowledged = reduce(retry.state, EngineEvent.SamplingPaused(42, "stop-1"))
+        assertTrue(acknowledged.state.recording is RecordingState.Finalizing)
+    }
+
+    @Test fun stopAckOrderingIsIndependentOfCompletionOrder() {
+        val pending = reduce(recording(), stop()).state
+        val paused = reduce(pending, EngineEvent.SamplingPaused(42, "stop-1"))
+        assertTrue(paused.effects.isEmpty())
+        val persisted = reduce(paused.state, EngineEvent.StopIntentPersisted(42, "stop-1"))
+        assertEquals(listOf(EngineEffect.FinalizeSession(42, "stop-1", StopReason.USER)),
+            persisted.effects)
+    }
+
+    @Test fun resumeFailureNeverOpensASecondSession() {
+        val recovered = reduce(base(), EngineEvent.Reconcile(42, 500, leaseEligible = true)).state
+        val failed = reduce(recovered, EngineEvent.SessionResumeFailed(42, "FAILED"))
+        assertEquals(RecordingState.Failed("RESUME_FAILED: FAILED", 42), failed.state.recording)
+        assertTrue(reduce(failed.state, start("new")).effects.isEmpty())
+    }
+
+    @Test fun failedInterruptedClosureCanBeRetriedWithoutResuming() {
+        val reconciling = reduce(base(), EngineEvent.Reconcile(42, leaseEligible = false)).state
+        val failure = reduce(reconciling, EngineEvent.InterruptedCloseFailed(42, "SQLITE_LOCK"))
+        assertTrue(failure.state.recording is RecordingState.FinalizeFailed)
+        val retried = reduce(failure.state, EngineEvent.Command(
+            EngineCommand.RetryFinalization("retry-close", CommandOrigin.APP)))
+        assertEquals(listOf(EngineEffect.CloseInterruptedSession(42)), retried.effects)
+        val done = reduce(retried.state, EngineEvent.InterruptedSessionClosed(42))
+        assertEquals(RecordingState.Idle, done.state.recording)
+    }
+
 }
