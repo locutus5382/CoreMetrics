@@ -90,6 +90,7 @@ class StatusProvider : ContentProvider() {
                 putLong("heimdallShadowSessionId", audit.sessionId ?: 0L)
                 putString("heimdallShadowStop", audit.stop.name)
                 putBoolean("heimdallShadowSamplerExited", audit.samplerExited)
+                putBoolean("heimdallShadowRecoveredTerminal", audit.recoveredTerminal)
                 putString("heimdallShadowFinish", audit.finish.name)
                 putBoolean("heimdallShadowServiceDestroyed", audit.serviceDestroyed)
                 putStringArrayList("heimdallShadowFindings",
