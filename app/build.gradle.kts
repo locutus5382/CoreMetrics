@@ -12,12 +12,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = 52
         versionName = "0.9.9.9-ui-io-hardening-alpha"
+        // Default builds NEVER start Heimdall as the main recorder.
+        buildConfigField("boolean", "HEIMDALL_TRIAL", "false")
+        buildConfigField("boolean", "HEIMDALL_NATIVE_DEFAULT", "false")
         manifestPlaceholders["coremetricsAppLabel"] = "CoreMetrics"
         manifestPlaceholders["coremetricsTileLabel"] = "CM REC"
         manifestPlaceholders["coremetricsHudTileLabel"] = "CM HUD"
     }
     // One canonical app; all four finishes are selected at runtime.
     buildTypes {
+        // Separate app ID and SQLite/SharedPreferences sandbox for Odin trials.
+        // Cannot overwrite a user's CoreMetrics installation or old sessions.
+        create("heimdallTrial") {
+            initWith(getByName("debug"))
+            isDebuggable = true
+            applicationIdSuffix = ".heimdalltrial"
+            versionNameSuffix = "-heimdall-trial"
+            matchingFallbacks += listOf("debug")
+            buildConfigField("boolean", "HEIMDALL_TRIAL", "true")
+            manifestPlaceholders["coremetricsAppLabel"] = "HEIMDALL Trial"
+            manifestPlaceholders["coremetricsTileLabel"] = "HEIMDALL REC (trial)"
+            manifestPlaceholders["coremetricsHudTileLabel"] = "HEIMDALL HUD (trial)"
+        }
         release {
             // R8 is enabled for public/release candidates; debug remains
             // unminified to retain stack traces and instrumentation parity.
