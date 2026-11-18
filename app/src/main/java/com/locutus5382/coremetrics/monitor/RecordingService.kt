@@ -295,7 +295,8 @@ class RecordingService:Service() {
         ))
         if(gate!=null) {
             RecorderJournal.event(this,"HEIMDALL_DEBUG_DENIED",gate.name)
-            if(task==null && !armed && !MonitorState.running) stopSelf(startId)
+            if(task==null && !armed && !MonitorState.starting &&
+                !MonitorState.running && !MonitorState.standby) stopSelf(startId)
             return START_NOT_STICKY
         }
         heimdallDebugReserved=true
@@ -419,8 +420,10 @@ class RecordingService:Service() {
                     " instance="+System.identityHashCode(this)+
                     " "+hud.windowIdentity())
         }
-        if(BuildConfig.DEBUG && requestedAction==HEIMDALL_DEBUG_START)
+        if(BuildConfig.DEBUG && requestedAction==HEIMDALL_DEBUG_START) {
+            if(heimdallDebugReserved) return START_STICKY // idempotent duplicate
             return requestHeimdallDebugStart(startId)
+        }
         if(heimdallDebugReserved) {
             // Every legacy command is blocked while Heimdall owns this service.
             // Existing notification/QS STOP and DISARM are forwarded to the
