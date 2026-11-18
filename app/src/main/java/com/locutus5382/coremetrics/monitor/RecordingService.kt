@@ -17,6 +17,14 @@ import android.os.SystemClock
 import android.service.quicksettings.TileService
 import com.locutus5382.coremetrics.BuildConfig
 import com.locutus5382.coremetrics.domain.LegacyAuditObservation
+import com.locutus5382.coremetrics.domain.EngineState
+import com.locutus5382.coremetrics.domain.RecordingState
+import com.locutus5382.coremetrics.engine.DebugEngineAdmissionEvidence
+import com.locutus5382.coremetrics.engine.DebugEngineDenial
+import com.locutus5382.coremetrics.engine.HeimdallDebugOwnershipPolicy
+import com.locutus5382.coremetrics.engine.HeimdallDebugEngineRuntime
+import com.locutus5382.coremetrics.engine.LegacyHandoffEvidence
+import com.locutus5382.coremetrics.engine.ReservedCommandRoute
 import com.locutus5382.coremetrics.data.SessionStore
 import com.locutus5382.coremetrics.data.ProcessSessionStoreOwner
 import com.locutus5382.coremetrics.quick.SessionTile
@@ -36,6 +44,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException as CoroutineCancelled
 
 /**
  * User-started :monitor foreground service. ARMED = one visible overlay and
@@ -44,6 +53,8 @@ import kotlinx.coroutines.withContext
  */
 class RecordingService:Service() {
     companion object {
+        const val HEIMDALL_DEBUG_START="com.locutus5382.coremetrics.DEBUG_HEIMDALL_START"
+        const val HEIMDALL_DEBUG_STOP="com.locutus5382.coremetrics.DEBUG_HEIMDALL_STOP"
         const val START="com.locutus5382.coremetrics.START"
         const val RECOVER="com.locutus5382.coremetrics.RECOVER_LEASE"
         const val STOP="com.locutus5382.coremetrics.STOP"
@@ -84,6 +95,13 @@ class RecordingService:Service() {
     private var armedLabel="Gameplay"
     private var armedConfig="Stock"
     private var armedInterval=5000L
+
+    /** Main-thread reservation. It stays held until service teardown, even after
+     * STOP, so stale legacy intents cannot open another session mid-finalization. */
+    private var heimdallDebugReserved=false
+    private var heimdallDebugStopPending=false
+    private var heimdallDebugStarted=false
+    private var heimdallDebugRuntime:HeimdallDebugEngineRuntime?=null
 
     /** Debug-only, read-only observation; never authorizes an effect. */
     private fun shadow(event: LegacyAuditObservation) {
@@ -257,6 +275,124 @@ class RecordingService:Service() {
         return result
     }
 
+    /**
+     * Debug-only opt-in; no production UI/QS path chooses this action.
+     * Called on the service main thread AFTER foreground promotion.
+     */
+    private fun requestHeimdallDebugStart(startId:Int):Int {
+        val gate=HeimdallDebugOwnershipPolicy.denial(DebugEngineAdmissionEvidence(
+            debugBuild=BuildConfig.DEBUG,
+            explicitDebugStart=true,
+            notificationsAllowed=notificationsAllowed(),
+            legacyTaskPresent=task!=null,
+            legacyStartingOrRunning=MonitorState.running || MonitorState.starting,
+            legacyStandbyArmed=armed || MonitorState.standby,
+            legacySaving=MonitorState.saving || stopping,
+            legacyOverlayAttached=hud.attached(),
+            unresolvedRawLease=RecorderLease.hasRawActiveLease(this),
+            unfinishedSqliteSession=false, // checked on IO before ownership transfer
+            debugSlotOccupied=heimdallDebugReserved,
+        ))
+        if(gate!=null) {
+            RecorderJournal.event(this,"HEIMDALL_DEBUG_DENIED",gate.name)
+            if(task==null && !armed && !MonitorState.running) stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        heimdallDebugReserved=true
+        MonitorState.starting=true
+        MonitorState.message="Heimdall DEBUG · checking exclusive ownership"
+        scope.launch(Dispatchers.IO) {
+            try {
+                // No legacy commands can begin while reserved. A stale raw
+                // lease OR unfinished SQLite session forbids begin(), since
+                // SessionStore.begin() marks prior unfinished rows interrupted.
+                val defaults=db.recordingDefaults()
+                val rowOpen=db.hasUnfinishedRecording()
+                val leaseActive=RecorderLease.hasRawActiveLease(this@RecordingService)
+                check(!rowOpen && !leaseActive) {
+                    if(rowOpen) DebugEngineDenial.UNFINISHED_SQLITE_SESSION.name
+                    else DebugEngineDenial.UNRESOLVED_LEASE.name
+                }
+                val runtime=HeimdallDebugEngineRuntime(
+                    application,db,scope,defaults.intervalMs,
+                    onState={ state ->
+                        withContext(Dispatchers.Main.immediate) {
+                            observeHeimdallDebugState(state)
+                        }
+                    })
+                val accepted=runtime.start(LegacyHandoffEvidence(
+                    runtime.epoch,true,true,true,true),db.activeProfileId().takeIf{it>0L})
+                check(accepted) { "DEBUG_HANDOFF_REJECTED" }
+                withContext(Dispatchers.Main.immediate) {
+                    heimdallDebugRuntime=runtime
+                    if(heimdallDebugStopPending) scope.launch { runtime.stop() }
+                }
+            } catch (cancel:CancellationException) {
+                throw cancel
+            } catch (error:Exception) {
+                withContext(Dispatchers.Main.immediate) {
+                    RecorderJournal.event(this@RecordingService,
+                        "HEIMDALL_DEBUG_START_FAILED",error.javaClass.simpleName)
+                    MonitorState.clear("Heimdall debug startup refused")
+                    // Keep the reservation through stopSelf/onDestroy.
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf(startId)
+                }
+            }
+        }
+        return START_STICKY
+    }
+
+    private fun requestHeimdallDebugStop() {
+        heimdallDebugStopPending=true
+        heimdallDebugRuntime?.let { runtime ->
+            scope.launch { runtime.stop() }
+        }
+    }
+
+    private fun observeHeimdallDebugState(state:EngineState) {
+        if(!heimdallDebugReserved || destroying) return
+        val recording=state.recording
+        if(recording !is RecordingState.Idle) heimdallDebugStarted=true
+        MonitorState.starting=recording is RecordingState.Starting
+        MonitorState.running=when(recording) {
+            is RecordingState.Recording,is RecordingState.Recovering,
+            is RecordingState.StopRequested,is RecordingState.Finalizing,
+            is RecordingState.FinalizeFailed -> true
+            else -> false
+        }
+        MonitorState.saving=recording is RecordingState.StopRequested ||
+            recording is RecordingState.Finalizing ||
+            recording is RecordingState.FinalizeFailed
+        MonitorState.sessionId=when(recording) {
+            is RecordingState.Recording -> recording.sessionId
+            is RecordingState.StopRequested -> recording.sessionId
+            is RecordingState.Finalizing -> recording.sessionId
+            is RecordingState.FinalizeFailed -> recording.sessionId
+            is RecordingState.Recovering -> recording.sessionId
+            else -> 0L
+        }
+        MonitorState.latest=null // no synthetic or idle telemetry
+        MonitorState.message="Heimdall DEBUG · "+recording.javaClass.simpleName
+        if(recording is RecordingState.Recording) {
+            foreground("Heimdall · DEBUG recording",
+                "Experimental engine · original SQLite session "+recording.sessionId,false)
+        }
+        refreshTile()
+        if(heimdallDebugStarted && recording is RecordingState.Idle) {
+            RecorderJournal.event(this,"HEIMDALL_DEBUG_COMPLETE",
+                "Heimdall controller reached Idle")
+            MonitorState.clear("Heimdall debug session saved")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } else if(recording is RecordingState.Failed) {
+            RecorderJournal.event(this,"HEIMDALL_DEBUG_FAILED",recording.reason)
+            MonitorState.clear("Heimdall debug engine failed")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
         // START / ARM / RECOVER and Android null restarts must satisfy the FGS
         // deadline BEFORE recovery-lease, SQLite settings or journal disk I/O.
@@ -264,9 +400,11 @@ class RecordingService:Service() {
         // session and recovery lease have been checked.
         val requestedAction=intent?.action
         val startupRequest=intent==null || requestedAction==START ||
-            requestedAction==ARM || requestedAction==RECOVER
+            requestedAction==ARM || requestedAction==RECOVER ||
+            (BuildConfig.DEBUG && requestedAction==HEIMDALL_DEBUG_START)
         val alreadyForeground=armed || MonitorState.running ||
-            MonitorState.starting || MonitorState.standby || task?.isActive==true
+            MonitorState.starting || MonitorState.standby || task?.isActive==true ||
+            heimdallDebugReserved
         if(startupRequest && !alreadyForeground) {
             if(!notificationsAllowed() || !foreground(
                     "CoreMetrics · preparing",
@@ -280,6 +418,22 @@ class RecordingService:Service() {
                 "pkg="+packageName+" pid="+android.os.Process.myPid()+
                     " instance="+System.identityHashCode(this)+
                     " "+hud.windowIdentity())
+        }
+        if(BuildConfig.DEBUG && requestedAction==HEIMDALL_DEBUG_START)
+            return requestHeimdallDebugStart(startId)
+        if(heimdallDebugReserved) {
+            // Every legacy command is blocked while Heimdall owns this service.
+            // Existing notification/QS STOP and DISARM are forwarded to the
+            // active owner, not dropped or interpreted as new legacy sessions.
+            if(HeimdallDebugOwnershipPolicy.routeWhileReserved(requestedAction)==
+                ReservedCommandRoute.HEIMDALL_STOP) requestHeimdallDebugStop()
+            else RecorderJournal.event(this,"HEIMDALL_BLOCK_LEGACY_INTENT",
+                (requestedAction?:"NULL_RESTART").take(64))
+            return START_STICKY
+        }
+        if(requestedAction==HEIMDALL_DEBUG_STOP) {
+            stopSelf(startId)
+            return START_NOT_STICKY
         }
         // START_STICKY is only a *request* to Android; the OEM can still kill
         // this process. A null restart intent requires a fresh, explicitly
@@ -852,7 +1006,7 @@ class RecordingService:Service() {
             .addAction(Notification.Action.Builder(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 if(standby) "Close standby" else "Stop and save",exit).build())
-        if(MonitorState.running && !hud.visible()) {
+        if(MonitorState.running && !hud.visible() && !heimdallDebugReserved) {
             val show=PendingIntent.getService(this,203,
                 Intent(this,RecordingService::class.java).setAction(HUD_SHOW),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -885,7 +1039,18 @@ class RecordingService:Service() {
         MonitorState.hudRequested=false
         MonitorState.appPaused=false
         task?.cancel()
+        heimdallDebugRuntime?.cancelWithoutImplicitStop()
         scope.cancel()
+        if(heimdallDebugReserved) {
+            // No premature DB close while the new sampler is still unwinding.
+            // Neither an Android teardown nor cancellation implies user STOP.
+            scope.coroutineContext[Job]?.invokeOnCompletion {
+                db.close()
+                shadow(LegacyAuditObservation.ServiceDestroyed)
+            }
+            super.onDestroy()
+            return
+        }
         val active=task
         if(active!=null)active.invokeOnCompletion {
             db.close()
