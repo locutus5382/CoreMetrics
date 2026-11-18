@@ -74,6 +74,14 @@ class HeimdallTrialAdmissionTest {
         assertFalse(HeimdallTrialAdmission.mayRequestStart(evidence))
         assertFalse(HeimdallTrialAdmission.mayRequestStop(evidence))
     }
+    @Test fun stalePhaseCannotStopForeignLeaseOwner() {
+        for (owner in listOf("LEGACY", "UNKNOWN", "HEIMDALL_V2")) {
+            assertFalse(HeimdallTrialAdmission.mayRequestStop(
+                clean().copy(rawOwner = owner, phase = "RETRY_SAVE")))
+            assertFalse(HeimdallTrialAdmission.mayRequestStop(
+                clean().copy(rawOwner = owner, phase = "RECORDING")))
+        }
+    }
     @Test fun repairRequiredCannotStartButCanRequestStopOfExistingOwner() {
         val e = clean().copy(rawOwner = "HEIMDALL_DEBUG",
             repairNeeded = true, phase = "NEEDS_REPAIR")
