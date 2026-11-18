@@ -560,6 +560,28 @@ class SessionStore(context: Context) : SQLiteOpenHelper(context, "coremetrics.db
             put("ended_at", time); put("status", status)
         }, "id=?", arrayOf(id.toString()))==1
 
+    /**
+     * HEIMDALL terminal CAS. Unlike legacy finish(), this can never rewrite a
+     * previously finalized status or ended_at timestamp on an effect retry.
+     */
+    @Synchronized fun finishRecordingOnce(
+        id: Long, time: Long, status: String
+    ): Boolean {
+        require(id > 0L && status in setOf("COMPLETED", "FAILED", "INTERRUPTED"))
+        return writableDatabase.update("sessions", ContentValues().apply {
+            put("ended_at", time); put("status", status)
+        }, "id=? AND status='RECORDING'", arrayOf(id.toString())) == 1
+    }
+
+    /** Small read for finalization retries: never loads report/sample rows. */
+    @Synchronized fun recordingStatus(id: Long): String? {
+        if (id <= 0L) return null
+        return readableDatabase.rawQuery(
+            "SELECT status FROM sessions WHERE id=? LIMIT 1",
+            arrayOf(id.toString())
+        ).use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    }
+
     /** Total range is read from persisted samples, never from guessed game times.
      * This metadata query is bounded and does not load raw points into RAM.
      */
