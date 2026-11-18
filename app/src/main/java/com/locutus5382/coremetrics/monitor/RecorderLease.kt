@@ -90,6 +90,11 @@ internal object RecorderLease {
                 .putLong("heartbeat_wall",System.currentTimeMillis()).commit()
         }
     }
+    /** Raw on-disk flag, not a freshness check. A stale unresolved lease must
+     * block explicit debug ownership, even if recover() rejects its age. */
+    fun hasRawActiveLease(context:Context):Boolean =
+        prefs(context).getBoolean("active",false)
+
     fun clear(context:Context):Boolean = prefs(context).edit()
         .putBoolean("active",false).putBoolean("recording",false)
         .remove("id").remove("recoveries").remove("hud_locked")

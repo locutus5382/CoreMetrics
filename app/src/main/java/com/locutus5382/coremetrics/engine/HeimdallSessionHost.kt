@@ -95,7 +95,15 @@ internal class HeimdallSessionHost<S>(
             val opened = io.begin(profileId)
             check(opened.sessionId > 0L) { "INVALID_SESSION_ID" }
             // Failed lease means the row needs explicit repair; never sample it.
-            check(io.startLease(opened.sessionId)) { "RECOVERY_LEASE_NOT_DURABLE" }
+            if (!io.startLease(opened.sessionId)) {
+                // begin() already inserted a real row; never strand a RECORDING
+                // row when its required recovery lease could not be committed.
+                // If cleanup fails, fail closed and block future debug starts.
+                check(io.closeInterrupted(opened.sessionId)) {
+                    "UNLEASED_SESSION_CLEANUP_FAILED"
+                }
+                error("RECOVERY_LEASE_NOT_DURABLE")
+            }
             activate(opened.sessionId)
             opened
         }

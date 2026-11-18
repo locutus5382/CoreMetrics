@@ -61,7 +61,10 @@ private class FakeIo : HeimdallSessionIo<Int> {
     override suspend fun terminalRecovery(sessionId: Long) = terminalOk
     override suspend fun renewRecoveryLease(sessionId: Long) = renewOk
     override suspend fun unfinishedRow(sessionId: Long) = pendingRow
-    override suspend fun closeInterrupted(sessionId: Long) = true
+    override suspend fun closeInterrupted(sessionId: Long): Boolean {
+        actions += "close-interrupted:$sessionId"
+        return true
+    }
     override suspend fun attachOverlay(operationId: Long): Boolean {
         attached = operationId
         return true
@@ -112,6 +115,8 @@ class HeimdallNativeEngineTest {
             failContaining("RECOVERY_LEASE_NOT_DURABLE") { h.createSession("a", null) }
             delay(15)
             assertEquals(0, io.collected)
+            assertTrue("Failed lease must not strand an unfinished row",
+                "close-interrupted:42" in io.actions)
         } finally { scope.cancel() }
     }
 
