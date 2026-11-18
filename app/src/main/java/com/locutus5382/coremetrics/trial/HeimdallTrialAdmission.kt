@@ -33,6 +33,9 @@ internal object HeimdallTrialAdmission {
 
     fun mayRequestStop(e: HeimdallTrialAdmissionEvidence): Boolean =
         e.monitorStatusVerified &&
+            // A stale native phase is NOT authority to touch a LEGACY or
+            // unknown future engine owner, even in the isolated trial app.
+            (e.rawOwner == null || e.rawOwner == "HEIMDALL_DEBUG") &&
             (e.rawOwner == "HEIMDALL_DEBUG" ||
                 e.phase in setOf("RECORDING", "STOPPING",
                     "RETRY_STOP", "FINALIZING", "RETRY_SAVE"))
