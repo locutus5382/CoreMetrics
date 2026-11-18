@@ -10,6 +10,8 @@ package com.locutus5382.coremetrics.engine
 internal data class HeimdallCutoverEvidence(
     val nativeDefaultCompiled: Boolean,
     val odinDeviceValidated: Boolean,
+    val nativeProcessDeathAndStopValidated: Boolean,
+    val sessionAndExportRegressionPassed: Boolean,
     val allCriticalCiPassed: Boolean,
     val userApprovedDefault: Boolean,
     val priorSessionsBackedUp: Boolean,
@@ -37,7 +39,8 @@ internal object HeimdallCutoverPolicy {
             e.unresolvedHeimdallLease || e.unfinishedSqliteSession ||
             e.overlayStillAttached ->
                 HeimdallCutoverDecision.HOLD_FOR_SESSION_RECOVERY
-        !e.odinDeviceValidated || !e.allCriticalCiPassed ||
+        !e.odinDeviceValidated || !e.nativeProcessDeathAndStopValidated ||
+            !e.sessionAndExportRegressionPassed || !e.allCriticalCiPassed ||
             !e.userApprovedDefault || !e.priorSessionsBackedUp ||
             !e.rollbackBuildVerified ->
                 HeimdallCutoverDecision.HOLD_FOR_TESTS
