@@ -29,6 +29,20 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Unit tests and assemble unified APK
         run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:assembleOptimizedTest --no-daemon
+      - name: Build isolated HEIMDALL Odin trial variant
+        run: gradle :app:testHeimdallTrialUnitTest :app:assembleHeimdallTrial --no-daemon
+      - name: Verify trial APK is a separate Android installation
+        run: |
+          APK="app/build/outputs/apk/heimdallTrial/app-heimdallTrial.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "package: name='com.locutus5382.coremetrics.heimdalltrial'"
+      - name: Upload isolated HEIMDALL Odin trial APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HEIMDALL-M2M-isolated-Odin-debug-trial-APK
+          if-no-files-found: error
+          path: app/build/outputs/apk/heimdallTrial/app-heimdallTrial.apk
       - name: Upload unified debug APK
         uses: actions/upload-artifact@v4
         with:
