@@ -11,7 +11,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.locutus5382.coremetrics.data.SessionStore
-import com.locutus5382.coremetrics.monitor.RecorderLease
 import com.locutus5382.coremetrics.monitor.RecordingService
 import com.locutus5382.coremetrics.ui.MainActivity
 import org.junit.Assert.*
@@ -58,11 +57,10 @@ class HeimdallDebugServiceAndroidTest {
         InstrumentationRegistry.getInstrumentation().uiAutomation
             .grantRuntimePermission(ctx.packageName, Manifest.permission.POST_NOTIFICATIONS)
         val db=SessionStore(ctx)
-        val testStartWall=System.currentTimeMillis()
         var id=0L
         try {
-            assertFalse("CI emulator must begin without a pending recovery lease",
-                RecorderLease.hasRawActiveLease(ctx))
+            assertNull("CI emulator must begin without a pending owner lease",
+                status(ctx)?.getString("heimdallRawRecoveryOwner"))
             assertFalse("CI emulator must begin without active SQLite sessions",
                 db.hasUnfinishedRecording())
             ActivityScenario.launch(MainActivity::class.java).use {
@@ -74,14 +72,15 @@ class HeimdallDebugServiceAndroidTest {
                         state.getLong("id").takeIf { sid -> sid>0L }
                     } else null
                 }
-                assertEquals(RecorderLease.Owner.HEIMDALL_DEBUG,
-                    RecorderLease.rawOwner(ctx))
+                assertEquals("HEIMDALL_DEBUG",
+                    status(ctx)?.getString("heimdallRawRecoveryOwner"))
                 // A stale app/QS START during native recording MUST NOT open a
                 // competing legacy session or replace the original lease.
                 send(ctx, RecordingService.START)
                 Thread.sleep(300)
                 assertEquals(id, status(ctx)?.getLong("id"))
-                assertEquals(id, RecorderLease.recover(ctx)?.id)
+                assertEquals(id,
+                    status(ctx)?.getLong("heimdallRecoveryLeaseId"))
 
                 waitFor(35_000) {
                     if(db.storedSampleCount(id)>0L) true else null
@@ -96,7 +95,8 @@ class HeimdallDebugServiceAndroidTest {
                 assertFalse("Original session must no longer be RECORDING",
                     db.canResume(id))
                 waitFor(15_000) {
-                    if(!RecorderLease.hasRawActiveLease(ctx)) true else null
+                    if(status(ctx)?.getString("heimdallRawRecoveryOwner")==null)
+                        true else null
                 }
             }
         } finally {
@@ -107,9 +107,6 @@ class HeimdallDebugServiceAndroidTest {
                 send(ctx, RecordingService.STOP)
             }
             db.close()
-            // A fresh emulator is discarded by CI after this test.
-            assertTrue("Test should run against current ephemeral app state",
-                testStartWall>0L)
         }
     }
 }
