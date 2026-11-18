@@ -11,6 +11,7 @@ internal data class TrialFinalizationEvidence(
     val persistedSamples: Long,
     val rawRecoveryOwner: String?,
     val rawLeaseUnresolved: Boolean,
+    val repairRequired: Boolean,
     val unfinishedRecordingExists: Boolean,
     val monitorRecording: Boolean,
     val monitorStarting: Boolean,
@@ -48,7 +49,8 @@ internal object HeimdallTrialFinalizationProof {
             e.sqliteStatus != "COMPLETED" ->
                 TrialFinalizationResult.ORIGINAL_NOT_COMPLETED
             e.persistedSamples <= 0L -> TrialFinalizationResult.SAMPLES_MISSING
-            e.rawRecoveryOwner != null || e.rawLeaseUnresolved ->
+            e.rawRecoveryOwner != null || e.rawLeaseUnresolved ||
+                e.repairRequired ->
                 TrialFinalizationResult.RECOVERY_LEASE_UNRESOLVED
             e.unfinishedRecordingExists ->
                 TrialFinalizationResult.UNFINISHED_RECORDING_REMAINS
