@@ -14,6 +14,8 @@ internal object EngineReducer {
             is EngineEvent.SessionOpened -> opened(current, event)
             is EngineEvent.SessionOpenFailed -> openFailed(current, event)
             is EngineEvent.StopIntentPersisted -> stopPersisted(current, event)
+            is EngineEvent.SamplingPaused -> samplingPaused(current, event)
+            is EngineEvent.SamplingPauseFailed -> samplingPauseFailed(current, event)
             is EngineEvent.StopIntentFailed -> stopFailed(current, event)
             is EngineEvent.SessionFinalized -> finalized(current, event)
             is EngineEvent.SessionFinalizeFailed -> finalizeFailed(current, event)
@@ -24,7 +26,9 @@ internal object EngineReducer {
             is EngineEvent.OverlayPermissionChanged -> permission(current, event.granted)
             is EngineEvent.Reconcile -> reconcile(current, event)
             is EngineEvent.SessionResumed -> resumed(current, event.sessionId)
+            is EngineEvent.SessionResumeFailed -> resumeFailed(current, event)
             is EngineEvent.InterruptedSessionClosed -> interruptedClosed(current, event.sessionId)
+            is EngineEvent.InterruptedCloseFailed -> interruptedCloseFailed(current, event)
         }
         return if (raw.state == current) raw
         else raw.copy(state = raw.state.copy(sequence = current.sequence + 1))
@@ -68,6 +72,10 @@ internal object EngineReducer {
                 recording = r.copy(persistError = null),
                 lastAck = ack(c.id, CommandOutcome.ACCEPTED)),
                 listOf(EngineEffect.PersistStopIntent(r.sessionId, r.stopId)))
+            else if (r.pauseError != null && r.durableStop) EngineTransition(s.copy(
+                recording = r.copy(pauseError = null),
+                lastAck = ack(c.id, CommandOutcome.ACCEPTED)),
+                listOf(EngineEffect.PauseSampling(r.sessionId, r.stopId)))
             else EngineTransition(s.copy(lastAck = ack(c.id, CommandOutcome.IGNORED, "STOP_PENDING")))
         }
         else -> EngineTransition(s.copy(lastAck = ack(c.id, CommandOutcome.IGNORED, "NOT_RECORDING")))
@@ -79,14 +87,17 @@ internal object EngineReducer {
         return EngineTransition(s.copy(
             recording = RecordingState.Finalizing(r.sessionId, r.stopId, r.reason),
             lastAck = ack(c.id, CommandOutcome.ACCEPTED)),
-            listOf(EngineEffect.FinalizeSession(r.sessionId, r.stopId, r.reason)))
+            if (r.reason == StopReason.INTERRUPTED)
+                listOf(EngineEffect.CloseInterruptedSession(r.sessionId))
+            else listOf(EngineEffect.FinalizeSession(r.sessionId, r.stopId, r.reason)))
     }
 
     private fun stopRequested(s: EngineState, sessionId: Long, stopId: String, reason: StopReason) =
         EngineTransition(s.copy(recording = RecordingState.StopRequested(sessionId, stopId, reason),
             lastAck = ack(stopId, CommandOutcome.ACCEPTED)), listOf(
-            EngineEffect.PauseSampling(sessionId),
+            // Match the existing RecorderLease STOP write-before-cancellation ordering.
             EngineEffect.PersistStopIntent(sessionId, stopId),
+            EngineEffect.PauseSampling(sessionId, stopId),
         ))
 
     private fun opened(s: EngineState, e: EngineEvent.SessionOpened): EngineTransition {
@@ -103,11 +114,30 @@ internal object EngineReducer {
         return EngineTransition(s.copy(recording = RecordingState.Failed(e.reason)))
     }
 
+    private fun finishWhenReady(s: EngineState, r: RecordingState.StopRequested): EngineTransition {
+        if (!r.durableStop || !r.samplingPaused) return EngineTransition(s.copy(recording = r))
+        return EngineTransition(s.copy(recording = RecordingState.Finalizing(
+            r.sessionId, r.stopId, r.reason)),
+            listOf(EngineEffect.FinalizeSession(r.sessionId, r.stopId, r.reason)))
+    }
+
     private fun stopPersisted(s: EngineState, e: EngineEvent.StopIntentPersisted): EngineTransition {
         val r = s.recording as? RecordingState.StopRequested ?: return EngineTransition(s)
         if (r.sessionId != e.sessionId || r.stopId != e.stopId) return EngineTransition(s)
-        return EngineTransition(s.copy(recording = RecordingState.Finalizing(r.sessionId, r.stopId,
-            r.reason)), listOf(EngineEffect.FinalizeSession(r.sessionId, r.stopId, r.reason)))
+        return finishWhenReady(s, r.copy(durableStop = true, persistError = null))
+    }
+
+    private fun samplingPaused(s: EngineState, e: EngineEvent.SamplingPaused): EngineTransition {
+        val r = s.recording as? RecordingState.StopRequested ?: return EngineTransition(s)
+        if (r.sessionId != e.sessionId || r.stopId != e.stopId) return EngineTransition(s)
+        return finishWhenReady(s, r.copy(samplingPaused = true, pauseError = null))
+    }
+
+    private fun samplingPauseFailed(s: EngineState, e: EngineEvent.SamplingPauseFailed): EngineTransition {
+        val r = s.recording as? RecordingState.StopRequested ?: return EngineTransition(s)
+        if (r.sessionId != e.sessionId || r.stopId != e.stopId) return EngineTransition(s)
+        // STOP stays durable when available, but an unpaused sampler cannot be finalized.
+        return EngineTransition(s.copy(recording = r.copy(pauseError = e.reason)))
     }
 
     private fun stopFailed(s: EngineState, e: EngineEvent.StopIntentFailed): EngineTransition {
@@ -231,6 +261,21 @@ internal object EngineReducer {
         if (r.sessionId != id) return EngineTransition(s)
         return EngineTransition(s.copy(recording = RecordingState.Recording(id,
             r.startedAtElapsedMs, r.profileId)))
+    }
+
+    private fun resumeFailed(s: EngineState, e: EngineEvent.SessionResumeFailed): EngineTransition {
+        val r = s.recording as? RecordingState.Recovering ?: return EngineTransition(s)
+        if (r.sessionId != e.sessionId) return EngineTransition(s)
+        // Leave the original durable row for the platform reconciler to inspect again.
+        return EngineTransition(s.copy(recording = RecordingState.Failed(
+            "RESUME_FAILED: " + e.reason, e.sessionId)))
+    }
+
+    private fun interruptedCloseFailed(s: EngineState, e: EngineEvent.InterruptedCloseFailed): EngineTransition {
+        val r = s.recording as? RecordingState.Finalizing ?: return EngineTransition(s)
+        if (r.sessionId != e.sessionId || r.reason != StopReason.INTERRUPTED) return EngineTransition(s)
+        return EngineTransition(s.copy(recording = RecordingState.FinalizeFailed(
+            r.sessionId, r.stopId, r.reason, e.reason)))
     }
 
     private fun interruptedClosed(s: EngineState, id: Long): EngineTransition {
