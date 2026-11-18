@@ -105,7 +105,7 @@ class RecordingService:Service() {
     /** Main-thread reservation. It stays held until service teardown, even after
      * STOP, so stale legacy intents cannot open another session mid-finalization. */
     private var heimdallDebugReserved=false
-    private var heimdallDebugStopPending=false
+    @Volatile private var heimdallDebugStopPending=false
     private var heimdallDebugStarted=false
     private var heimdallDebugRuntime:HeimdallDebugEngineRuntime?=null
 
@@ -386,8 +386,10 @@ class RecordingService:Service() {
         if(heimdallDebugStopPending &&
             (recording is RecordingState.Recording ||
              recording is RecordingState.Starting)) {
-            heimdallDebugStopPending=false
             heimdallDebugRuntime?.let { runtime ->
+                // Don't drop a STOP just because the new runtime has not
+                // yet been assigned to the service on the main thread.
+                heimdallDebugStopPending=false
                 scope.launch { runtime.stop() }
             }
         }
@@ -447,7 +449,8 @@ class RecordingService:Service() {
                     persistedStop=saved?.stopRequested==true,
                     originalRowStatus=rowStatus,
                     intervalMs=saved?.intervalMs,
-                    userRequestedStop=stopRequestedNow,
+                    userRequestedStop=stopRequestedNow ||
+                        heimdallDebugStopPending,
                 ))
                 RecorderJournal.event(this@RecordingService,"HEIMDALL_RECOVERY_PLAN",
                     plan.name+" id="+(saved?.id ?: 0L))
@@ -491,7 +494,8 @@ class RecordingService:Service() {
                     handoff=handoff,
                     originalSessionId=recoveredId,
                     persistedStop=saved.stopRequested,
-                    stopRequestedNow=plan==NativeRecoveryDecision.PERSIST_STOP_AND_FINALIZE,
+                    stopRequestedNow=plan==NativeRecoveryDecision.PERSIST_STOP_AND_FINALIZE ||
+                        heimdallDebugStopPending,
                 )
                 check(accepted) { "NATIVE_RECOVERY_HANDOFF_REFUSED" }
                 withContext(Dispatchers.Main.immediate) {
