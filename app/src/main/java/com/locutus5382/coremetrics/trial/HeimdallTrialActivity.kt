@@ -22,6 +22,7 @@ import com.locutus5382.coremetrics.BuildConfig
 import com.locutus5382.coremetrics.data.UiSessionStoreOwner
 import com.locutus5382.coremetrics.monitor.RecordingService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -42,6 +43,9 @@ class HeimdallTrialActivity : ComponentActivity() {
     private lateinit var start: Button
     private lateinit var stop: Button
     private lateinit var copy: Button
+    private lateinit var verify: Button
+    private var growthCheckInFlight = false
+    private var growthReport = "Sample growth: NOT VERIFIED"
     private val handler = Handler(Looper.getMainLooper())
     private var lastSnapshot: TrialSnapshot? = null
     private var lastReport = "Not checked yet"
@@ -81,6 +85,19 @@ class HeimdallTrialActivity : ComponentActivity() {
             get() = HeimdallTrialAdmission.mayRequestStart(admission)
         val mayRequestStop: Boolean
             get() = HeimdallTrialAdmission.mayRequestStop(admission)
+        val mayVerifySamples: Boolean
+            get() = monitorStatusVerified &&
+                phase == "RECORDING" && rawOwner == "HEIMDALL_DEBUG" &&
+                persistedRowStatus == "RECORDING" &&
+                !rawLeaseUnresolved && !repairNeeded && sessionId > 0L
+        val sampleEvidence: TrialSampleEvidence
+            get() = TrialSampleEvidence(
+                statusVerified = monitorStatusVerified,
+                phase = phase, owner = rawOwner,
+                sessionId = sessionId, persistedSamples = samples,
+                rowStatus = persistedRowStatus,
+                unresolvedLease = rawLeaseUnresolved,
+            )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -127,6 +144,10 @@ class HeimdallTrialActivity : ComponentActivity() {
             submitStop()
         }
         action("Refresh verified status", cobalt) { refresh() }
+        verify = action("Verify persisted sample growth (8 seconds)", amber) {
+            verifySampleGrowth()
+        }
+        verify.isEnabled = false
         copy = action("Copy diagnostic summary", cobalt) {
             getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
                 ClipData.newPlainText("Heimdall trial status", lastReport))
@@ -203,6 +224,7 @@ class HeimdallTrialActivity : ComponentActivity() {
         details.text = "Reading monitor-owned status and session database…"
         start.isEnabled = false
         stop.isEnabled = false
+        verify.isEnabled = false
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { readVerified() }
@@ -223,10 +245,12 @@ class HeimdallTrialActivity : ComponentActivity() {
                     appendLine("Unresolved lease: ${s.rawLeaseUnresolved}")
                     appendLine("Issue: ${s.issueCode ?: "NONE"}")
                     appendLine("Message: ${s.statusMessage}")
+                    appendLine(growthReport)
                 }
                 details.text = lastReport
                 start.isEnabled = s.mayRequestStart
                 stop.isEnabled = s.mayRequestStop
+                verify.isEnabled = s.mayVerifySamples && !growthCheckInFlight
             }.onFailure {
                 lastSnapshot = null
                 lastReport = "Monitor status unavailable: " +
@@ -235,7 +259,48 @@ class HeimdallTrialActivity : ComponentActivity() {
                 details.text = lastReport
                 start.isEnabled = false
                 stop.isEnabled = false
+                verify.isEnabled = false
             }
+        }
+    }
+
+    /**
+     * User-requested, non-destructive evidence. A sample count from the UI
+     * cannot be trusted: re-read the private monitor AND original SQLite row
+     * at both ends, compare one immutable original session ID.
+     */
+    private fun verifySampleGrowth() {
+        if (growthCheckInFlight || lastSnapshot?.mayVerifySamples != true) {
+            refresh()
+            return
+        }
+        growthCheckInFlight = true
+        verify.isEnabled = false
+        details.text = "Verifying native SQLite sample growth for 8 seconds… " +
+            "STOP remains available if needed."
+        lifecycleScope.launch {
+            val first = withContext(Dispatchers.IO) {
+                runCatching { readVerified() }
+            }
+            if (first.isFailure || first.getOrNull()?.mayVerifySamples != true) {
+                growthReport = "Sample growth: NOT VERIFIED — first snapshot unavailable"
+            } else {
+                delay(8_000L)
+                val second = withContext(Dispatchers.IO) {
+                    runCatching { readVerified() }
+                }
+                growthReport = if (second.isFailure) {
+                    "Sample growth: NOT VERIFIED — second snapshot unavailable"
+                } else {
+                    val check = HeimdallTrialSampleGrowth.evaluate(
+                        first.getOrThrow().sampleEvidence,
+                        second.getOrThrow().sampleEvidence)
+                    "Sample growth: ${check.result.name}; original ID " +
+                        "${check.sessionId}; new persisted samples +${check.delta}"
+                }
+            }
+            growthCheckInFlight = false
+            refresh()
         }
     }
 
