@@ -18,18 +18,35 @@ internal data class QuickTileSnapshot(
             // A provider/tile may spawn :monitor without the user-started
             // recorder service. The persisted lease takes precedence over an
             // apparently idle fresh process.
-            val pendingLease=if(!MonitorState.running &&
-                !MonitorState.starting && !MonitorState.standby)
+            val noActiveSampler = !MonitorState.running &&
+                !MonitorState.starting && !MonitorState.standby
+            val pendingLease = if(noActiveSampler)
                 RecorderLease.recover(context) else null
+            val raw = if(noActiveSampler)
+                RecorderLease.rawSession(context) else null
+            val unresolved = raw?.active == true &&
+                (pendingLease == null ||
+                    pendingLease.owner == RecorderLease.Owner.UNKNOWN)
+            // Native phase comes from the service reducer; an unavailable
+            // lease must NEVER turn into permission to create a new session.
+            val phaseMode = if(alive) when(MonitorState.heimdallRecorderPhase) {
+                "RETRY_STOP" -> QuickTileStatePolicy.Mode.STOP_RETRY
+                "RETRY_SAVE" -> QuickTileStatePolicy.Mode.SAVE_RETRY
+                "NEEDS_REPAIR" -> QuickTileStatePolicy.Mode.REPAIR_REQUIRED
+                else -> null
+            } else null
+            val mode = phaseMode ?: if(unresolved)
+                QuickTileStatePolicy.Mode.REPAIR_REQUIRED
+            else QuickTileStatePolicy.mode(
+                reachable=true,serviceAlive=alive,
+                pendingRecovery=pendingLease!=null,
+                running=MonitorState.running,
+                starting=MonitorState.starting,
+                standby=MonitorState.standby,
+                stopping=MonitorState.saving,
+                stopPending=pendingLease?.stopRequested==true)
             return QuickTileSnapshot(
-                mode=QuickTileStatePolicy.mode(
-                    reachable=true,serviceAlive=alive,
-                    pendingRecovery=pendingLease!=null,
-                    running=MonitorState.running,
-                    starting=MonitorState.starting,
-                    standby=MonitorState.standby,
-                    stopping=MonitorState.saving,
-                    stopPending=pendingLease?.stopRequested==true),
+                mode=mode,
                 hudVisible=MonitorState.hudVisible,
                 hudRequested=MonitorState.hudRequested ||
                     pendingLease?.hudEnabled==true,
