@@ -5,6 +5,10 @@ plugins {
 android {
     namespace = "com.locutus5382.coremetrics"
     compileSdk = 36
+    // Normal CI keeps the legacy debug variant for existing emulator suites.
+    // The new explicit trial UI test runs against the actual isolated variant.
+    testBuildType = if (providers.gradleProperty("heimdallTrialInstrumentation")
+            .orNull == "true") "heimdallTrial" else "debug"
     defaultConfig {
         applicationId = "com.locutus5382.coremetrics"
         minSdk = 31
